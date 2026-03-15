@@ -28,7 +28,11 @@ watch(messages, async () => {
 }, { deep: true });
 
 async function sendMessage() {
-  if (!input.value.trim() || !sessionsStore.activeChatCardId) return;
+  console.log('[ClaudBan] sendMessage called, input:', input.value, 'activeCardId:', sessionsStore.activeChatCardId);
+  if (!input.value.trim() || !sessionsStore.activeChatCardId) {
+    console.log('[ClaudBan] sendMessage aborted: empty input or no active card');
+    return;
+  }
   const cardId = sessionsStore.activeChatCardId;
   try {
     await sessionsStore.send(cardId, input.value.trim());
