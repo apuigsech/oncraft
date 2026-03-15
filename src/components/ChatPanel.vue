@@ -7,12 +7,14 @@ import ToolCallBlock from './ToolCallBlock.vue';
 import InputToolbar from './InputToolbar.vue';
 import ContextGauge from './ContextGauge.vue';
 import SessionMetrics from './SessionMetrics.vue';
+import SlashCommandPalette from './SlashCommandPalette.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+const showSlashPalette = computed(() => input.value.startsWith('/') && !input.value.includes(' '));
 
 const card = computed(() => {
   if (!sessionsStore.activeChatCardId) return null;
@@ -53,6 +55,11 @@ function sendMessage() {
   input.value = '';
   resetTextareaHeight();
   sessionsStore.send(cardId, msg);
+}
+
+function selectSlashCommand(command: string) {
+  input.value = command + ' ';
+  nextTick(() => inputRef.value?.focus());
 }
 
 function handleInterrupt() {
@@ -125,6 +132,13 @@ function resetTextareaHeight() {
         @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
         @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
       />
+      <div class="input-wrapper">
+        <SlashCommandPalette
+          :filter="input"
+          :visible="showSlashPalette"
+          @select="selectSlashCommand"
+        />
+      </div>
       <div class="input-row">
         <textarea
           ref="inputRef"
@@ -161,6 +175,7 @@ function resetTextareaHeight() {
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
 .chat-input-area { padding: 10px; border-top: 1px solid var(--border); }
+.input-wrapper { position: relative; }
 .input-row { display: flex; gap: 8px; }
 textarea {
   flex: 1; background: var(--bg-secondary); border: 1px solid var(--border);
