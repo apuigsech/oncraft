@@ -7,8 +7,8 @@ const props = defineProps<{ message: StreamMessage; cardId: string }>();
 const expanded = ref(false);
 const sessionsStore = useSessionsStore();
 
-async function approve() { await sessionsStore.send(props.cardId, 'y'); }
-async function reject() { await sessionsStore.send(props.cardId, 'n'); }
+async function approve() { await sessionsStore.approveToolUse(props.cardId); }
+async function reject() { await sessionsStore.rejectToolUse(props.cardId); }
 </script>
 <template>
   <div class="tool-block" @click="expanded = !expanded">

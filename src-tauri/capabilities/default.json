@@ -10,22 +10,8 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "claude",
-          "cmd": "claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude-homebrew",
-          "cmd": "/opt/homebrew/bin/claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude-usr-local",
-          "cmd": "/usr/local/bin/claude",
-          "args": true,
-          "sidecar": false
+          "name": "binaries/agent-bridge",
+          "sidecar": true
         }
       ]
     },
@@ -33,22 +19,8 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "claude",
-          "cmd": "claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude-homebrew",
-          "cmd": "/opt/homebrew/bin/claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude-usr-local",
-          "cmd": "/usr/local/bin/claude",
-          "args": true,
-          "sidecar": false
+          "name": "binaries/agent-bridge",
+          "sidecar": true
         }
       ]
     },

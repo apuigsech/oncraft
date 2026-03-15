@@ -2,18 +2,13 @@ import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
 import type { StreamMessage } from '../types';
 import {
-  executeClaudeTurn, killProcess, isProcessActive,
-  checkClaudeBinary,
+  spawnSession, sendReply, interrupt, killProcess, isProcessActive, onMessage, offMessage,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
-import { useSettingsStore } from './settings';
-import { useProjectsStore } from './projects';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
-  const claudeAvailable = ref<boolean | null>(null);
-  const claudeError = ref<string | null>(null);
 
   function getMessages(cardId: string): StreamMessage[] {
     return messages[cardId] || [];
@@ -21,82 +16,81 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function appendMessage(cardId: string, msg: StreamMessage): void {
     if (!messages[cardId]) { messages[cardId] = []; }
-    if (msg.type === 'system' && !msg.content) return;
+    if (msg.type === 'system' && !msg.content && !msg.sessionId) return;
     messages[cardId].push(msg);
   }
 
-  async function verifyClaudeBinary(): Promise<boolean> {
-    const settingsStore = useSettingsStore();
-    const available = await checkClaudeBinary(settingsStore.settings.claudeBinaryPath);
-    claudeAvailable.value = available;
-    claudeError.value = available ? null : 'Claude Code not found. Install it or configure the binary path in Settings.';
-    return available;
+  function setupMessageListener(cardId: string): void {
+    onMessage(cardId, (msg: StreamMessage) => {
+      const cardsStore = useCardsStore();
+
+      // Capture session ID from init or result messages
+      if (msg.sessionId) {
+        cardsStore.updateCardSessionId(cardId, msg.sessionId);
+      }
+
+      // On result message, set card to idle
+      if (msg.subtype === 'result') {
+        cardsStore.updateCardState(cardId, 'idle');
+        // Don't append empty result messages to chat
+        if (!msg.content) return;
+      }
+
+      // On error, set card to error state
+      if (msg.subtype === 'error') {
+        cardsStore.updateCardState(cardId, 'error');
+      }
+
+      appendMessage(cardId, msg);
+    });
   }
 
   async function send(cardId: string, message: string): Promise<void> {
-    console.log('[ClaudBan] send() called, cardId:', cardId, 'message:', message.substring(0, 50));
     const cardsStore = useCardsStore();
     const card = cardsStore.cards.find(c => c.id === cardId);
+
     appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
 
     if (isProcessActive(cardId)) {
-      appendMessage(cardId, { type: 'system', content: 'Waiting for previous response to finish...', timestamp: Date.now() });
+      appendMessage(cardId, { type: 'system', content: 'Waiting for current response to finish...', timestamp: Date.now() });
       return;
     }
 
-    const project = useProjectsStore().activeProject;
+    const project = (await import('./projects')).useProjectsStore().activeProject;
     if (!project) return;
 
-    if (!await verifyClaudeBinary()) {
-      appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
-      return;
-    }
-
-    // Show a "thinking" indicator
-    appendMessage(cardId, { type: 'system', content: 'Claude is thinking...', timestamp: Date.now() });
     await cardsStore.updateCardState(cardId, 'active');
 
+    // Set up listener before spawning so we don't miss early messages
+    setupMessageListener(cardId);
+
+    // Determine session ID for resume
+    const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
+      ? card.sessionId : undefined;
+
     try {
-      // Determine session ID for resume
-      const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
-        ? card.sessionId : undefined;
-
-      console.log('[ClaudBan] executing turn, sessionId:', sessionId || '(new)');
-
-      // execute() waits for completion and returns the result
-      const result = await executeClaudeTurn(cardId, project.path, message, sessionId);
-
-      console.log('[ClaudBan] turn complete, type:', result.type, 'content:', result.content?.substring(0, 100));
-
-      // Remove the "thinking" message
-      const cardMessages = messages[cardId];
-      if (cardMessages) {
-        for (let i = cardMessages.length - 1; i >= 0; i--) {
-          if (cardMessages[i].content === 'Claude is thinking...') {
-            cardMessages.splice(i, 1);
-            break;
-          }
-        }
-      }
-
-      // Capture session_id from result
-      if (result.sessionId) {
-        await cardsStore.updateCardSessionId(cardId, result.sessionId);
-      }
-
-      // Add the response
-      appendMessage(cardId, result);
-
+      await spawnSession(cardId, project.path, message, sessionId);
     } catch (err) {
-      console.error('[ClaudBan] turn error:', err);
       appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
+      await cardsStore.updateCardState(cardId, 'idle');
+      offMessage(cardId);
     }
+  }
 
-    await cardsStore.updateCardState(cardId, 'idle');
-    if (card) { card.lastActivityAt = new Date().toISOString(); }
+  async function approveToolUse(cardId: string): Promise<void> {
+    await sendReply(cardId, 'allow');
+  }
+
+  async function rejectToolUse(cardId: string): Promise<void> {
+    await sendReply(cardId, 'deny');
+  }
+
+  async function interruptSession(cardId: string): Promise<void> {
+    await interrupt(cardId);
   }
 
   async function stopSession(cardId: string): Promise<void> {
+    offMessage(cardId);
     await killProcess(cardId);
     const cardsStore = useCardsStore();
     await cardsStore.updateCardState(cardId, 'idle');
@@ -107,7 +101,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   function isActive(cardId: string): boolean { return isProcessActive(cardId); }
 
   return {
-    messages, activeChatCardId, claudeAvailable, claudeError,
-    getMessages, verifyClaudeBinary, send, stopSession, openChat, closeChat, isActive,
+    messages, activeChatCardId,
+    getMessages, send, approveToolUse, rejectToolUse,
+    interruptSession, stopSession, openChat, closeChat, isActive,
   };
 });

@@ -27,19 +27,12 @@ watch(messages, async () => {
   }
 }, { deep: true });
 
-async function sendMessage() {
-  console.log('[ClaudBan] sendMessage called, input:', input.value, 'activeCardId:', sessionsStore.activeChatCardId);
-  if (!input.value.trim() || !sessionsStore.activeChatCardId) {
-    console.log('[ClaudBan] sendMessage aborted: empty input or no active card');
-    return;
-  }
+function sendMessage() {
+  if (!input.value.trim() || !sessionsStore.activeChatCardId) return;
   const cardId = sessionsStore.activeChatCardId;
-  try {
-    await sessionsStore.send(cardId, input.value.trim());
-    input.value = '';
-  } catch (err) {
-    console.error('[ClaudBan] send error:', err);
-  }
+  const msg = input.value.trim();
+  input.value = '';
+  sessionsStore.send(cardId, msg);
 }
 </script>
 

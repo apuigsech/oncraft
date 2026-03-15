@@ -39,7 +39,6 @@ export interface ProjectConfig {
 }
 
 export interface GlobalSettings {
-  claudeBinaryPath: string;
   theme: 'dark' | 'light';
   defaultColumns: ColumnConfig[];
 }
@@ -50,8 +49,14 @@ export interface StreamMessage {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   toolResult?: string;
+  toolUseId?: string;
+  subtype?: string;
   sessionId?: string;
   timestamp: number;
+  usage?: { inputTokens: number; outputTokens: number };
+  costUsd?: number;
+  durationMs?: number;
+  retryAfter?: number;
 }
 
 export interface TemplateContext {

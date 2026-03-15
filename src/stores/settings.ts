@@ -5,7 +5,6 @@ import * as yaml from 'js-yaml';
 import type { GlobalSettings } from '../types';
 
 const DEFAULT_SETTINGS: GlobalSettings = {
-  claudeBinaryPath: 'claude',
   theme: 'dark',
   defaultColumns: [
     { name: 'Brainstorm', color: '#a78bfa' },
@@ -55,10 +54,5 @@ export const useSettingsStore = defineStore('settings', () => {
     await writeTextFile(SETTINGS_FILE, content, { baseDir: BaseDirectory.AppConfig });
   }
 
-  async function updateClaudePath(path: string): Promise<void> {
-    settings.value.claudeBinaryPath = path;
-    await save();
-  }
-
-  return { settings, loaded, load, save, updateClaudePath };
+  return { settings, loaded, load, save };
 });
