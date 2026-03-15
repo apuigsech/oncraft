@@ -37,11 +37,18 @@ function startResize(e: MouseEvent) {
 }
 
 onMounted(async () => {
-  await settingsStore.load();
-  await projectsStore.load();
-  if (projectsStore.activeProject) {
-    await cardsStore.loadForProject(projectsStore.activeProject.id);
-    await pipelinesStore.loadForProject(projectsStore.activeProject.path);
+  try {
+    await settingsStore.load();
+    console.log('[ClaudBan] settings loaded');
+    await projectsStore.load();
+    console.log('[ClaudBan] projects loaded:', projectsStore.projects.length, 'projects, active:', projectsStore.activeProjectId);
+    if (projectsStore.activeProject) {
+      await cardsStore.loadForProject(projectsStore.activeProject.id);
+      await pipelinesStore.loadForProject(projectsStore.activeProject.path);
+      console.log('[ClaudBan] active project loaded:', projectsStore.activeProject.name);
+    }
+  } catch (err) {
+    console.error('[ClaudBan] startup error:', err);
   }
 });
 </script>
