@@ -82,27 +82,32 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function send(cardId: string, message: string): Promise<void> {
+    console.log('[ClaudBan] send() called, cardId:', cardId, 'message:', message.substring(0, 50));
     const cardsStore = useCardsStore();
     const card = cardsStore.cards.find(c => c.id === cardId);
     appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
 
-    // If a process is still running (previous turn), wait for it or kill it
     if (isProcessActive(cardId)) {
+      console.log('[ClaudBan] process already active, waiting');
       appendMessage(cardId, { type: 'system', content: 'Waiting for previous response to finish...', timestamp: Date.now() });
       return;
     }
 
     const project = useProjectsStore().activeProject;
-    if (!project) return;
+    if (!project) { console.log('[ClaudBan] no active project'); return; }
+    console.log('[ClaudBan] project:', project.path);
+
     const settingsStore = useSettingsStore();
     const claudeBinary = settingsStore.settings.claudeBinaryPath;
+    console.log('[ClaudBan] verifying claude binary...');
     if (!await verifyClaudeBinary()) {
+      console.log('[ClaudBan] claude not found');
       appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
       return;
     }
+    console.log('[ClaudBan] claude verified OK');
 
     const onMessage = (msg: StreamMessage) => {
-      // Capture session_id first (even from empty hook messages)
       if (msg.sessionId) {
         updateSessionId(cardId, msg.sessionId);
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
@@ -110,17 +115,24 @@ export const useSessionsStore = defineStore('sessions', () => {
       appendMessage(cardId, msg);
     };
     const onExit = (code: number) => {
+      console.log('[ClaudBan] onExit callback, code:', code);
       cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error');
     };
 
-    // Each message spawns a new `claude -p` process.
-    // Use --resume with real session_id for conversation continuity.
-    if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-      await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, onMessage, onExit, message);
-    } else {
-      await spawnClaudeSession(cardId, project.path, claudeBinary, onMessage, onExit, message);
+    try {
+      if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
+        console.log('[ClaudBan] resuming session:', card.sessionId);
+        await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, onMessage, onExit, message);
+      } else {
+        console.log('[ClaudBan] spawning new session');
+        await spawnClaudeSession(cardId, project.path, claudeBinary, onMessage, onExit, message);
+      }
+      console.log('[ClaudBan] process spawned successfully');
+      await cardsStore.updateCardState(cardId, 'active');
+    } catch (err) {
+      console.error('[ClaudBan] spawn/resume error:', err);
+      appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
     }
-    await cardsStore.updateCardState(cardId, 'active');
 
     if (card) { card.lastActivityAt = new Date().toISOString(); }
   }
