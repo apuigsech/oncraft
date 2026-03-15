@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { useProjectsStore } from './stores/projects';
 import { useSettingsStore } from './stores/settings';
 import { useCardsStore } from './stores/cards';
@@ -7,6 +7,7 @@ import { usePipelinesStore } from './stores/pipelines';
 import { useSessionsStore } from './stores/sessions';
 import TabBar from './components/TabBar.vue';
 import KanbanBoard from './components/KanbanBoard.vue';
+import ChatPanel from './components/ChatPanel.vue';
 
 const projectsStore = useProjectsStore();
 const settingsStore = useSettingsStore();
@@ -14,7 +15,23 @@ const cardsStore = useCardsStore();
 const pipelinesStore = usePipelinesStore();
 const sessionsStore = useSessionsStore();
 
+const showSettings = ref(false);
 const showChat = computed(() => sessionsStore.activeChatCardId !== null);
+const chatWidth = ref(400);
+
+function startResize(e: MouseEvent) {
+  const startX = e.clientX;
+  const startWidth = chatWidth.value;
+  function onMouseMove(ev: MouseEvent) {
+    chatWidth.value = Math.max(320, Math.min(600, startWidth - (ev.clientX - startX)));
+  }
+  function onMouseUp() {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  }
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+}
 
 onMounted(async () => {
   await settingsStore.load();
@@ -27,7 +44,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <TabBar />
+  <TabBar @open-settings="showSettings = true" />
   <div class="main-content" :class="{ 'with-chat': showChat }">
     <div class="board-area">
       <KanbanBoard v-if="projectsStore.activeProject" />
@@ -35,6 +52,8 @@ onMounted(async () => {
         <p>Add a project to get started</p>
       </div>
     </div>
+    <div v-if="showChat" class="divider" @mousedown="startResize" />
+    <ChatPanel v-if="showChat" :style="{ width: chatWidth + 'px' }" />
   </div>
 </template>
 
@@ -45,4 +64,6 @@ onMounted(async () => {
   display: flex; align-items: center; justify-content: center;
   height: 100%; color: var(--text-muted); font-size: 1.1rem;
 }
+.divider { width: 4px; cursor: col-resize; background: var(--border); transition: background 0.15s; }
+.divider:hover { background: var(--accent); }
 </style>
