@@ -39,17 +39,13 @@ async function onAdd(evt: { newIndex?: number }) {
   if (!project) return;
   const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
   if (pipeline) {
-    if (card.state === 'idle' && card.sessionId) {
-      await sessionsStore.resumeSession(card.id, card.sessionId, project.path);
-    } else if (!card.sessionId) {
-      await sessionsStore.startSession(card.id, project.path);
-    }
     const prompt = resolveTemplate(pipeline.prompt, {
       session: { name: card.name, id: card.sessionId },
       project: { path: project.path, name: project.name },
       card: { description: card.description },
       column: { from: fromColumn, to: props.column.name },
     });
+    // send() handles spawning/resuming the Claude process automatically
     await sessionsStore.send(card.id, prompt);
     sessionsStore.openChat(card.id);
   }

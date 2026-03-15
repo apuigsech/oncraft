@@ -3,7 +3,7 @@ import { ref, reactive } from 'vue';
 import type { StreamMessage } from '../types';
 import {
   spawnClaudeSession, resumeClaudeSession,
-  sendMessage, killProcess, isProcessActive,
+  killProcess, isProcessActive,
   checkClaudeBinary, updateSessionId,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
@@ -33,7 +33,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     return available;
   }
 
-  async function startSession(cardId: string, projectPath: string): Promise<string> {
+  async function startSession(cardId: string, projectPath: string, prompt: string): Promise<string> {
     const settingsStore = useSettingsStore();
     const cardsStore = useCardsStore();
     const claudeBinary = settingsStore.settings.claudeBinaryPath;
@@ -50,13 +50,14 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
       },
       (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
+      prompt,
     );
     await cardsStore.updateCardState(cardId, 'active');
     await cardsStore.updateCardSessionId(cardId, sessionId);
     return sessionId;
   }
 
-  async function resumeSession(cardId: string, sessionId: string, projectPath: string): Promise<void> {
+  async function resumeSession(cardId: string, sessionId: string, projectPath: string, prompt: string): Promise<void> {
     const settingsStore = useSettingsStore();
     const cardsStore = useCardsStore();
     const claudeBinary = settingsStore.settings.claudeBinaryPath;
@@ -70,6 +71,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
       },
       (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
+      prompt,
     );
     await cardsStore.updateCardState(cardId, 'active');
   }
@@ -79,39 +81,40 @@ export const useSessionsStore = defineStore('sessions', () => {
     const card = cardsStore.cards.find(c => c.id === cardId);
     appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
 
-    if (!isProcessActive(cardId)) {
-      // No running process — spawn a new one with this message as initial prompt
-      const project = useProjectsStore().activeProject;
-      if (!project) return;
-      const settingsStore = useSettingsStore();
-      const claudeBinary = settingsStore.settings.claudeBinaryPath;
-      if (!await verifyClaudeBinary()) {
-        appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
-        return;
-      }
-
-      const makeCallbacks = () => ({
-        onMessage: (msg: StreamMessage) => {
-          appendMessage(cardId, msg);
-          if (msg.sessionId) {
-            updateSessionId(cardId, msg.sessionId);
-            cardsStore.updateCardSessionId(cardId, msg.sessionId);
-          }
-        },
-        onExit: (code: number) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
-      });
-
-      const cb = makeCallbacks();
-      if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-        await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, cb.onMessage, cb.onExit, message);
-      } else {
-        await spawnClaudeSession(cardId, project.path, claudeBinary, cb.onMessage, cb.onExit, message);
-      }
-      await cardsStore.updateCardState(cardId, 'active');
-    } else {
-      // Process is running — send via stdin
-      await sendMessage(cardId, message);
+    // If a process is still running (previous turn), wait for it or kill it
+    if (isProcessActive(cardId)) {
+      appendMessage(cardId, { type: 'system', content: 'Waiting for previous response to finish...', timestamp: Date.now() });
+      return;
     }
+
+    const project = useProjectsStore().activeProject;
+    if (!project) return;
+    const settingsStore = useSettingsStore();
+    const claudeBinary = settingsStore.settings.claudeBinaryPath;
+    if (!await verifyClaudeBinary()) {
+      appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
+      return;
+    }
+
+    const onMessage = (msg: StreamMessage) => {
+      appendMessage(cardId, msg);
+      if (msg.sessionId) {
+        updateSessionId(cardId, msg.sessionId);
+        cardsStore.updateCardSessionId(cardId, msg.sessionId);
+      }
+    };
+    const onExit = (code: number) => {
+      cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error');
+    };
+
+    // Each message spawns a new `claude -p` process.
+    // Use --resume with real session_id for conversation continuity.
+    if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
+      await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, onMessage, onExit, message);
+    } else {
+      await spawnClaudeSession(cardId, project.path, claudeBinary, onMessage, onExit, message);
+    }
+    await cardsStore.updateCardState(cardId, 'active');
 
     if (card) { card.lastActivityAt = new Date().toISOString(); }
   }
