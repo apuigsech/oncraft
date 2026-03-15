@@ -43,12 +43,16 @@ function setupCommand(
     console.log('[ClaudBan] stderr:', line.substring(0, 300));
   });
   command.on('close', (data) => {
-    // Flush remaining buffer
+    console.log('[ClaudBan] close event, buffer length:', stdoutBuffer.length, 'buffer preview:', stdoutBuffer.substring(0, 200));
+    // Flush remaining buffer — may contain multiple lines
     if (stdoutBuffer.trim()) {
-      const msg = parseStreamLine(stdoutBuffer);
-      if (msg) {
-        console.log('[ClaudBan] parsed (flush):', msg.type, msg.content?.substring(0, 100) || '');
-        onMessage(msg);
+      for (const line of stdoutBuffer.split('\n')) {
+        if (!line.trim()) continue;
+        const msg = parseStreamLine(line);
+        if (msg) {
+          console.log('[ClaudBan] parsed (flush):', msg.type, msg.content?.substring(0, 100) || '');
+          onMessage(msg);
+        }
       }
     }
     console.log('[ClaudBan] process closed with code:', data.code);
