@@ -3,7 +3,6 @@ import { useProjectsStore } from '../stores/projects';
 import { useCardsStore } from '../stores/cards';
 import { usePipelinesStore } from '../stores/pipelines';
 import { open } from '@tauri-apps/plugin-dialog';
-import { basename } from '@tauri-apps/api/path';
 
 const projectsStore = useProjectsStore();
 const cardsStore = useCardsStore();
@@ -19,13 +18,21 @@ async function switchProject(projectId: string) {
 }
 
 async function addProject() {
-  const selected = await open({ directory: true, multiple: false });
-  if (!selected) return;
-  const path = selected as string;
-  const name = await basename(path);
-  const project = await projectsStore.addProject(name, path);
-  await cardsStore.loadForProject(project.id);
-  await pipelinesStore.loadForProject(project.path);
+  try {
+    const selected = await open({ directory: true, multiple: false });
+    console.log('[ClaudBan] dialog result:', selected);
+    if (!selected) return;
+    const path = typeof selected === 'string' ? selected : String(selected);
+    const name = path.split('/').filter(Boolean).pop() || 'project';
+    console.log('[ClaudBan] adding project:', name, path);
+    const project = await projectsStore.addProject(name, path);
+    console.log('[ClaudBan] project added:', project.id);
+    await cardsStore.loadForProject(project.id);
+    await pipelinesStore.loadForProject(project.path);
+    console.log('[ClaudBan] project loaded successfully');
+  } catch (err) {
+    console.error('[ClaudBan] addProject error:', err);
+  }
 }
 </script>
 
