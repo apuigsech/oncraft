@@ -7,10 +7,12 @@ import {
   onMessage, offMessage,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
+import { loadSessionHistory } from '../services/session-history';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
+  const historyLoaded = new Set<string>(); // Track which cards have had history loaded
 
   function getMessages(cardId: string): StreamMessage[] {
     return messages[cardId] || [];
@@ -112,7 +114,25 @@ export const useSessionsStore = defineStore('sessions', () => {
     await cardsStore.updateCardState(cardId, 'idle');
   }
 
-  function openChat(cardId: string): void { activeChatCardId.value = cardId; }
+  async function openChat(cardId: string): Promise<void> {
+    activeChatCardId.value = cardId;
+
+    // Load history from Claude's JSONL files if we haven't already
+    if (!historyLoaded.has(cardId) && (!messages[cardId] || messages[cardId].length === 0)) {
+      const cardsStore = useCardsStore();
+      const card = cardsStore.cards.find(c => c.id === cardId);
+      if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
+        const project = (await import('./projects')).useProjectsStore().activeProject;
+        if (project) {
+          const history = await loadSessionHistory(project.path, card.sessionId);
+          if (history.length > 0) {
+            messages[cardId] = history;
+          }
+        }
+      }
+      historyLoaded.add(cardId);
+    }
+  }
   function closeChat(): void { activeChatCardId.value = null; }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
