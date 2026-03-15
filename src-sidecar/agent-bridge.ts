@@ -1,6 +1,32 @@
 import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+
+// ---- load env vars from ~/.claude/settings.json ----
+function loadClaudeEnv(): Record<string, string | undefined> {
+  const env = { ...process.env };
+  try {
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    const raw = readFileSync(settingsPath, "utf-8");
+    const settings = JSON.parse(raw);
+    if (settings.env && typeof settings.env === "object") {
+      for (const [key, value] of Object.entries(settings.env)) {
+        if (typeof value === "string") {
+          env[key] = value;
+        }
+      }
+      process.stderr.write(`[agent-bridge] loaded ${Object.keys(settings.env).length} env vars from ~/.claude/settings.json\n`);
+    }
+  } catch (err) {
+    process.stderr.write(`[agent-bridge] could not load ~/.claude/settings.json: ${err}\n`);
+  }
+  return env;
+}
+
+const claudeEnv = loadClaudeEnv();
 
 // ---- stdout helpers ----
 function emit(msg: Record<string, unknown>): void {
@@ -148,13 +174,15 @@ rl.on("line", async (line: string) => {
   // Handle start
   if (cmd.cmd === "start") {
     currentAbort = new AbortController();
-    process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}, prompt=${(cmd.prompt as string).substring(0, 50)}\n`);
+    process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}\n`);
 
     try {
       const conversation = query({
         prompt: cmd.prompt as string,
         options: {
           pathToClaudeCodeExecutable: cliPath,
+          executable: "node",
+          env: claudeEnv,
           cwd: cmd.projectPath as string,
           resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
           abortController: currentAbort,
@@ -193,7 +221,8 @@ rl.on("line", async (line: string) => {
         }
       }
     } catch (err: unknown) {
-      process.stderr.write(`[agent-bridge] error: ${err}\n`);
+      process.stderr.write(`[agent-bridge] error: ${String(err)}\n`);
+      process.stderr.write(`[agent-bridge] error stack: ${(err as Error).stack || 'no stack'}\n`);
       if ((err as Error).name === "AbortError") {
         emit({
           type: "system",
