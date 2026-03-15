@@ -523,38 +523,264 @@ Parse `assistant` messages containing TodoWrite tool calls to extract task items
 
 ---
 
+## Feature 11: Input Toolbar (Model, Effort, Branch)
+
+Inspired by Claude Code's desktop app input box, add a toolbar row above the textarea with selectors for model, effort level, and a git branch indicator.
+
+### Task 11.1: Create InputToolbar component
+
+**Files:** `src/components/InputToolbar.vue`, `src/components/ChatPanel.vue`, `src/stores/sessions.ts`, `src-sidecar/agent-bridge.ts`, `src/types/index.ts`
+
+- [ ] **Step 1:** Add types
+
+```typescript
+// In types/index.ts
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+export type ModelAlias = 'opus' | 'sonnet' | 'haiku';
+
+export interface SessionConfig {
+  model: ModelAlias;
+  effort: EffortLevel;
+  permissionMode: PermissionMode;
+  gitBranch?: string;
+}
+```
+
+- [ ] **Step 2:** Add session config to sessions store
+
+```typescript
+const sessionConfigs: Record<string, SessionConfig> = reactive({});
+
+function getSessionConfig(cardId: string): SessionConfig {
+  if (!sessionConfigs[cardId]) {
+    sessionConfigs[cardId] = { model: 'sonnet', effort: 'high', permissionMode: 'default' };
+  }
+  return sessionConfigs[cardId];
+}
+
+function updateSessionConfig(cardId: string, partial: Partial<SessionConfig>): void {
+  const config = getSessionConfig(cardId);
+  Object.assign(config, partial);
+}
+```
+
+- [ ] **Step 3:** Update agent-bridge to accept model, effort, permissionMode in start command
+
+In `agent-bridge.ts`, update the `start` handler:
+
+```typescript
+const conversation = query({
+  prompt: cmd.prompt as string,
+  options: {
+    // ... existing options ...
+    model: cmd.model as string | undefined,     // 'opus', 'sonnet', 'haiku'
+    effort: cmd.effort as string | undefined,   // 'low', 'medium', 'high', 'max'
+    permissionMode: cmd.permissionMode as string || "default",
+  },
+});
+```
+
+Also extract `gitBranch` from the `init` system message and emit it:
+
+```typescript
+if (sysMsg.subtype === "init") {
+  return {
+    type: "system",
+    subtype: "init",
+    sessionId: sysMsg.session_id,
+    gitBranch: sysMsg.git_branch,
+    model: sysMsg.model,
+  };
+}
+```
+
+- [ ] **Step 4:** Update sessions store `send()` to pass config to bridge
+
+```typescript
+// In the start/sendStart commands, include config:
+const config = getSessionConfig(cardId);
+const startCmd = JSON.stringify({
+  cmd: 'start',
+  prompt: message,
+  projectPath: project.path,
+  model: config.model,
+  effort: config.effort,
+  permissionMode: config.permissionMode,
+  ...(sessionId ? { sessionId } : {}),
+});
+```
+
+Also capture gitBranch from init messages:
+
+```typescript
+if (msg.subtype === 'init' && msg.gitBranch) {
+  updateSessionConfig(cardId, { gitBranch: msg.gitBranch });
+}
+```
+
+- [ ] **Step 5:** Create InputToolbar component
+
+```vue
+<!-- src/components/InputToolbar.vue -->
+<script setup lang="ts">
+import type { ModelAlias, EffortLevel, PermissionMode } from '../types';
+
+const props = defineProps<{
+  model: ModelAlias;
+  effort: EffortLevel;
+  permissionMode: PermissionMode;
+  gitBranch?: string;
+}>();
+
+const emit = defineEmits<{
+  'update:model': [value: ModelAlias];
+  'update:effort': [value: EffortLevel];
+  'update:permissionMode': [value: PermissionMode];
+}>();
+
+const MODEL_OPTIONS: { value: ModelAlias; label: string }[] = [
+  { value: 'opus', label: 'Opus' },
+  { value: 'sonnet', label: 'Sonnet' },
+  { value: 'haiku', label: 'Haiku' },
+];
+
+const EFFORT_OPTIONS: { value: EffortLevel; label: string; color: string }[] = [
+  { value: 'low', label: 'Low', color: 'var(--text-muted)' },
+  { value: 'medium', label: 'Med', color: 'var(--warning)' },
+  { value: 'high', label: 'High', color: 'var(--accent)' },
+  { value: 'max', label: 'Max', color: 'var(--error)' },
+];
+
+const MODE_OPTIONS: { value: PermissionMode; label: string; color: string }[] = [
+  { value: 'default', label: 'Default', color: 'var(--text-secondary)' },
+  { value: 'acceptEdits', label: 'Auto-edit', color: 'var(--success)' },
+  { value: 'plan', label: 'Plan', color: 'var(--warning)' },
+  { value: 'bypassPermissions', label: 'YOLO', color: 'var(--error)' },
+];
+</script>
+
+<template>
+  <div class="input-toolbar">
+    <div class="toolbar-left">
+      <!-- Model selector -->
+      <select :value="model" @change="emit('update:model', ($event.target as HTMLSelectElement).value as ModelAlias)"
+        class="toolbar-select">
+        <option v-for="opt in MODEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
+
+      <!-- Effort selector -->
+      <div class="effort-group">
+        <button v-for="opt in EFFORT_OPTIONS" :key="opt.value"
+          class="effort-btn" :class="{ active: effort === opt.value }"
+          :style="effort === opt.value ? { color: opt.color, borderColor: opt.color } : {}"
+          @click="emit('update:effort', opt.value)">
+          {{ opt.label }}
+        </button>
+      </div>
+
+      <!-- Permission mode -->
+      <select :value="permissionMode"
+        @change="emit('update:permissionMode', ($event.target as HTMLSelectElement).value as PermissionMode)"
+        class="toolbar-select mode-select"
+        :style="{ color: MODE_OPTIONS.find(m => m.value === permissionMode)?.color }">
+        <option v-for="opt in MODE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
+    </div>
+
+    <div class="toolbar-right">
+      <!-- Git branch -->
+      <span v-if="gitBranch" class="git-branch" title="Current git branch">
+        ⎇ {{ gitBranch }}
+      </span>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.input-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 10px; border-top: 1px solid var(--bg-tertiary);
+  background: var(--bg-secondary); font-size: 11px;
+}
+.toolbar-left { display: flex; align-items: center; gap: 8px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-select {
+  background: var(--bg-primary); border: 1px solid var(--bg-tertiary);
+  border-radius: 4px; padding: 2px 6px; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer;
+}
+.effort-group { display: flex; gap: 1px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; }
+.effort-btn {
+  padding: 2px 8px; font-size: 10px; color: var(--text-muted);
+  background: var(--bg-primary); border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.effort-btn.active { font-weight: 600; background: var(--bg-secondary); }
+.mode-select { font-weight: 600; }
+.git-branch {
+  color: var(--text-muted); font-family: monospace; font-size: 11px;
+  background: var(--bg-primary); padding: 2px 8px; border-radius: 3px;
+}
+</style>
+```
+
+- [ ] **Step 6:** Wire InputToolbar into ChatPanel, above the textarea
+
+```html
+<!-- In ChatPanel.vue, inside chat-input-area, before textarea -->
+<InputToolbar
+  v-if="card"
+  :model="sessionConfig.model"
+  :effort="sessionConfig.effort"
+  :permission-mode="sessionConfig.permissionMode"
+  :git-branch="sessionConfig.gitBranch"
+  @update:model="v => sessionsStore.updateSessionConfig(card!.id, { model: v })"
+  @update:effort="v => sessionsStore.updateSessionConfig(card!.id, { effort: v })"
+  @update:permission-mode="v => sessionsStore.updateSessionConfig(card!.id, { permissionMode: v })"
+/>
+```
+
+- [ ] **Step 7:** Rebuild sidecar, verify model/effort/mode are sent to Claude
+- [ ] **Step 8:** Commit: "feat: add input toolbar with model, effort, permission mode, and git branch"
+
+---
+
 ## Execution Order & Dependencies
 
 ```
 Feature 2 (Markdown)     ──┐
-Feature 1 (Streaming)    ──┤──> Can run in parallel
-Feature 8 (Multi-line)   ──┘
+Feature 8 (Multi-line)   ──┤──> Quick wins, no dependencies
+Feature 3 (Cancel)       ──┘
 
-Feature 3 (Cancel)       ──> Independent
+Feature 11 (Toolbar)     ──> Supersedes Feature 4 (Mode Switch is now part of toolbar)
+                              Also includes model, effort, branch
 
-Feature 4 (Mode Switch)  ──> Independent
+Feature 7 (Tool Cards)   ──> Independent
+
+Feature 1 (Streaming)    ──> Depends on Feature 2 (markdown) + sidecar change
 
 Feature 5 (Context)      ──┐
 Feature 6 (Metrics)      ──┤──> Share metrics infrastructure
                            └──> Feature 5 before 6
 
-Feature 7 (Tool Cards)   ──> Independent
-
 Feature 9 (Slash Cmds)   ──> Independent
 
-Feature 10 (Tasks)       ──> Independent
+Feature 10 (Tasks)       ──> Independent, highest complexity
 ```
 
 **Suggested execution order:**
 1. Feature 2 (Markdown) — biggest visual impact, no dependencies
 2. Feature 8 (Multi-line) — quick win
 3. Feature 3 (Cancel) — quick win, already wired
-4. Feature 7 (Tool Cards) — visual improvement
-5. Feature 1 (Streaming) — depends on bridge change + Feature 2
-6. Feature 4 (Mode Switch) — quick win
+4. Feature 11 (Input Toolbar) — model, effort, mode, branch (supersedes Feature 4)
+5. Feature 7 (Tool Cards) — visual improvement
+6. Feature 1 (Streaming) — depends on bridge change + Feature 2
 7. Feature 5+6 (Context + Metrics) — together
 8. Feature 9 (Slash Commands) — medium complexity
 9. Feature 10 (Tasks) — highest complexity
+
+Note: Feature 4 (Mode Switch) is now absorbed into Feature 11 (Input Toolbar).
 
 ## Summary
 
@@ -563,10 +789,10 @@ Feature 10 (Tasks)       ──> Independent
 | 1. Streaming | bridge, sessions, ChatMessage | High | Yes |
 | 2. Markdown | ChatMessage, new markdown.ts | Medium | No |
 | 3. Cancel | ChatPanel | Low | No (already wired) |
-| 4. Mode Switch | ChatPanel, sessions, bridge, types | Medium | Yes |
 | 5. Context Gauge | new ContextGauge, sessions | Medium | No |
 | 6. Metrics | new SessionMetrics, sessions | Low | No |
 | 7. Tool Cards | ToolCallBlock | Medium | No |
 | 8. Multi-line | ChatPanel | Low | No |
 | 9. Slash Cmds | new SlashCommandPalette, ChatPanel | Medium | No |
 | 10. Tasks | new TaskListDisplay, sessions, bridge | High | Yes |
+| 11. Input Toolbar | new InputToolbar, ChatPanel, sessions, bridge, types | Medium | Yes |
