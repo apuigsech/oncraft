@@ -27,13 +27,20 @@ const DEFAULT_PIPELINES: PipelineConfig[] = [
 
 export async function loadProjectConfig(projectPath: string): Promise<ProjectConfig> {
   const configPath = `${projectPath}/${CONFIG_FILE}`;
-  const configExists = await exists(configPath);
-  if (!configExists) {
-    return createDefaultConfig(projectPath);
+  try {
+    const configExists = await exists(configPath);
+    if (!configExists) {
+      return await createDefaultConfig(projectPath);
+    }
+    const content = await readTextFile(configPath);
+    const raw = yaml.load(content) as Record<string, unknown>;
+    return validateConfig(raw);
+  } catch (err) {
+    console.warn('[ClaudBan] config load error, using defaults:', err);
+    // Try to create it, but don't fail if we can't
+    try { await createDefaultConfig(projectPath); } catch { /* ignore */ }
+    return { columns: DEFAULT_COLUMNS, pipelines: DEFAULT_PIPELINES };
   }
-  const content = await readTextFile(configPath);
-  const raw = yaml.load(content) as Record<string, unknown>;
-  return validateConfig(raw);
 }
 
 async function createDefaultConfig(projectPath: string): Promise<ProjectConfig> {
@@ -41,12 +48,16 @@ async function createDefaultConfig(projectPath: string): Promise<ProjectConfig> 
     columns: DEFAULT_COLUMNS,
     pipelines: DEFAULT_PIPELINES,
   };
-  const dirPath = `${projectPath}/${CONFIG_DIR}`;
-  const dirExists = await exists(dirPath);
-  if (!dirExists) {
-    await mkdir(dirPath);
+  try {
+    const dirPath = `${projectPath}/${CONFIG_DIR}`;
+    const dirExists = await exists(dirPath);
+    if (!dirExists) {
+      await mkdir(dirPath);
+    }
+    await saveProjectConfig(projectPath, config);
+  } catch (err) {
+    console.warn('[ClaudBan] could not save default config:', err);
   }
-  await saveProjectConfig(projectPath, config);
   return config;
 }
 
