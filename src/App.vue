@@ -40,6 +40,10 @@ onMounted(async () => {
   try {
     await settingsStore.load();
     console.log('[ClaudBan] settings loaded');
+  } catch (err) {
+    console.warn('[ClaudBan] settings load failed, using defaults:', err);
+  }
+  try {
     await projectsStore.load();
     console.log('[ClaudBan] projects loaded:', projectsStore.projects.length, 'projects, active:', projectsStore.activeProjectId);
     if (projectsStore.activeProject) {
@@ -48,7 +52,7 @@ onMounted(async () => {
       console.log('[ClaudBan] active project loaded:', projectsStore.activeProject.name);
     }
   } catch (err) {
-    console.error('[ClaudBan] startup error:', err);
+    console.error('[ClaudBan] project load error:', err);
   }
 });
 </script>

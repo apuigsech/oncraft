@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { homeDir } from '@tauri-apps/api/path';
+import { readTextFile, writeTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
 import * as yaml from 'js-yaml';
 import type { GlobalSettings } from '../types';
 
@@ -22,30 +21,38 @@ export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<GlobalSettings>({ ...DEFAULT_SETTINGS });
   const loaded = ref(false);
 
-  async function getSettingsPath(): Promise<string> {
-    const home = await homeDir();
-    return `${home}.claudban`;
-  }
+  const SETTINGS_FILE = 'settings.yaml';
 
   async function load(): Promise<void> {
-    const dir = await getSettingsPath();
-    const filePath = `${dir}/settings.yaml`;
-    const dirExists = await exists(dir);
-    if (!dirExists) { await mkdir(dir); }
-    const fileExists = await exists(filePath);
-    if (fileExists) {
-      const content = await readTextFile(filePath);
-      const raw = yaml.load(content) as Partial<GlobalSettings>;
-      settings.value = { ...DEFAULT_SETTINGS, ...raw };
+    try {
+      const dirExists = await exists('', { baseDir: BaseDirectory.AppConfig });
+      if (!dirExists) {
+        await mkdir('', { baseDir: BaseDirectory.AppConfig, recursive: true });
+      }
+    } catch {
+      // Directory might already exist
+    }
+    try {
+      const fileExists = await exists(SETTINGS_FILE, { baseDir: BaseDirectory.AppConfig });
+      if (fileExists) {
+        const content = await readTextFile(SETTINGS_FILE, { baseDir: BaseDirectory.AppConfig });
+        const raw = yaml.load(content) as Partial<GlobalSettings>;
+        settings.value = { ...DEFAULT_SETTINGS, ...raw };
+      }
+    } catch (err) {
+      console.warn('[ClaudBan] Could not load settings, using defaults:', err);
     }
     loaded.value = true;
   }
 
   async function save(): Promise<void> {
-    const dir = await getSettingsPath();
-    const filePath = `${dir}/settings.yaml`;
+    try {
+      await mkdir('', { baseDir: BaseDirectory.AppConfig, recursive: true });
+    } catch {
+      // Already exists
+    }
     const content = yaml.dump(settings.value, { lineWidth: 120 });
-    await writeTextFile(filePath, content);
+    await writeTextFile(SETTINGS_FILE, content, { baseDir: BaseDirectory.AppConfig });
   }
 
   async function updateClaudePath(path: string): Promise<void> {

@@ -20,7 +20,7 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   async function addProject(name: string, path: string): Promise<Project> {
-    // If project with this path already exists, just activate it
+    // Check in-memory first
     const existing = projects.value.find(p => p.path === path);
     if (existing) {
       activeProjectId.value = existing.id;
@@ -34,7 +34,19 @@ export const useProjectsStore = defineStore('projects', () => {
       createdAt: new Date().toISOString(),
       lastOpenedAt: new Date().toISOString(),
     };
-    await db.insertProject(project);
+    try {
+      await db.insertProject(project);
+    } catch {
+      // UNIQUE constraint — project exists in DB but not in memory (load() may have failed)
+      await load(); // Reload from DB
+      const reloaded = projects.value.find(p => p.path === path);
+      if (reloaded) {
+        activeProjectId.value = reloaded.id;
+        await db.updateProjectLastOpened(reloaded.id);
+        return reloaded;
+      }
+      throw new Error(`Failed to add project at ${path}`);
+    }
     projects.value.push(project);
     activeProjectId.value = project.id;
     return project;
