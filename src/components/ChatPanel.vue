@@ -8,6 +8,7 @@ import InputToolbar from './InputToolbar.vue';
 import ContextGauge from './ContextGauge.vue';
 import SessionMetrics from './SessionMetrics.vue';
 import SlashCommandPalette from './SlashCommandPalette.vue';
+import TaskListDisplay from './TaskListDisplay.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -112,6 +113,7 @@ function resetTextareaHeight() {
       <button class="close-btn" @click="sessionsStore.closeChat()">x</button>
     </div>
     <div ref="messagesContainer" class="chat-messages">
+      <TaskListDisplay :messages="messages" />
       <template v-for="(msg, i) in messages" :key="i">
         <ToolCallBlock
           v-if="msg.type === 'tool_use' || msg.type === 'tool_result' || msg.type === 'tool_confirmation'"
