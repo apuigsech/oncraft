@@ -1,4 +1,4 @@
-import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
 import { readFileSync } from "fs";
@@ -234,6 +234,31 @@ rl.on("line", async (line: string) => {
       }
     } finally {
       currentAbort = null;
+    }
+    return;
+  }
+
+  // Handle loadHistory
+  if (cmd.cmd === "loadHistory") {
+    try {
+      const sessionId = cmd.sessionId as string;
+      process.stderr.write(`[agent-bridge] loading history for session ${sessionId}\n`);
+      const history = await getSessionMessages(sessionId);
+      const translated: Record<string, unknown>[] = [];
+      for (const msg of history) {
+        const t = translateMessage(msg as SDKMessage);
+        if (t) {
+          if (Array.isArray(t)) {
+            translated.push(...t);
+          } else {
+            translated.push(t);
+          }
+        }
+      }
+      emit({ type: "history", messages: translated });
+    } catch (err) {
+      process.stderr.write(`[agent-bridge] history error: ${err}\n`);
+      emit({ type: "history", messages: [], error: String(err) });
     }
     return;
   }

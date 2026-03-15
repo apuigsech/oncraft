@@ -162,3 +162,68 @@ export function isQueryActive(cardId: string): boolean {
 export function markQueryComplete(cardId: string): void {
   activeQueries.delete(cardId);
 }
+
+// Load session history via the sidecar's loadHistory command.
+// Spawns a temporary sidecar, sends the command, collects the result, and kills it.
+export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMessage[]> {
+  return new Promise((resolve) => {
+    const command = Command.sidecar('binaries/agent-bridge');
+    let lineBuffer = '';
+    let resolved = false;
+
+    command.stdout.on('data', (data: string) => {
+      lineBuffer += data;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === 'history') {
+            resolved = true;
+            const messages: StreamMessage[] = (parsed.messages || []).map(
+              (m: Record<string, unknown>) => parseStreamLine(JSON.stringify(m))
+            ).filter(Boolean) as StreamMessage[];
+            resolve(messages);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    command.on('close', () => {
+      if (!resolved) resolve([]);
+    });
+
+    command.on('error', () => {
+      if (!resolved) resolve([]);
+    });
+
+    command.spawn().then(async (child) => {
+      const cmd = JSON.stringify({ cmd: 'loadHistory', sessionId });
+      await child.write(cmd + '\n');
+      // Give it time to respond, then kill
+      setTimeout(() => {
+        if (!resolved) {
+          // Flush buffer
+          if (lineBuffer.trim()) {
+            try {
+              const parsed = JSON.parse(lineBuffer);
+              if (parsed.type === 'history') {
+                resolved = true;
+                const messages: StreamMessage[] = (parsed.messages || []).map(
+                  (m: Record<string, unknown>) => parseStreamLine(JSON.stringify(m))
+                ).filter(Boolean) as StreamMessage[];
+                resolve(messages);
+              }
+            } catch { /* ignore */ }
+          }
+          if (!resolved) resolve([]);
+        }
+        child.kill();
+      }, 10000);
+    }).catch(() => resolve([]));
+  });
+}

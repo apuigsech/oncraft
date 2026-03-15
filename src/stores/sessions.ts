@@ -7,7 +7,6 @@ import {
   onMessage, offMessage,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
-import { loadSessionHistory } from '../services/session-history';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
@@ -117,17 +116,17 @@ export const useSessionsStore = defineStore('sessions', () => {
   async function openChat(cardId: string): Promise<void> {
     activeChatCardId.value = cardId;
 
-    // Load history from Claude's JSONL files if we haven't already
+    // Load history via sidecar SDK if we haven't already
     if (!historyLoaded.has(cardId) && (!messages[cardId] || messages[cardId].length === 0)) {
       const cardsStore = useCardsStore();
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-        const project = (await import('./projects')).useProjectsStore().activeProject;
-        if (project) {
-          const history = await loadSessionHistory(project.path, card.sessionId);
-          if (history.length > 0) {
-            messages[cardId] = history;
-          }
+        console.log('[ClaudBan] loading history for session:', card.sessionId);
+        const { loadHistoryViaSidecar } = await import('../services/claude-process');
+        const history = await loadHistoryViaSidecar(card.sessionId);
+        console.log('[ClaudBan] loaded', history.length, 'messages from history');
+        if (history.length > 0) {
+          messages[cardId] = history;
         }
       }
       historyLoaded.add(cardId);
