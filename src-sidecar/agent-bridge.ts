@@ -147,6 +147,7 @@ rl.on("line", async (line: string) => {
   // Handle start
   if (cmd.cmd === "start") {
     currentAbort = new AbortController();
+    process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}, prompt=${(cmd.prompt as string).substring(0, 50)}\n`);
 
     try {
       const conversation = query({
@@ -190,6 +191,7 @@ rl.on("line", async (line: string) => {
         }
       }
     } catch (err: unknown) {
+      process.stderr.write(`[agent-bridge] error: ${err}\n`);
       if ((err as Error).name === "AbortError") {
         emit({
           type: "system",
