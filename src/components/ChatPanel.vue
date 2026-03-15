@@ -2,14 +2,11 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { useSessionsStore } from '../stores/sessions';
 import { useCardsStore } from '../stores/cards';
-import { useProjectsStore } from '../stores/projects';
 import ChatMessage from './ChatMessage.vue';
 import ToolCallBlock from './ToolCallBlock.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
-const projectsStore = useProjectsStore();
-
 const input = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 
@@ -33,18 +30,12 @@ watch(messages, async () => {
 async function sendMessage() {
   if (!input.value.trim() || !sessionsStore.activeChatCardId) return;
   const cardId = sessionsStore.activeChatCardId;
-  const c = card.value;
-  if (c && c.state !== 'active') {
-    const project = projectsStore.activeProject;
-    if (!project) return;
-    if (c.sessionId) {
-      await sessionsStore.resumeSession(cardId, c.sessionId, project.path);
-    } else {
-      await sessionsStore.startSession(cardId, project.path);
-    }
+  try {
+    await sessionsStore.send(cardId, input.value.trim());
+    input.value = '';
+  } catch (err) {
+    console.error('[ClaudBan] send error:', err);
   }
-  await sessionsStore.send(cardId, input.value.trim());
-  input.value = '';
 }
 </script>
 

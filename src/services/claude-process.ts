@@ -22,10 +22,12 @@ function setupCommand(
   onExit: (code: number) => void,
 ): void {
   command.stdout.on('data', (line: string) => {
+    console.log('[ClaudBan] stdout:', line);
     const msg = parseStreamLine(line);
     if (msg) onMessage(msg);
   });
   command.stderr.on('data', (line: string) => {
+    console.log('[ClaudBan] stderr:', line);
     const msg = parseStreamLine(line);
     if (msg) onMessage(msg);
   });
@@ -71,8 +73,20 @@ function getScopeName(): string {
 export async function spawnClaudeSession(
   cardId: string, projectPath: string, _claudeBinary: string,
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
+  initialPrompt?: string,
 ): Promise<string> {
-  const command = Command.create(getScopeName(), ['--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
+  // Claude Code requires -p (print mode) for --output-format stream-json.
+  // Use --input-format stream-json for continuous conversation via stdin.
+  const args = [
+    '-p',
+    '--output-format', 'stream-json',
+    '--input-format', 'stream-json',
+    '--verbose',
+  ];
+  if (initialPrompt) {
+    args.push(initialPrompt);
+  }
+  const command = Command.create(getScopeName(), args, { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();
   const sessionId = `pending-${cardId}`;
@@ -84,8 +98,19 @@ export async function spawnClaudeSession(
 export async function resumeClaudeSession(
   cardId: string, sessionId: string, projectPath: string, _claudeBinary: string,
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
+  initialPrompt?: string,
 ): Promise<void> {
-  const command = Command.create(getScopeName(), ['--resume', sessionId, '--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
+  const args = [
+    '-p',
+    '--resume', sessionId,
+    '--output-format', 'stream-json',
+    '--input-format', 'stream-json',
+    '--verbose',
+  ];
+  if (initialPrompt) {
+    args.push(initialPrompt);
+  }
+  const command = Command.create(getScopeName(), args, { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();
   const proc: ClaudeProcess = { sessionId, child, onMessage, onExit };
@@ -95,7 +120,9 @@ export async function resumeClaudeSession(
 export async function sendMessage(cardId: string, message: string): Promise<void> {
   const proc = activeProcesses.get(cardId);
   if (!proc) throw new Error(`No active process for card ${cardId}`);
-  await proc.child.write(message + '\n');
+  // With --input-format stream-json, send JSON-formatted messages
+  const jsonMsg = JSON.stringify({ type: 'user', content: message });
+  await proc.child.write(jsonMsg + '\n');
 }
 
 export function updateSessionId(cardId: string, sessionId: string): void {

@@ -65,7 +65,7 @@ async function createSession(name: string, description: string) {
   const project = projectsStore.activeProject;
   if (!project) return;
   const card = await cardsStore.addCard(project.id, props.column.name, name, description);
-  await sessionsStore.startSession(card.id, project.path);
+  // Don't start session yet — it will start when the user sends the first message
   sessionsStore.openChat(card.id);
 }
 </script>

@@ -8,6 +8,7 @@ import {
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
 import { useSettingsStore } from './settings';
+import { useProjectsStore } from './projects';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
@@ -74,10 +75,44 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function send(cardId: string, message: string): Promise<void> {
-    appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
-    await sendMessage(cardId, message);
     const cardsStore = useCardsStore();
     const card = cardsStore.cards.find(c => c.id === cardId);
+    appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
+
+    if (!isProcessActive(cardId)) {
+      // No running process — spawn a new one with this message as initial prompt
+      const project = useProjectsStore().activeProject;
+      if (!project) return;
+      const settingsStore = useSettingsStore();
+      const claudeBinary = settingsStore.settings.claudeBinaryPath;
+      if (!await verifyClaudeBinary()) {
+        appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
+        return;
+      }
+
+      const makeCallbacks = () => ({
+        onMessage: (msg: StreamMessage) => {
+          appendMessage(cardId, msg);
+          if (msg.sessionId) {
+            updateSessionId(cardId, msg.sessionId);
+            cardsStore.updateCardSessionId(cardId, msg.sessionId);
+          }
+        },
+        onExit: (code: number) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
+      });
+
+      const cb = makeCallbacks();
+      if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
+        await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, cb.onMessage, cb.onExit, message);
+      } else {
+        await spawnClaudeSession(cardId, project.path, claudeBinary, cb.onMessage, cb.onExit, message);
+      }
+      await cardsStore.updateCardState(cardId, 'active');
+    } else {
+      // Process is running — send via stdin
+      await sendMessage(cardId, message);
+    }
+
     if (card) { card.lastActivityAt = new Date().toISOString(); }
   }
 
