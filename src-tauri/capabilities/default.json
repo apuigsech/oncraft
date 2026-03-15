@@ -59,17 +59,32 @@
     "sql:allow-select",
     "dialog:allow-open",
     "fs:default",
-    "fs:allow-read",
-    "fs:allow-write",
-    "fs:allow-exists",
-    "fs:allow-mkdir",
-    "fs:allow-write-text-file",
-    "fs:scope-appconfig-recursive",
-    "fs:scope-appdata-recursive",
-    "fs:scope-applocaldata-recursive",
-    "fs:scope-home-recursive",
     {
-      "identifier": "fs:scope",
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
       "allow": [
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
