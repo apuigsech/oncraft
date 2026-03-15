@@ -99,7 +99,7 @@ export async function spawnClaudeSession(
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
   prompt: string,
 ): Promise<string> {
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', prompt];
+  const args = ['-p', '--output-format', 'json', prompt];
   const command = Command.create(getScopeName(), args, { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();
@@ -114,7 +114,7 @@ export async function resumeClaudeSession(
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
   prompt: string,
 ): Promise<void> {
-  const args = ['-p', '--resume', sessionId, '--output-format', 'stream-json', '--verbose', prompt];
+  const args = ['-p', '--resume', sessionId, '--output-format', 'json', prompt];
   const command = Command.create(getScopeName(), args, { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();

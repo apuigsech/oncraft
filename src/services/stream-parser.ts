@@ -53,15 +53,16 @@ export function parseStreamLine(line: string): StreamMessage | null {
       return null;
     }
 
-    // Result message — final summary
+    // Result message — with --output-format json, this contains the full response
     if (data.type === 'result') {
       if (data.is_error) {
         const errorMsg = data.errors?.join('; ') || data.result || 'Unknown error';
         return { type: 'system', content: `Error: ${errorMsg}`, sessionId: data.session_id || undefined, timestamp: Date.now() };
       }
+      // The `result` field contains Claude's text response
       return {
-        type: 'system',
-        content: data.result ? 'Done' : '',
+        type: 'assistant',
+        content: data.result || '',
         sessionId: data.session_id || undefined,
         timestamp: Date.now(),
       };
