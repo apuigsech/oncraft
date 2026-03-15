@@ -10,9 +10,12 @@ export async function loadSessionHistory(
   projectPath: string,
   sessionId: string,
 ): Promise<StreamMessage[]> {
-  const home = await homeDir();
+  let home = await homeDir();
+  // Ensure trailing slash
+  if (!home.endsWith('/')) home += '/';
   // Claude encodes project paths by replacing / with -
-  const encodedPath = projectPath.replace(/^\//, '').replace(/\//g, '-');
+  // The leading / becomes a leading - (e.g. /Users/foo -> -Users-foo)
+  const encodedPath = projectPath.replace(/\//g, '-');
   const jsonlPath = `${home}.claude/projects/${encodedPath}/${sessionId}.jsonl`;
 
   console.log('[ClaudBan] loading session history from:', jsonlPath);
