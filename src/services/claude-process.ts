@@ -10,6 +10,8 @@ interface SidecarProcess {
 // Track running sidecar processes by cardId
 const processes = new Map<string, SidecarProcess>();
 const messageCallbacks = new Map<string, (msg: StreamMessage) => void>();
+// Track whether a query is actively running (vs sidecar idle between queries)
+const activeQueries = new Set<string>();
 
 export function onMessage(cardId: string, callback: (msg: StreamMessage) => void): void {
   messageCallbacks.set(cardId, callback);
@@ -68,6 +70,7 @@ export async function spawnSession(
     }
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
+    activeQueries.delete(cardId);
     console.log('[ClaudBan] sidecar closed, code:', payload.code);
   });
 
@@ -93,7 +96,26 @@ export async function spawnSession(
 
   processes.set(cardId, proc);
 
-  // Send the start command
+  // Mark query as active and send the start command
+  activeQueries.add(cardId);
+  const startCmd = JSON.stringify({
+    cmd: 'start',
+    prompt,
+    projectPath,
+    ...(sessionId ? { sessionId } : {}),
+  });
+  await proc.write(startCmd);
+}
+
+export async function sendStart(
+  cardId: string,
+  projectPath: string,
+  prompt: string,
+  sessionId?: string,
+): Promise<void> {
+  const proc = processes.get(cardId);
+  if (!proc) throw new Error('No sidecar process for this card');
+  activeQueries.add(cardId);
   const startCmd = JSON.stringify({
     cmd: 'start',
     prompt,
@@ -126,8 +148,17 @@ export async function killProcess(cardId: string): Promise<void> {
   proc.kill();
   processes.delete(cardId);
   messageCallbacks.delete(cardId);
+  activeQueries.delete(cardId);
 }
 
 export function isProcessActive(cardId: string): boolean {
   return processes.has(cardId);
+}
+
+export function isQueryActive(cardId: string): boolean {
+  return activeQueries.has(cardId);
+}
+
+export function markQueryComplete(cardId: string): void {
+  activeQueries.delete(cardId);
 }

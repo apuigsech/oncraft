@@ -2,7 +2,9 @@ import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
 import type { StreamMessage } from '../types';
 import {
-  spawnSession, sendReply, interrupt, killProcess, isProcessActive, onMessage, offMessage,
+  spawnSession, sendStart, sendReply, interrupt, killProcess,
+  isProcessActive, isQueryActive, markQueryComplete,
+  onMessage, offMessage,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
 
@@ -29,15 +31,17 @@ export const useSessionsStore = defineStore('sessions', () => {
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
       }
 
-      // On result message, set card to idle
+      // On result message, mark query complete and set card to idle
       if (msg.subtype === 'result') {
+        markQueryComplete(cardId);
         cardsStore.updateCardState(cardId, 'idle');
         // Don't append empty result messages to chat
         if (!msg.content) return;
       }
 
-      // On error, set card to error state
+      // On error, mark query complete and set card to error state
       if (msg.subtype === 'error') {
+        markQueryComplete(cardId);
         cardsStore.updateCardState(cardId, 'error');
       }
 
@@ -51,7 +55,8 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
 
-    if (isProcessActive(cardId)) {
+    // Block only if a query is actively running (not just sidecar alive)
+    if (isQueryActive(cardId)) {
       appendMessage(cardId, { type: 'system', content: 'Waiting for current response to finish...', timestamp: Date.now() });
       return;
     }
@@ -61,19 +66,30 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     await cardsStore.updateCardState(cardId, 'active');
 
-    // Set up listener before spawning so we don't miss early messages
-    setupMessageListener(cardId);
-
     // Determine session ID for resume
     const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
       ? card.sessionId : undefined;
 
-    try {
-      await spawnSession(cardId, project.path, message, sessionId);
-    } catch (err) {
-      appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
-      await cardsStore.updateCardState(cardId, 'idle');
-      offMessage(cardId);
+    // If sidecar is already alive (previous query completed), reuse it
+    // by sending a new start command. Otherwise spawn a fresh sidecar.
+    if (isProcessActive(cardId)) {
+      // Sidecar is idle — send a new start command to the existing process
+      try {
+        await sendStart(cardId, project.path, message, sessionId);
+      } catch (err) {
+        appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
+        await cardsStore.updateCardState(cardId, 'idle');
+      }
+    } else {
+      // No sidecar running — spawn a new one
+      setupMessageListener(cardId);
+      try {
+        await spawnSession(cardId, project.path, message, sessionId);
+      } catch (err) {
+        appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
+        await cardsStore.updateCardState(cardId, 'idle');
+        offMessage(cardId);
+      }
     }
   }
 
@@ -98,7 +114,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function openChat(cardId: string): void { activeChatCardId.value = cardId; }
   function closeChat(): void { activeChatCardId.value = null; }
-  function isActive(cardId: string): boolean { return isProcessActive(cardId); }
+  function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
   return {
     messages, activeChatCardId,
