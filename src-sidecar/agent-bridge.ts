@@ -83,21 +83,32 @@ function translateMessage(
 
   if (msg.type === "user") {
     const content = msg.message?.content;
-    if (!content || !Array.isArray(content)) return null;
+    if (!content) return null;
 
+    // Content can be a plain string
+    if (typeof content === "string") {
+      return { type: "user", content };
+    }
+
+    if (!Array.isArray(content)) return null;
+
+    const results: Record<string, unknown>[] = [];
     for (const block of content as Record<string, unknown>[]) {
-      if (block.type === "tool_result") {
-        return {
+      if (block.type === "text") {
+        results.push({ type: "user", content: block.text });
+      } else if (block.type === "tool_result") {
+        results.push({
           type: "tool_result",
           toolUseId: block.tool_use_id,
           content:
             typeof block.content === "string"
               ? block.content
               : JSON.stringify(block.content),
-        };
+        });
       }
     }
-    return null;
+    if (results.length === 0) return null;
+    return results.length === 1 ? results[0] : results;
   }
 
   if (msg.type === "result") {
