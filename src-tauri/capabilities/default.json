@@ -61,35 +61,23 @@
     "fs:default",
     {
       "identifier": "fs:allow-exists",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$APPDATA/**" }
-      ]
+      "allow": [{ "path": "/**" }]
     },
     {
       "identifier": "fs:allow-read",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$APPDATA/**" }
-      ]
+      "allow": [{ "path": "/**" }]
     },
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$APPDATA/**" }
-      ]
+      "allow": [{ "path": "/**" }]
     },
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$APPDATA/**" }
-      ]
+      "allow": [{ "path": "/**" }]
+    },
+    {
+      "identifier": "fs:allow-write",
+      "allow": [{ "path": "/**" }]
     }
   ]
 }
