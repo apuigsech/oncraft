@@ -17,6 +17,15 @@ async function switchProject(projectId: string) {
   }
 }
 
+async function closeProject(projectId: string) {
+  await projectsStore.removeProject(projectId);
+  const active = projectsStore.activeProject;
+  if (active) {
+    await cardsStore.loadForProject(active.id);
+    await pipelinesStore.loadForProject(active.path);
+  }
+}
+
 async function addProject() {
   try {
     const selected = await open({ directory: true, multiple: false });
@@ -38,15 +47,16 @@ async function addProject() {
 
 <template>
   <div class="tab-bar">
-    <button
+    <div
       v-for="project in projectsStore.projects"
       :key="project.id"
       class="tab"
       :class="{ active: project.id === projectsStore.activeProjectId }"
       @click="switchProject(project.id)"
     >
-      {{ project.name }}
-    </button>
+      <span class="tab-name">{{ project.name }}</span>
+      <button class="tab-close" @click.stop="closeProject(project.id)" title="Close project">&times;</button>
+    </div>
     <button class="tab add-tab" @click="addProject">+</button>
     <div style="flex:1" />
     <button
@@ -81,8 +91,16 @@ async function addProject() {
   -webkit-app-region: no-drag;
   transition: background 0.15s;
 }
+.tab { display: flex; align-items: center; gap: 6px; }
 .tab:hover { background: var(--bg-tertiary); }
 .tab.active { background: var(--bg-primary); color: var(--text-primary); }
+.tab-name { pointer-events: none; }
+.tab-close {
+  font-size: 14px; line-height: 1; padding: 0 2px; border-radius: 3px;
+  color: var(--text-muted); opacity: 0; transition: opacity 0.15s;
+}
+.tab:hover .tab-close { opacity: 1; }
+.tab-close:hover { background: var(--bg-tertiary); color: var(--error); }
 .add-tab { color: var(--text-muted); font-size: 16px; padding: 4px 12px; }
 .settings-tab { color: var(--text-muted); font-size: 12px; }
 </style>
