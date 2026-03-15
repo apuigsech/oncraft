@@ -87,9 +87,11 @@ export function parseStreamLine(line: string): StreamMessage | null {
       return { type: 'tool_confirmation', content: data.message || data.content || '', toolName: data.tool || data.name || '', toolInput: data.input || {}, timestamp: Date.now() };
     }
 
-    // Unknown — ignore silently
-    return null;
-  } catch {
+    // Unknown — log and show
+    console.log('[ClaudBan] unknown message type:', data.type, JSON.stringify(data).substring(0, 300));
+    return { type: 'system', content: `[${data.type}] ${data.subtype || ''}`, timestamp: Date.now() };
+  } catch (e) {
+    console.log('[ClaudBan] parse error for line:', line.substring(0, 200), e);
     return null;
   }
 }
