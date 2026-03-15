@@ -183,8 +183,18 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMe
           if (parsed.type === 'history') {
             resolved = true;
             const messages: StreamMessage[] = (parsed.messages || []).map(
-              (m: Record<string, unknown>) => parseStreamLine(JSON.stringify(m))
-            ).filter(Boolean) as StreamMessage[];
+              (m: Record<string, unknown>) => ({
+                type: m.type as StreamMessage['type'],
+                content: (m.content as string) || '',
+                toolName: m.toolName as string | undefined,
+                toolInput: m.toolInput as Record<string, unknown> | undefined,
+                toolResult: m.content as string | undefined,
+                toolUseId: m.toolUseId as string | undefined,
+                subtype: m.subtype as string | undefined,
+                sessionId: m.sessionId as string | undefined,
+                timestamp: Date.now(),
+              } satisfies StreamMessage)
+            );
             resolve(messages);
           }
         } catch {
@@ -214,8 +224,18 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMe
               if (parsed.type === 'history') {
                 resolved = true;
                 const messages: StreamMessage[] = (parsed.messages || []).map(
-                  (m: Record<string, unknown>) => parseStreamLine(JSON.stringify(m))
-                ).filter(Boolean) as StreamMessage[];
+                  (m: Record<string, unknown>) => ({
+                    type: m.type as StreamMessage['type'],
+                    content: (m.content as string) || '',
+                    toolName: m.toolName as string | undefined,
+                    toolInput: m.toolInput as Record<string, unknown> | undefined,
+                    toolResult: m.content as string | undefined,
+                    toolUseId: m.toolUseId as string | undefined,
+                    subtype: m.subtype as string | undefined,
+                    sessionId: m.sessionId as string | undefined,
+                    timestamp: Date.now(),
+                  } satisfies StreamMessage)
+                );
                 resolve(messages);
               }
             } catch { /* ignore */ }
