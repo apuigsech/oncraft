@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
-import type { StreamMessage } from '../types';
+import type { StreamMessage, SessionConfig } from '../types';
 import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
@@ -11,7 +11,20 @@ import { useCardsStore } from './cards';
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
-  const historyLoaded = new Set<string>(); // Track which cards have had history loaded
+  const historyLoaded = new Set<string>();
+  const sessionConfigs: Record<string, SessionConfig> = reactive({});
+
+  function getSessionConfig(cardId: string): SessionConfig {
+    if (!sessionConfigs[cardId]) {
+      sessionConfigs[cardId] = { model: 'sonnet', effort: 'high', permissionMode: 'default' };
+    }
+    return sessionConfigs[cardId];
+  }
+
+  function updateSessionConfig(cardId: string, partial: Partial<SessionConfig>): void {
+    const config = getSessionConfig(cardId);
+    Object.assign(config, partial);
+  }
 
   function getMessages(cardId: string): StreamMessage[] {
     return messages[cardId] || [];
@@ -27,9 +40,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     onMessage(cardId, (msg: StreamMessage) => {
       const cardsStore = useCardsStore();
 
-      // Capture session ID from init or result messages
+      // Capture session ID and git branch from init or result messages
       if (msg.sessionId) {
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
+      }
+      if (msg.subtype === 'init' && (msg as unknown as Record<string, unknown>).gitBranch) {
+        updateSessionConfig(cardId, { gitBranch: (msg as unknown as Record<string, unknown>).gitBranch as string });
       }
 
       // On result message, mark query complete and set card to idle
@@ -71,12 +87,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
       ? card.sessionId : undefined;
 
+    const config = getSessionConfig(cardId);
+
     // If sidecar is already alive (previous query completed), reuse it
-    // by sending a new start command. Otherwise spawn a fresh sidecar.
     if (isProcessActive(cardId)) {
-      // Sidecar is idle — send a new start command to the existing process
       try {
-        await sendStart(cardId, project.path, message, sessionId);
+        await sendStart(cardId, project.path, message, sessionId, config);
       } catch (err) {
         appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
         await cardsStore.updateCardState(cardId, 'idle');
@@ -85,7 +101,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       // No sidecar running — spawn a new one
       setupMessageListener(cardId);
       try {
-        await spawnSession(cardId, project.path, message, sessionId);
+        await spawnSession(cardId, project.path, message, sessionId, config);
       } catch (err) {
         appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
         await cardsStore.updateCardState(cardId, 'idle');
@@ -136,8 +152,9 @@ export const useSessionsStore = defineStore('sessions', () => {
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
   return {
-    messages, activeChatCardId,
-    getMessages, send, approveToolUse, rejectToolUse,
+    messages, activeChatCardId, sessionConfigs,
+    getMessages, getSessionConfig, updateSessionConfig,
+    send, approveToolUse, rejectToolUse,
     interruptSession, stopSession, openChat, closeChat, isActive,
   };
 });

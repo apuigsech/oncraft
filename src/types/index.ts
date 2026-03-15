@@ -59,6 +59,17 @@ export interface StreamMessage {
   retryAfter?: number;
 }
 
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+export type ModelAlias = 'opus' | 'sonnet' | 'haiku';
+
+export interface SessionConfig {
+  model: ModelAlias;
+  effort: EffortLevel;
+  permissionMode: PermissionMode;
+  gitBranch?: string;
+}
+
 export interface TemplateContext {
   session: { name: string; id: string };
   project: { path: string; name: string };

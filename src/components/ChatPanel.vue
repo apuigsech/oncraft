@@ -4,6 +4,7 @@ import { useSessionsStore } from '../stores/sessions';
 import { useCardsStore } from '../stores/cards';
 import ChatMessage from './ChatMessage.vue';
 import ToolCallBlock from './ToolCallBlock.vue';
+import InputToolbar from './InputToolbar.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -24,6 +25,11 @@ const messages = computed(() => {
 const isActive = computed(() => {
   if (!sessionsStore.activeChatCardId) return false;
   return sessionsStore.isActive(sessionsStore.activeChatCardId);
+});
+
+const sessionConfig = computed(() => {
+  if (!sessionsStore.activeChatCardId) return { model: 'sonnet' as const, effort: 'high' as const, permissionMode: 'default' as const };
+  return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
 watch(messages, async () => {
@@ -90,6 +96,16 @@ function resetTextareaHeight() {
       <div v-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
     </div>
     <div class="chat-input-area">
+      <InputToolbar
+        v-if="card"
+        :model="sessionConfig.model"
+        :effort="sessionConfig.effort"
+        :permission-mode="sessionConfig.permissionMode"
+        :git-branch="sessionConfig.gitBranch"
+        @update:model="v => card && sessionsStore.updateSessionConfig(card.id, { model: v })"
+        @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
+        @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
+      />
       <div class="input-row">
         <textarea
           ref="inputRef"

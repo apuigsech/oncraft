@@ -133,6 +133,8 @@ function translateMessage(
         type: "system",
         subtype: "init",
         sessionId: sysMsg.session_id,
+        gitBranch: sysMsg.git_branch || undefined,
+        model: sysMsg.model || undefined,
       };
     }
     return {
@@ -197,7 +199,9 @@ rl.on("line", async (line: string) => {
           cwd: cmd.projectPath as string,
           resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
           abortController: currentAbort,
-          permissionMode: "default",
+          model: (cmd.model as string) || undefined,
+          effort: (cmd.effort as string) || undefined,
+          permissionMode: (cmd.permissionMode as string) || "default",
           canUseTool: async (
             toolName: string,
             input: Record<string, unknown>,

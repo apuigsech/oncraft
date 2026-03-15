@@ -1,5 +1,5 @@
 import { Command } from '@tauri-apps/plugin-shell';
-import type { StreamMessage } from '../types';
+import type { StreamMessage, SessionConfig } from '../types';
 import { parseStreamLine } from './stream-parser';
 
 interface SidecarProcess {
@@ -31,6 +31,7 @@ export async function spawnSession(
   projectPath: string,
   prompt: string,
   sessionId?: string,
+  config?: SessionConfig,
 ): Promise<void> {
   // Kill existing process for this card if any
   if (processes.has(cardId)) {
@@ -103,6 +104,9 @@ export async function spawnSession(
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
+    ...(config?.model ? { model: config.model } : {}),
+    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
   });
   await proc.write(startCmd);
 }
@@ -112,6 +116,7 @@ export async function sendStart(
   projectPath: string,
   prompt: string,
   sessionId?: string,
+  config?: SessionConfig,
 ): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
@@ -121,6 +126,9 @@ export async function sendStart(
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
+    ...(config?.model ? { model: config.model } : {}),
+    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
   });
   await proc.write(startCmd);
 }
