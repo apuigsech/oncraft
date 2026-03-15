@@ -20,6 +20,14 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   async function addProject(name: string, path: string): Promise<Project> {
+    // If project with this path already exists, just activate it
+    const existing = projects.value.find(p => p.path === path);
+    if (existing) {
+      activeProjectId.value = existing.id;
+      await db.updateProjectLastOpened(existing.id);
+      return existing;
+    }
+
     const project: Project = {
       id: uuidv4(),
       name, path,
