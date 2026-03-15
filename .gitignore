@@ -27,5 +27,6 @@ dist-ssr
 .superpowers/
 target/
 src-tauri/target/
+src-tauri/binaries/
 *.db
 .claudban/
