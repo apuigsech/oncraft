@@ -21,22 +21,42 @@ function setupCommand(
   onMessage: (msg: StreamMessage) => void,
   onExit: (code: number) => void,
 ): void {
-  command.stdout.on('data', (line: string) => {
-    console.log('[ClaudBan] stdout:', line.substring(0, 200));
-    // stdout may contain multiple JSON lines in one chunk
-    for (const l of line.split('\n')) {
-      const msg = parseStreamLine(l);
-      if (msg) onMessage(msg);
+  // Buffer for partial lines — Tauri may deliver chunks mid-JSON
+  let stdoutBuffer = '';
+
+  command.stdout.on('data', (chunk: string) => {
+    stdoutBuffer += chunk;
+    // Process complete lines
+    const lines = stdoutBuffer.split('\n');
+    // Keep the last element (may be incomplete)
+    stdoutBuffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const msg = parseStreamLine(line);
+      if (msg) {
+        console.log('[ClaudBan] parsed:', msg.type, msg.content?.substring(0, 100) || '(no content)', msg.sessionId || '');
+        onMessage(msg);
+      }
     }
   });
   command.stderr.on('data', (line: string) => {
-    console.log('[ClaudBan] stderr:', line.substring(0, 200));
+    console.log('[ClaudBan] stderr:', line.substring(0, 300));
   });
   command.on('close', (data) => {
+    // Flush remaining buffer
+    if (stdoutBuffer.trim()) {
+      const msg = parseStreamLine(stdoutBuffer);
+      if (msg) {
+        console.log('[ClaudBan] parsed (flush):', msg.type, msg.content?.substring(0, 100) || '');
+        onMessage(msg);
+      }
+    }
+    console.log('[ClaudBan] process closed with code:', data.code);
     activeProcesses.delete(cardId);
     onExit(data.code ?? 0);
   });
   command.on('error', (error) => {
+    console.error('[ClaudBan] process error:', error);
     activeProcesses.delete(cardId);
     onMessage({ type: 'system', content: `Process error: ${error}`, timestamp: Date.now() });
     onExit(1);

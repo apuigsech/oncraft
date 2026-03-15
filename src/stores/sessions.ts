@@ -22,6 +22,11 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function appendMessage(cardId: string, msg: StreamMessage): void {
     if (!messages[cardId]) { messages[cardId] = []; }
+    // Skip empty system messages (hooks that only carry session_id)
+    if (msg.type === 'system' && !msg.content) {
+      // Still process sessionId side-effect but don't add to visible messages
+      return;
+    }
     messages[cardId].push(msg);
   }
 
@@ -43,11 +48,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     const sessionId = await spawnClaudeSession(
       cardId, projectPath, claudeBinary,
       (msg) => {
-        appendMessage(cardId, msg);
         if (msg.sessionId) {
           updateSessionId(cardId, msg.sessionId);
           cardsStore.updateCardSessionId(cardId, msg.sessionId);
         }
+        appendMessage(cardId, msg);
       },
       (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
       prompt,
@@ -64,11 +69,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     await resumeClaudeSession(
       cardId, sessionId, projectPath, claudeBinary,
       (msg) => {
-        appendMessage(cardId, msg);
         if (msg.sessionId) {
           updateSessionId(cardId, msg.sessionId);
           cardsStore.updateCardSessionId(cardId, msg.sessionId);
         }
+        appendMessage(cardId, msg);
       },
       (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
       prompt,
@@ -97,11 +102,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
 
     const onMessage = (msg: StreamMessage) => {
-      appendMessage(cardId, msg);
+      // Capture session_id first (even from empty hook messages)
       if (msg.sessionId) {
         updateSessionId(cardId, msg.sessionId);
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
       }
+      appendMessage(cardId, msg);
     };
     const onExit = (code: number) => {
       cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error');
