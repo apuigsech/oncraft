@@ -116,7 +116,7 @@ function resetTextareaHeight() {
       <TaskListDisplay :messages="messages" />
       <template v-for="(msg, i) in messages" :key="i">
         <ToolCallBlock
-          v-if="msg.type === 'tool_use' || msg.type === 'tool_result' || msg.type === 'tool_confirmation'"
+          v-if="msg.type === 'tool_use' || msg.type === 'tool_confirmation'"
           :message="msg" :card-id="sessionsStore.activeChatCardId!"
         />
         <ChatMessage v-else :message="msg" />

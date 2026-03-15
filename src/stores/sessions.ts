@@ -52,6 +52,19 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
 
+    // Tool results: merge into the matching tool_use message instead of adding separately
+    if (msg.type === 'tool_result' && msg.toolUseId) {
+      const msgs = messages[cardId];
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].type === 'tool_use' && msgs[i].toolUseId === msg.toolUseId) {
+          msgs[i].toolResult = msg.toolResult || (msg as { content?: string }).content || '';
+          return;
+        }
+      }
+      // No matching tool_use found, skip
+      return;
+    }
+
     // When a complete assistant message arrives after streaming, replace the streaming one
     if (msg.type === 'assistant' && !msg.subtype) {
       const msgs = messages[cardId];

@@ -59,7 +59,7 @@ async function reject() { await sessionsStore.rejectToolUse(props.cardId); }
       <span class="tool-label">{{ toolInfo.label }}</span>
       <span class="tool-summary">{{ summary }}</span>
       <span class="tool-expand">{{ expanded ? '▾' : '▸' }}</span>
-      <span v-if="message.type === 'tool_result'" class="tool-badge result">done</span>
+      <span v-if="message.toolResult" class="tool-badge result">done</span>
       <span v-if="message.type === 'tool_confirmation'" class="tool-badge confirm">needs approval</span>
     </div>
 
