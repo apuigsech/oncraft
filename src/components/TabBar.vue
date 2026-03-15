@@ -50,6 +50,7 @@ async function addProject() {
     >
       Settings
     </button>
+    <button class="tab settings-tab" @click="$emit('open-global-settings')" title="Global settings">Global</button>
   </div>
 </template>
 

@@ -8,6 +8,8 @@ import { useSessionsStore } from './stores/sessions';
 import TabBar from './components/TabBar.vue';
 import KanbanBoard from './components/KanbanBoard.vue';
 import ChatPanel from './components/ChatPanel.vue';
+import ProjectSettings from './components/ProjectSettings.vue';
+import GlobalSettings from './components/GlobalSettings.vue';
 
 const projectsStore = useProjectsStore();
 const settingsStore = useSettingsStore();
@@ -16,6 +18,7 @@ const pipelinesStore = usePipelinesStore();
 const sessionsStore = useSessionsStore();
 
 const showSettings = ref(false);
+const showGlobalSettings = ref(false);
 const showChat = computed(() => sessionsStore.activeChatCardId !== null);
 const chatWidth = ref(400);
 
@@ -44,7 +47,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <TabBar @open-settings="showSettings = true" />
+  <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
   <div class="main-content" :class="{ 'with-chat': showChat }">
     <div class="board-area">
       <KanbanBoard v-if="projectsStore.activeProject" />
@@ -55,6 +58,8 @@ onMounted(async () => {
     <div v-if="showChat" class="divider" @mousedown="startResize" />
     <ChatPanel v-if="showChat" :style="{ width: chatWidth + 'px' }" />
   </div>
+  <ProjectSettings v-if="showSettings" @close="showSettings = false" />
+  <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
 </template>
 
 <style scoped>
