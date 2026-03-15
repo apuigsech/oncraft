@@ -13,6 +13,14 @@ export const useSessionsStore = defineStore('sessions', () => {
   const activeChatCardId = ref<string | null>(null);
   const historyLoaded = new Set<string>();
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
+  const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
+
+  function getSessionMetrics(cardId: string) {
+    if (!sessionMetrics[cardId]) {
+      sessionMetrics[cardId] = { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
+    }
+    return sessionMetrics[cardId];
+  }
 
   function getSessionConfig(cardId: string): SessionConfig {
     if (!sessionConfigs[cardId]) {
@@ -69,11 +77,24 @@ export const useSessionsStore = defineStore('sessions', () => {
         updateSessionConfig(cardId, { gitBranch: (msg as unknown as Record<string, unknown>).gitBranch as string });
       }
 
-      // On result message, mark query complete and set card to idle
+      // Accumulate usage metrics from assistant messages
+      if (msg.type === 'assistant' && msg.usage) {
+        const m = getSessionMetrics(cardId);
+        m.inputTokens += msg.usage.inputTokens || 0;
+        m.outputTokens += msg.usage.outputTokens || 0;
+      }
+
+      // On result message, capture cost/duration and mark query complete
       if (msg.subtype === 'result') {
+        const m = getSessionMetrics(cardId);
+        if (msg.costUsd) m.costUsd += msg.costUsd;
+        if (msg.durationMs) m.durationMs += msg.durationMs;
+        if (msg.usage) {
+          m.inputTokens = msg.usage.inputTokens || m.inputTokens;
+          m.outputTokens = msg.usage.outputTokens || m.outputTokens;
+        }
         markQueryComplete(cardId);
         cardsStore.updateCardState(cardId, 'idle');
-        // Don't append empty result messages to chat
         if (!msg.content) return;
       }
 
@@ -173,8 +194,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
   return {
-    messages, activeChatCardId, sessionConfigs,
-    getMessages, getSessionConfig, updateSessionConfig,
+    messages, activeChatCardId, sessionConfigs, sessionMetrics,
+    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
     send, approveToolUse, rejectToolUse,
     interruptSession, stopSession, openChat, closeChat, isActive,
   };

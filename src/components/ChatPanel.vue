@@ -5,6 +5,8 @@ import { useCardsStore } from '../stores/cards';
 import ChatMessage from './ChatMessage.vue';
 import ToolCallBlock from './ToolCallBlock.vue';
 import InputToolbar from './InputToolbar.vue';
+import ContextGauge from './ContextGauge.vue';
+import SessionMetrics from './SessionMetrics.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -25,6 +27,11 @@ const messages = computed(() => {
 const isActive = computed(() => {
   if (!sessionsStore.activeChatCardId) return false;
   return sessionsStore.isActive(sessionsStore.activeChatCardId);
+});
+
+const metrics = computed(() => {
+  if (!sessionsStore.activeChatCardId) return { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
+  return sessionsStore.getSessionMetrics(sessionsStore.activeChatCardId);
 });
 
 const sessionConfig = computed(() => {
@@ -83,6 +90,18 @@ function resetTextareaHeight() {
         <strong>{{ card?.name || 'Session' }}</strong>
         <span class="chat-phase">{{ card?.columnName }}</span>
       </div>
+      <div class="header-metrics">
+        <ContextGauge
+          :input-tokens="metrics.inputTokens"
+          :output-tokens="metrics.outputTokens"
+        />
+        <SessionMetrics
+          :cost-usd="metrics.costUsd"
+          :input-tokens="metrics.inputTokens"
+          :output-tokens="metrics.outputTokens"
+          :duration-ms="metrics.durationMs"
+        />
+      </div>
       <button class="close-btn" @click="sessionsStore.closeChat()">x</button>
     </div>
     <div ref="messagesContainer" class="chat-messages">
@@ -136,6 +155,7 @@ function resetTextareaHeight() {
 .chat-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .chat-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .chat-phase { font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); padding: 2px 8px; border-radius: 3px; }
+.header-metrics { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 10px; }
 .close-btn { font-size: 16px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
 .close-btn:hover { background: var(--bg-tertiary); }
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
