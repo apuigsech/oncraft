@@ -33,6 +33,27 @@ export const useSessionsStore = defineStore('sessions', () => {
   function appendMessage(cardId: string, msg: StreamMessage): void {
     if (!messages[cardId]) { messages[cardId] = []; }
     if (msg.type === 'system' && !msg.content && !msg.sessionId) return;
+
+    // Streaming: append text to the last streaming assistant message
+    if (msg.subtype === 'streaming' && msg.type === 'assistant') {
+      const msgs = messages[cardId];
+      const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      if (last && last.type === 'assistant' && last.subtype === 'streaming') {
+        last.content += msg.content;
+        return;
+      }
+    }
+
+    // When a complete assistant message arrives after streaming, replace the streaming one
+    if (msg.type === 'assistant' && !msg.subtype) {
+      const msgs = messages[cardId];
+      const lastIdx = msgs.length - 1;
+      if (lastIdx >= 0 && msgs[lastIdx].type === 'assistant' && msgs[lastIdx].subtype === 'streaming') {
+        msgs[lastIdx] = msg; // Replace streaming with final
+        return;
+      }
+    }
+
     messages[cardId].push(msg);
   }
 

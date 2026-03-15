@@ -144,6 +144,23 @@ function translateMessage(
     };
   }
 
+  // Streaming partial messages (token-by-token text)
+  if (msg.type === "stream_event") {
+    const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
+    if (event?.type === "content_block_delta") {
+      const delta = event.delta as Record<string, unknown> | undefined;
+      if (delta?.type === "text_delta" && typeof delta.text === "string") {
+        return {
+          type: "assistant",
+          subtype: "streaming",
+          content: delta.text,
+        };
+      }
+    }
+    // Skip other stream events (message_start, content_block_start, etc.)
+    return null;
+  }
+
   // Pass through unknown types as system messages
   return {
     type: "system",
@@ -202,6 +219,7 @@ rl.on("line", async (line: string) => {
           model: (cmd.model as string) || undefined,
           effort: (cmd.effort as string) || undefined,
           permissionMode: (cmd.permissionMode as string) || "default",
+          includePartialMessages: true,
           canUseTool: async (
             toolName: string,
             input: Record<string, unknown>,
