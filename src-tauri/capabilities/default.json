@@ -6,8 +6,52 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "shell:allow-spawn",
-    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "claude",
+          "cmd": "claude",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude-homebrew",
+          "cmd": "/opt/homebrew/bin/claude",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude-usr-local",
+          "cmd": "/usr/local/bin/claude",
+          "args": true,
+          "sidecar": false
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "claude",
+          "cmd": "claude",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude-homebrew",
+          "cmd": "/opt/homebrew/bin/claude",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude-usr-local",
+          "cmd": "/usr/local/bin/claude",
+          "args": true,
+          "sidecar": false
+        }
+      ]
+    },
     "shell:allow-stdin-write",
     "shell:allow-kill",
     "sql:allow-load",

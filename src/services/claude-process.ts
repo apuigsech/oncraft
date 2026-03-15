@@ -40,21 +40,39 @@ function setupCommand(
   });
 }
 
-export async function checkClaudeBinary(claudeBinary: string): Promise<boolean> {
-  try {
-    const cmd = Command.create(claudeBinary, ['--version']);
-    const output = await cmd.execute();
-    return output.code === 0;
-  } catch {
-    return false;
+// Scope names configured in src-tauri/capabilities/default.json
+// Each maps to a different path for the claude binary
+const CLAUDE_SCOPE_NAMES = ['claude', 'claude-homebrew', 'claude-usr-local'];
+
+let resolvedScopeName: string | null = null;
+
+export async function checkClaudeBinary(_claudeBinary: string): Promise<boolean> {
+  // Try each configured scope name until one works
+  for (const scopeName of CLAUDE_SCOPE_NAMES) {
+    try {
+      const cmd = Command.create(scopeName, ['--version']);
+      const output = await cmd.execute();
+      if (output.code === 0) {
+        resolvedScopeName = scopeName;
+        return true;
+      }
+    } catch {
+      // This scope name didn't work, try next
+    }
   }
+  resolvedScopeName = null;
+  return false;
+}
+
+function getScopeName(): string {
+  return resolvedScopeName || 'claude';
 }
 
 export async function spawnClaudeSession(
-  cardId: string, projectPath: string, claudeBinary: string,
+  cardId: string, projectPath: string, _claudeBinary: string,
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
 ): Promise<string> {
-  const command = Command.create(claudeBinary, ['--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
+  const command = Command.create(getScopeName(), ['--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();
   const sessionId = `pending-${cardId}`;
@@ -64,10 +82,10 @@ export async function spawnClaudeSession(
 }
 
 export async function resumeClaudeSession(
-  cardId: string, sessionId: string, projectPath: string, claudeBinary: string,
+  cardId: string, sessionId: string, projectPath: string, _claudeBinary: string,
   onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
 ): Promise<void> {
-  const command = Command.create(claudeBinary, ['--resume', sessionId, '--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
+  const command = Command.create(getScopeName(), ['--resume', sessionId, '--output-format', 'stream-json', '--verbose'], { cwd: projectPath });
   setupCommand(cardId, command, onMessage, onExit);
   const child = await command.spawn();
   const proc: ClaudeProcess = { sessionId, child, onMessage, onExit };
