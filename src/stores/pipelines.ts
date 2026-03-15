@@ -6,10 +6,29 @@ import { loadProjectConfig, saveProjectConfig } from '../services/config-loader'
 export const usePipelinesStore = defineStore('pipelines', () => {
   const configs: Record<string, ProjectConfig> = reactive({});
 
+  const DEFAULT_CONFIG: ProjectConfig = {
+    columns: [
+      { name: 'Brainstorm', color: '#a78bfa' },
+      { name: 'Specify', color: '#60a5fa' },
+      { name: 'Plan', color: '#34d399' },
+      { name: 'Implement', color: '#fbbf24' },
+      { name: 'Review', color: '#f472b6' },
+      { name: 'Done', color: '#22c55e' },
+    ],
+    pipelines: [],
+  };
+
   async function loadForProject(projectPath: string): Promise<ProjectConfig> {
-    const config = await loadProjectConfig(projectPath);
-    configs[projectPath] = config;
-    return config;
+    try {
+      const config = await loadProjectConfig(projectPath);
+      configs[projectPath] = config;
+      console.log('[ClaudBan] config loaded for', projectPath, ':', config.columns.length, 'columns');
+      return config;
+    } catch (err) {
+      console.warn('[ClaudBan] Failed to load project config, using defaults:', err);
+      configs[projectPath] = { ...DEFAULT_CONFIG };
+      return configs[projectPath];
+    }
   }
 
   function getConfig(projectPath: string): ProjectConfig | undefined {
