@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
-import type { DraggableEvent } from 'vue-draggable-plus';
 import type { ColumnConfig, Card } from '../types';
 import { useCardsStore } from '../stores/cards';
 import { useProjectsStore } from '../stores/projects';
@@ -28,11 +27,13 @@ const columnCards = computed<Card[]>({
   },
 });
 
-async function onAdd(evt: DraggableEvent<Card>) {
-  const card = evt.data as Card;
+async function onAdd(evt: { newIndex?: number }) {
+  // After VueDraggable moves the item into columnCards, find the card at the new index
+  const newIdx = evt.newIndex ?? 0;
+  const card = columnCards.value[newIdx];
   if (!card) return;
   const fromColumn = card.columnName;
-  await cardsStore.moveCard(card.id, props.column.name, evt.newIndex ?? 0);
+  await cardsStore.moveCard(card.id, props.column.name, newIdx);
 
   const project = projectsStore.activeProject;
   if (!project) return;
@@ -88,9 +89,12 @@ async function createSession(name: string, description: string) {
       @add="onAdd"
       @update="onUpdate"
     >
-      <template #item="{ element }">
-        <KanbanCard :card="element" :column-color="column.color" />
-      </template>
+      <KanbanCard
+        v-for="card in columnCards"
+        :key="card.id"
+        :card="card"
+        :column-color="column.color"
+      />
     </VueDraggable>
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
   </div>
