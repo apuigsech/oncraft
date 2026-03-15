@@ -6,6 +6,7 @@ import { useCardsStore } from './stores/cards';
 import { usePipelinesStore } from './stores/pipelines';
 import { useSessionsStore } from './stores/sessions';
 import TabBar from './components/TabBar.vue';
+import KanbanBoard from './components/KanbanBoard.vue';
 
 const projectsStore = useProjectsStore();
 const settingsStore = useSettingsStore();
@@ -29,7 +30,8 @@ onMounted(async () => {
   <TabBar />
   <div class="main-content" :class="{ 'with-chat': showChat }">
     <div class="board-area">
-      <div v-if="!projectsStore.activeProject" class="empty-state">
+      <KanbanBoard v-if="projectsStore.activeProject" />
+      <div v-else class="empty-state">
         <p>Add a project to get started</p>
       </div>
     </div>
