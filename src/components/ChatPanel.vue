@@ -9,6 +9,7 @@ const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 const card = computed(() => {
   if (!sessionsStore.activeChatCardId) return null;
@@ -18,6 +19,11 @@ const card = computed(() => {
 const messages = computed(() => {
   if (!sessionsStore.activeChatCardId) return [];
   return sessionsStore.getMessages(sessionsStore.activeChatCardId);
+});
+
+const isActive = computed(() => {
+  if (!sessionsStore.activeChatCardId) return false;
+  return sessionsStore.isActive(sessionsStore.activeChatCardId);
 });
 
 watch(messages, async () => {
@@ -32,7 +38,35 @@ function sendMessage() {
   const cardId = sessionsStore.activeChatCardId;
   const msg = input.value.trim();
   input.value = '';
+  resetTextareaHeight();
   sessionsStore.send(cardId, msg);
+}
+
+function handleInterrupt() {
+  if (sessionsStore.activeChatCardId) {
+    sessionsStore.interruptSession(sessionsStore.activeChatCardId);
+  }
+}
+
+function onInput() {
+  autoGrowTextarea();
+}
+
+function autoGrowTextarea() {
+  nextTick(() => {
+    if (inputRef.value) {
+      inputRef.value.style.height = 'auto';
+      inputRef.value.style.height = Math.min(inputRef.value.scrollHeight, 150) + 'px';
+    }
+  });
+}
+
+function resetTextareaHeight() {
+  nextTick(() => {
+    if (inputRef.value) {
+      inputRef.value.style.height = 'auto';
+    }
+  });
 }
 </script>
 
@@ -56,9 +90,23 @@ function sendMessage() {
       <div v-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
     </div>
     <div class="chat-input-area">
-      <textarea v-model="input" placeholder="Type a message..." rows="2"
-        @keydown.enter.exact.prevent="sendMessage" />
-      <button class="send-btn" :disabled="!input.trim()" @click="sendMessage">Send</button>
+      <div class="input-row">
+        <textarea
+          ref="inputRef"
+          v-model="input"
+          :placeholder="isActive ? 'Claude is working...' : 'Message Claude... (Shift+Enter for new line)'"
+          rows="1"
+          :disabled="isActive"
+          @keydown.enter.exact.prevent="sendMessage"
+          @input="onInput"
+        />
+        <button v-if="isActive" class="stop-btn" @click="handleInterrupt" title="Stop generation">
+          Stop
+        </button>
+        <button v-else class="send-btn" :disabled="!input.trim()" @click="sendMessage">
+          Send
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -76,9 +124,25 @@ function sendMessage() {
 .close-btn:hover { background: var(--bg-tertiary); }
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
-.chat-input-area { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
-textarea { flex: 1; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; resize: none; }
+.chat-input-area { padding: 10px; border-top: 1px solid var(--border); }
+.input-row { display: flex; gap: 8px; }
+textarea {
+  flex: 1; background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px; font-size: 13px; resize: none;
+  min-height: 36px; max-height: 150px; overflow-y: auto;
+  font-family: inherit; line-height: 1.4;
+}
 textarea:focus { outline: none; border-color: var(--accent); }
-.send-btn { background: var(--accent); color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px; align-self: flex-end; }
+textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+.send-btn {
+  background: var(--accent); color: white; padding: 8px 16px;
+  border-radius: 6px; font-size: 13px; align-self: flex-end;
+}
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.stop-btn {
+  background: var(--error); color: white; padding: 8px 16px;
+  border-radius: 6px; font-size: 13px; align-self: flex-end;
+  font-weight: 600;
+}
+.stop-btn:hover { opacity: 0.9; }
 </style>
