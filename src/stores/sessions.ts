@@ -2,9 +2,8 @@ import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
 import type { StreamMessage } from '../types';
 import {
-  spawnClaudeSession, resumeClaudeSession,
-  killProcess, isProcessActive,
-  checkClaudeBinary, updateSessionId,
+  executeClaudeTurn, killProcess, isProcessActive,
+  checkClaudeBinary,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
 import { useSettingsStore } from './settings';
@@ -22,11 +21,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function appendMessage(cardId: string, msg: StreamMessage): void {
     if (!messages[cardId]) { messages[cardId] = []; }
-    // Skip empty system messages (hooks that only carry session_id)
-    if (msg.type === 'system' && !msg.content) {
-      // Still process sessionId side-effect but don't add to visible messages
-      return;
-    }
+    if (msg.type === 'system' && !msg.content) return;
     messages[cardId].push(msg);
   }
 
@@ -38,49 +33,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     return available;
   }
 
-  async function startSession(cardId: string, projectPath: string, prompt: string): Promise<string> {
-    const settingsStore = useSettingsStore();
-    const cardsStore = useCardsStore();
-    const claudeBinary = settingsStore.settings.claudeBinaryPath;
-    if (!await verifyClaudeBinary()) {
-      throw new Error(claudeError.value || 'Claude Code not available');
-    }
-    const sessionId = await spawnClaudeSession(
-      cardId, projectPath, claudeBinary,
-      (msg) => {
-        if (msg.sessionId) {
-          updateSessionId(cardId, msg.sessionId);
-          cardsStore.updateCardSessionId(cardId, msg.sessionId);
-        }
-        appendMessage(cardId, msg);
-      },
-      (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
-      prompt,
-    );
-    await cardsStore.updateCardState(cardId, 'active');
-    await cardsStore.updateCardSessionId(cardId, sessionId);
-    return sessionId;
-  }
-
-  async function resumeSession(cardId: string, sessionId: string, projectPath: string, prompt: string): Promise<void> {
-    const settingsStore = useSettingsStore();
-    const cardsStore = useCardsStore();
-    const claudeBinary = settingsStore.settings.claudeBinaryPath;
-    await resumeClaudeSession(
-      cardId, sessionId, projectPath, claudeBinary,
-      (msg) => {
-        if (msg.sessionId) {
-          updateSessionId(cardId, msg.sessionId);
-          cardsStore.updateCardSessionId(cardId, msg.sessionId);
-        }
-        appendMessage(cardId, msg);
-      },
-      (code) => { cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error'); },
-      prompt,
-    );
-    await cardsStore.updateCardState(cardId, 'active');
-  }
-
   async function send(cardId: string, message: string): Promise<void> {
     console.log('[ClaudBan] send() called, cardId:', cardId, 'message:', message.substring(0, 50));
     const cardsStore = useCardsStore();
@@ -88,52 +40,59 @@ export const useSessionsStore = defineStore('sessions', () => {
     appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
 
     if (isProcessActive(cardId)) {
-      console.log('[ClaudBan] process already active, waiting');
       appendMessage(cardId, { type: 'system', content: 'Waiting for previous response to finish...', timestamp: Date.now() });
       return;
     }
 
     const project = useProjectsStore().activeProject;
-    if (!project) { console.log('[ClaudBan] no active project'); return; }
-    console.log('[ClaudBan] project:', project.path);
+    if (!project) return;
 
-    const settingsStore = useSettingsStore();
-    const claudeBinary = settingsStore.settings.claudeBinaryPath;
-    console.log('[ClaudBan] verifying claude binary...');
     if (!await verifyClaudeBinary()) {
-      console.log('[ClaudBan] claude not found');
       appendMessage(cardId, { type: 'system', content: claudeError.value || 'Claude not found', timestamp: Date.now() });
       return;
     }
-    console.log('[ClaudBan] claude verified OK');
 
-    const onMessage = (msg: StreamMessage) => {
-      if (msg.sessionId) {
-        updateSessionId(cardId, msg.sessionId);
-        cardsStore.updateCardSessionId(cardId, msg.sessionId);
-      }
-      appendMessage(cardId, msg);
-    };
-    const onExit = (code: number) => {
-      console.log('[ClaudBan] onExit callback, code:', code);
-      cardsStore.updateCardState(cardId, code === 0 ? 'idle' : 'error');
-    };
+    // Show a "thinking" indicator
+    appendMessage(cardId, { type: 'system', content: 'Claude is thinking...', timestamp: Date.now() });
+    await cardsStore.updateCardState(cardId, 'active');
 
     try {
-      if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-        console.log('[ClaudBan] resuming session:', card.sessionId);
-        await resumeClaudeSession(cardId, card.sessionId, project.path, claudeBinary, onMessage, onExit, message);
-      } else {
-        console.log('[ClaudBan] spawning new session');
-        await spawnClaudeSession(cardId, project.path, claudeBinary, onMessage, onExit, message);
+      // Determine session ID for resume
+      const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
+        ? card.sessionId : undefined;
+
+      console.log('[ClaudBan] executing turn, sessionId:', sessionId || '(new)');
+
+      // execute() waits for completion and returns the result
+      const result = await executeClaudeTurn(cardId, project.path, message, sessionId);
+
+      console.log('[ClaudBan] turn complete, type:', result.type, 'content:', result.content?.substring(0, 100));
+
+      // Remove the "thinking" message
+      const cardMessages = messages[cardId];
+      if (cardMessages) {
+        for (let i = cardMessages.length - 1; i >= 0; i--) {
+          if (cardMessages[i].content === 'Claude is thinking...') {
+            cardMessages.splice(i, 1);
+            break;
+          }
+        }
       }
-      console.log('[ClaudBan] process spawned successfully');
-      await cardsStore.updateCardState(cardId, 'active');
+
+      // Capture session_id from result
+      if (result.sessionId) {
+        await cardsStore.updateCardSessionId(cardId, result.sessionId);
+      }
+
+      // Add the response
+      appendMessage(cardId, result);
+
     } catch (err) {
-      console.error('[ClaudBan] spawn/resume error:', err);
+      console.error('[ClaudBan] turn error:', err);
       appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
     }
 
+    await cardsStore.updateCardState(cardId, 'idle');
     if (card) { card.lastActivityAt = new Date().toISOString(); }
   }
 
@@ -149,7 +108,6 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     messages, activeChatCardId, claudeAvailable, claudeError,
-    getMessages, verifyClaudeBinary, startSession,
-    resumeSession, send, stopSession, openChat, closeChat, isActive,
+    getMessages, verifyClaudeBinary, send, stopSession, openChat, closeChat, isActive,
   };
 });

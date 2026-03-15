@@ -2,70 +2,8 @@ import { Command } from '@tauri-apps/plugin-shell';
 import type { StreamMessage } from '../types';
 import { parseStreamLine } from './stream-parser';
 
-export interface ClaudeProcess {
-  sessionId: string;
-  child: Awaited<ReturnType<Command<string>['spawn']>>;
-  onMessage: (msg: StreamMessage) => void;
-  onExit: (code: number) => void;
-}
-
-const activeProcesses = new Map<string, ClaudeProcess>();
-
-export function getActiveProcess(cardId: string): ClaudeProcess | undefined {
-  return activeProcesses.get(cardId);
-}
-
-function setupCommand(
-  cardId: string,
-  command: Command<string>,
-  onMessage: (msg: StreamMessage) => void,
-  onExit: (code: number) => void,
-): void {
-  // Buffer for partial lines — Tauri may deliver chunks mid-JSON
-  let stdoutBuffer = '';
-
-  command.stdout.on('data', (chunk: string) => {
-    stdoutBuffer += chunk;
-    // Process complete lines
-    const lines = stdoutBuffer.split('\n');
-    // Keep the last element (may be incomplete)
-    stdoutBuffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const msg = parseStreamLine(line);
-      if (msg) {
-        console.log('[ClaudBan] parsed:', msg.type, msg.content?.substring(0, 100) || '(no content)', msg.sessionId || '');
-        onMessage(msg);
-      }
-    }
-  });
-  command.stderr.on('data', (line: string) => {
-    console.log('[ClaudBan] stderr:', line.substring(0, 300));
-  });
-  command.on('close', (data) => {
-    console.log('[ClaudBan] close event, buffer length:', stdoutBuffer.length, 'buffer preview:', stdoutBuffer.substring(0, 200));
-    // Flush remaining buffer — may contain multiple lines
-    if (stdoutBuffer.trim()) {
-      for (const line of stdoutBuffer.split('\n')) {
-        if (!line.trim()) continue;
-        const msg = parseStreamLine(line);
-        if (msg) {
-          console.log('[ClaudBan] parsed (flush):', msg.type, msg.content?.substring(0, 100) || '');
-          onMessage(msg);
-        }
-      }
-    }
-    console.log('[ClaudBan] process closed with code:', data.code);
-    activeProcesses.delete(cardId);
-    onExit(data.code ?? 0);
-  });
-  command.on('error', (error) => {
-    console.error('[ClaudBan] process error:', error);
-    activeProcesses.delete(cardId);
-    onMessage({ type: 'system', content: `Process error: ${error}`, timestamp: Date.now() });
-    onExit(1);
-  });
-}
+// Track running processes by cardId
+const runningCards = new Set<string>();
 
 // Scope names configured in capabilities/default.json
 const CLAUDE_SCOPE_NAMES = ['claude', 'claude-homebrew', 'claude-usr-local'];
@@ -92,54 +30,68 @@ function getScopeName(): string {
   return resolvedScopeName || 'claude';
 }
 
-// Each user message spawns a new `claude -p` process.
-// For conversation continuity, we use --resume with the session_id from the first turn.
-export async function spawnClaudeSession(
-  cardId: string, projectPath: string, _claudeBinary: string,
-  onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
+// Execute a single Claude turn using `execute()` which waits for completion.
+// Returns the parsed result message.
+export async function executeClaudeTurn(
+  cardId: string,
+  projectPath: string,
   prompt: string,
-): Promise<string> {
-  const args = ['-p', '--output-format', 'json', prompt];
-  const command = Command.create(getScopeName(), args, { cwd: projectPath });
-  setupCommand(cardId, command, onMessage, onExit);
-  const child = await command.spawn();
-  const sessionId = `pending-${cardId}`;
-  const proc: ClaudeProcess = { sessionId, child, onMessage, onExit };
-  activeProcesses.set(cardId, proc);
-  return sessionId;
-}
+  sessionId?: string,
+): Promise<StreamMessage> {
+  const args = ['-p', '--output-format', 'json'];
+  if (sessionId) {
+    args.push('--resume', sessionId);
+  }
+  args.push(prompt);
 
-export async function resumeClaudeSession(
-  cardId: string, sessionId: string, projectPath: string, _claudeBinary: string,
-  onMessage: (msg: StreamMessage) => void, onExit: (code: number) => void,
-  prompt: string,
-): Promise<void> {
-  const args = ['-p', '--resume', sessionId, '--output-format', 'json', prompt];
-  const command = Command.create(getScopeName(), args, { cwd: projectPath });
-  setupCommand(cardId, command, onMessage, onExit);
-  const child = await command.spawn();
-  const proc: ClaudeProcess = { sessionId, child, onMessage, onExit };
-  activeProcesses.set(cardId, proc);
-}
+  console.log('[ClaudBan] executing claude turn, args:', args.join(' ').substring(0, 200));
+  console.log('[ClaudBan] cwd:', projectPath);
 
-// sendMessage is no longer used for stdin — each message spawns a new process.
-// Kept for potential future use with --input-format stream-json.
-export async function sendMessage(cardId: string, message: string): Promise<void> {
-  const proc = activeProcesses.get(cardId);
-  if (!proc) throw new Error(`No active process for card ${cardId}`);
-  await proc.child.write(message + '\n');
-}
+  runningCards.add(cardId);
 
-export function updateSessionId(cardId: string, sessionId: string): void {
-  const proc = activeProcesses.get(cardId);
-  if (proc) { proc.sessionId = sessionId; }
-}
+  try {
+    const command = Command.create(getScopeName(), args, { cwd: projectPath });
+    const output = await command.execute();
 
-export async function killProcess(cardId: string): Promise<void> {
-  const proc = activeProcesses.get(cardId);
-  if (proc) { await proc.child.kill(); activeProcesses.delete(cardId); }
+    console.log('[ClaudBan] execute completed, code:', output.code);
+    console.log('[ClaudBan] stdout length:', output.stdout.length, 'preview:', output.stdout.substring(0, 300));
+    if (output.stderr) {
+      console.log('[ClaudBan] stderr:', output.stderr.substring(0, 300));
+    }
+
+    // Parse the JSON result
+    const msg = parseStreamLine(output.stdout);
+    if (msg) {
+      return msg;
+    }
+
+    // If parsing failed, return raw output as system message
+    return {
+      type: 'system',
+      content: output.stdout || `Process exited with code ${output.code}`,
+      timestamp: Date.now(),
+    };
+  } catch (err) {
+    console.error('[ClaudBan] execute error:', err);
+    return {
+      type: 'system',
+      content: `Error: ${err}`,
+      timestamp: Date.now(),
+    };
+  } finally {
+    runningCards.delete(cardId);
+  }
 }
 
 export function isProcessActive(cardId: string): boolean {
-  return activeProcesses.has(cardId);
+  return runningCards.has(cardId);
+}
+
+export function updateSessionId(_cardId: string, _sessionId: string): void {
+  // No-op for execute mode — session ID comes from the result
+}
+
+export async function killProcess(_cardId: string): Promise<void> {
+  // Cannot kill execute() — it's awaited. In the future with spawn(), we can.
+  runningCards.delete(_cardId);
 }
