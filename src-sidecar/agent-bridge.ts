@@ -1,4 +1,5 @@
 import { query, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
 
 // ---- stdout helpers ----
@@ -153,6 +154,7 @@ rl.on("line", async (line: string) => {
       const conversation = query({
         prompt: cmd.prompt as string,
         options: {
+          pathToClaudeCodeExecutable: cliPath,
           cwd: cmd.projectPath as string,
           resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
           abortController: currentAbort,
