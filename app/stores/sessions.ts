@@ -260,19 +260,22 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
 
-    // Load history via sidecar SDK if we haven't already
+    // Load history in background — don't block the chat panel from appearing.
+    // The panel renders immediately (empty or with cached messages) and
+    // history arrives asynchronously, triggering a reactive update.
     if (!historyLoaded.has(cardId) && (!messages[cardId] || messages[cardId].length === 0)) {
+      historyLoaded.add(cardId); // Mark immediately to prevent duplicate loads
       const cardsStore = useCardsStore();
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
         if (import.meta.dev) console.log('[ClaudBan] loading history for session:', card.sessionId);
-        const history = await loadHistoryViaSidecar(card.sessionId);
-        if (import.meta.dev) console.log('[ClaudBan] loaded', history.length, 'messages from history');
-        if (history.length > 0) {
-          messages[cardId] = history;
-        }
+        loadHistoryViaSidecar(card.sessionId).then((history) => {
+          if (import.meta.dev) console.log('[ClaudBan] loaded', history.length, 'messages from history');
+          if (history.length > 0) {
+            messages[cardId] = history;
+          }
+        });
       }
-      historyLoaded.add(cardId);
     }
   }
   function closeChat(): void { activeChatCardId.value = null; }

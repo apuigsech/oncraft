@@ -311,6 +311,12 @@ function _utilRequest(
   });
 }
 
+// Preload the utility sidecar in background so SDK-dependent
+// operations (listSessions, loadHistory) don't suffer cold-start latency.
+export function preloadUtilSidecar(): void {
+  _ensureUtilSidecar();
+}
+
 // DA-1: listCommands — native Rust command, no sidecar needed
 export async function listCommandsNative(projectPath?: string): Promise<SlashCommand[]> {
   try {

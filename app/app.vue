@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { preloadUtilSidecar } from '~/services/claude-process'
+
 // ME-5: Lazy-load heavy components that are not needed at startup.
 // ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
 // Settings dialogs are rarely opened.
@@ -64,7 +66,9 @@ onMounted(async () => {
       pipelinesStore.loadForProject(projectsStore.activeProject.path),
     ])
     // QW-2: loadAvailableCommands deferred — will load on first chat open
-    // DA-1: listCommands is now a native Rust command, no sidecar preload needed
+    // Preload utility sidecar in background so history loads are fast
+    // when the user opens a chat (sidecar is only needed for SDK operations)
+    preloadUtilSidecar()
   }
 })
 </script>
