@@ -18,6 +18,7 @@ export interface Card {
   tags: string[];
   createdAt: string;
   lastActivityAt: string;
+  archived: boolean;
 }
 
 export type CardState = 'active' | 'idle' | 'error' | 'completed';

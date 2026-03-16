@@ -171,6 +171,19 @@ export function markQueryComplete(cardId: string): void {
   activeQueries.delete(cardId);
 }
 
+// Delete a Claude session via the sidecar (removes JSONL files)
+export async function deleteSessionViaSidecar(sessionId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const command = Command.sidecar('binaries/agent-bridge');
+    command.on('close', () => resolve());
+    command.on('error', () => resolve());
+    command.spawn().then(async (child) => {
+      await child.write(JSON.stringify({ cmd: 'deleteSession', sessionId }) + '\n');
+      setTimeout(() => { child.kill(); resolve(); }, 3000);
+    }).catch(() => resolve());
+  });
+}
+
 export interface SlashCommand {
   name: string;
   desc: string;

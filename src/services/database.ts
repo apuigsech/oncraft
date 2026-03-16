@@ -32,9 +32,14 @@ async function runMigrations(db: Database): Promise<void> {
       state TEXT DEFAULT 'idle',
       tags TEXT DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      archived INTEGER DEFAULT 0
     )
   `);
+  // Migration: add archived column if missing (for existing DBs)
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN archived INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -76,12 +81,14 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     id: string; project_id: string; name: string; description: string;
     column_name: string; column_order: number; session_id: string;
     state: string; tags: string; created_at: string; last_activity_at: string;
+    archived: number;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => ({
     id: r.id, projectId: r.project_id, name: r.name, description: r.description,
     columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
     state: r.state as Card['state'], tags: JSON.parse(r.tags),
     createdAt: r.created_at, lastActivityAt: r.last_activity_at,
+    archived: r.archived === 1,
   }));
 }
 
@@ -100,10 +107,10 @@ export async function updateCard(card: Card): Promise<void> {
   const d = await getDb();
   await d.execute(
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
-     session_id=$5, state=$6, tags=$7, last_activity_at=$8 WHERE id=$9`,
+     session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9 WHERE id=$10`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
-     card.lastActivityAt, card.id]
+     card.lastActivityAt, card.archived ? 1 : 0, card.id]
   );
 }
 

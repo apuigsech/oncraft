@@ -10,7 +10,7 @@ export const useCardsStore = defineStore('cards', () => {
 
   function cardsByColumn(columnName: string): Card[] {
     return cards.value
-      .filter(c => c.columnName === columnName)
+      .filter(c => c.columnName === columnName && !c.archived)
       .sort((a, b) => {
         if (a.columnOrder !== b.columnOrder) return a.columnOrder - b.columnOrder;
         return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
@@ -29,7 +29,7 @@ export const useCardsStore = defineStore('cards', () => {
     const card: Card = {
       id: uuidv4(), projectId, name, description, columnName,
       columnOrder: columnCards.length, sessionId: '', state: 'idle', tags: [],
-      createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), archived: false,
     };
     await db.insertCard(card);
     cards.value.push(card);
@@ -68,6 +68,20 @@ export const useCardsStore = defineStore('cards', () => {
     }
   }
 
+  async function archiveCard(cardId: string): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.archived = true;
+    await db.updateCard(card);
+  }
+
+  async function unarchiveCard(cardId: string): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.archived = false;
+    await db.updateCard(card);
+  }
+
   async function removeCard(cardId: string): Promise<void> {
     await db.deleteCard(cardId);
     cards.value = cards.value.filter(c => c.id !== cardId);
@@ -76,6 +90,6 @@ export const useCardsStore = defineStore('cards', () => {
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
     addCard, moveCard, updateCardState, updateCardSessionId,
-    reorderColumn, removeCard,
+    reorderColumn, archiveCard, unarchiveCard, removeCard,
   };
 });

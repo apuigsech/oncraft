@@ -1,7 +1,7 @@
 import { query, getSessionMessages, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
-import { readFileSync, readdirSync, existsSync, statSync } from "fs";
+import { readFileSync, readdirSync, existsSync, statSync, unlinkSync } from "fs";
 import { join, basename, relative } from "path";
 import { homedir } from "os";
 
@@ -437,6 +437,36 @@ rl.on("line", async (line: string) => {
     });
 
     emit({ type: "commands", commands: dedupedCommands });
+    return;
+  }
+
+  // Handle deleteSession — remove Claude session JSONL files
+  if (cmd.cmd === "deleteSession") {
+    const sessionId = cmd.sessionId as string;
+    const projectPath = cmd.projectPath as string | undefined;
+    let deleted = false;
+
+    try {
+      const home = homedir();
+      const projectsDir = join(home, ".claude", "projects");
+      if (existsSync(projectsDir)) {
+        // Search all project dirs for this session
+        const dirs = readdirSync(projectsDir, { withFileTypes: true });
+        for (const dir of dirs) {
+          if (!dir.isDirectory()) continue;
+          const jsonlPath = join(projectsDir, dir.name, `${sessionId}.jsonl`);
+          if (existsSync(jsonlPath)) {
+            unlinkSync(jsonlPath);
+            deleted = true;
+            process.stderr.write(`[agent-bridge] deleted session file: ${jsonlPath}\n`);
+          }
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`[agent-bridge] delete session error: ${err}\n`);
+    }
+
+    emit({ type: "sessionDeleted", sessionId, deleted });
     return;
   }
 

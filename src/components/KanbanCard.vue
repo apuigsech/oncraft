@@ -1,10 +1,19 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { Card } from '../types';
 import StatusIndicator from './StatusIndicator.vue';
+import CardContextMenu from './CardContextMenu.vue';
 import { useSessionsStore } from '../stores/sessions';
+import { useCardsStore } from '../stores/cards';
+import { deleteSessionViaSidecar } from '../services/claude-process';
 
 const props = defineProps<{ card: Card; columnColor: string }>();
 const sessionsStore = useSessionsStore();
+const cardsStore = useCardsStore();
+
+const showMenu = ref(false);
+const menuX = ref(0);
+const menuY = ref(0);
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -18,10 +27,40 @@ function timeAgo(dateStr: string): string {
 }
 
 function openChat() { sessionsStore.openChat(props.card.id); }
+
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault();
+  menuX.value = e.clientX;
+  menuY.value = e.clientY;
+  showMenu.value = true;
+}
+
+async function handleArchive(cardId: string) {
+  showMenu.value = false;
+  sessionsStore.closeChat();
+  await cardsStore.archiveCard(cardId);
+}
+
+async function handleUnarchive(cardId: string) {
+  showMenu.value = false;
+  await cardsStore.unarchiveCard(cardId);
+}
+
+async function handleDelete(cardId: string) {
+  showMenu.value = false;
+  if (!confirm(`Delete "${props.card.name}" and its Claude session? This cannot be undone.`)) return;
+  sessionsStore.closeChat();
+  // Delete the Claude session file
+  if (props.card.sessionId && !props.card.sessionId.startsWith('pending-')) {
+    await deleteSessionViaSidecar(props.card.sessionId);
+  }
+  await cardsStore.removeCard(cardId);
+}
 </script>
 
 <template>
-  <div class="kanban-card" :style="{ borderLeftColor: props.columnColor }" @click="openChat">
+  <div class="kanban-card" :style="{ borderLeftColor: props.columnColor }"
+    @click="openChat" @contextmenu="onContextMenu">
     <div class="card-header">
       <span class="card-name">{{ card.name }}</span>
       <StatusIndicator :state="card.state" />
@@ -33,6 +72,12 @@ function openChat() { sessionsStore.openChat(props.card.id); }
         <span v-for="tag in card.tags" :key="tag" class="tag">{{ tag }}</span>
       </div>
     </div>
+    <CardContextMenu
+      v-if="showMenu"
+      :x="menuX" :y="menuY" :card-id="card.id" :archived="card.archived"
+      @archive="handleArchive" @unarchive="handleUnarchive"
+      @delete="handleDelete" @close="showMenu = false"
+    />
   </div>
 </template>
 
