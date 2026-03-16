@@ -171,6 +171,58 @@ export function markQueryComplete(cardId: string): void {
   activeQueries.delete(cardId);
 }
 
+export interface SessionInfo {
+  sessionId: string;
+  summary: string;
+  lastModified: number;
+  createdAt: number;
+  gitBranch: string;
+}
+
+// List all Claude sessions for a project via the sidecar
+export async function listSessionsViaSidecar(projectPath: string): Promise<SessionInfo[]> {
+  return new Promise((resolve) => {
+    const command = Command.sidecar('binaries/agent-bridge');
+    let lineBuffer = '';
+    let resolved = false;
+
+    command.stdout.on('data', (data: string) => {
+      lineBuffer += data;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === 'sessions') {
+            resolved = true;
+            resolve(parsed.sessions || []);
+          }
+        } catch { /* ignore */ }
+      }
+    });
+
+    command.on('close', () => { if (!resolved) resolve([]); });
+    command.on('error', () => { if (!resolved) resolve([]); });
+
+    command.spawn().then(async (child) => {
+      await child.write(JSON.stringify({ cmd: 'listSessions', projectPath }) + '\n');
+      setTimeout(() => {
+        if (!resolved) {
+          if (lineBuffer.trim()) {
+            try {
+              const parsed = JSON.parse(lineBuffer);
+              if (parsed.type === 'sessions') { resolved = true; resolve(parsed.sessions || []); }
+            } catch { /* ignore */ }
+          }
+          if (!resolved) resolve([]);
+        }
+        child.kill();
+      }, 10000);
+    }).catch(() => resolve([]));
+  });
+}
+
 // Delete a Claude session via the sidecar (removes JSONL files)
 export async function deleteSessionViaSidecar(sessionId: string): Promise<void> {
   return new Promise((resolve) => {

@@ -1,4 +1,4 @@
-import { query, getSessionMessages, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages, listSessions, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
 import { readFileSync, readdirSync, existsSync, statSync, unlinkSync } from "fs";
@@ -437,6 +437,30 @@ rl.on("line", async (line: string) => {
     });
 
     emit({ type: "commands", commands: dedupedCommands });
+    return;
+  }
+
+  // Handle listSessions — get all Claude sessions for a project
+  if (cmd.cmd === "listSessions") {
+    try {
+      const projectPath = cmd.projectPath as string;
+      const allSessions = await listSessions({ cwd: projectPath });
+      // Filter to sessions from this project path
+      const projectSessions = allSessions
+        .filter(s => s.cwd === projectPath)
+        .map(s => ({
+          sessionId: s.sessionId,
+          summary: s.summary || s.firstPrompt || s.sessionId,
+          lastModified: s.lastModified,
+          createdAt: (s as Record<string, unknown>).createdAt || s.lastModified,
+          gitBranch: (s as Record<string, unknown>).gitBranch || '',
+        }))
+        .sort((a, b) => b.lastModified - a.lastModified);
+      emit({ type: "sessions", sessions: projectSessions });
+    } catch (err) {
+      process.stderr.write(`[agent-bridge] listSessions error: ${err}\n`);
+      emit({ type: "sessions", sessions: [], error: String(err) });
+    }
     return;
   }
 

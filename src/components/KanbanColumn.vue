@@ -9,6 +9,7 @@ import { usePipelinesStore } from '../stores/pipelines';
 import { resolveTemplate } from '../services/template-engine';
 import KanbanCard from './KanbanCard.vue';
 import NewSessionDialog from './NewSessionDialog.vue';
+import ImportSessionsDialog from './ImportSessionsDialog.vue';
 
 const props = defineProps<{ column: ColumnConfig }>();
 const cardsStore = useCardsStore();
@@ -17,6 +18,7 @@ const sessionsStore = useSessionsStore();
 const pipelinesStore = usePipelinesStore();
 
 const showNewDialog = ref(false);
+const showImportDialog = ref(false);
 
 // Writable computed for VueDraggable v-model compatibility.
 // Reads from store; writes are handled by event handlers (onAdd, onUpdate).
@@ -74,7 +76,10 @@ async function createSession(name: string, description: string) {
         <span>{{ column.name }}</span>
         <span class="card-count">{{ columnCards.length }}</span>
       </div>
-      <button class="add-btn" @click="showNewDialog = true" title="New session">+</button>
+      <div class="header-actions">
+        <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">&#8615;</button>
+        <button class="action-btn" @click="showNewDialog = true" title="New session">+</button>
+      </div>
     </div>
     <VueDraggable
       v-model="columnCards"
@@ -93,6 +98,13 @@ async function createSession(name: string, description: string) {
       />
     </VueDraggable>
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
+    <ImportSessionsDialog
+      v-if="showImportDialog && projectsStore.activeProject"
+      :project-id="projectsStore.activeProject.id"
+      :project-path="projectsStore.activeProject.path"
+      :column-name="column.name"
+      @close="showImportDialog = false"
+    />
   </div>
 </template>
 
@@ -106,8 +118,9 @@ async function createSession(name: string, description: string) {
 .column-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
 .color-dot { width: 10px; height: 10px; border-radius: 50%; }
 .card-count { font-size: 11px; color: var(--text-muted); font-weight: 400; }
-.add-btn { font-size: 18px; color: var(--text-muted); padding: 0 4px; border-radius: 4px; }
-.add-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.header-actions { display: flex; gap: 2px; }
+.action-btn { font-size: 16px; color: var(--text-muted); padding: 0 5px; border-radius: 4px; }
+.action-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .column-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 100px; }
 .ghost { opacity: 0.4; }
 </style>
