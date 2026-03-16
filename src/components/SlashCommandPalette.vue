@@ -36,7 +36,7 @@ const allCommands = computed(() => {
 
 const filtered = computed(() => {
   const f = props.filter.toLowerCase();
-  return allCommands.value.filter(c => c.name.toLowerCase().startsWith(f));
+  return allCommands.value.filter(c => c.name.toLowerCase().includes(f));
 });
 </script>
 
