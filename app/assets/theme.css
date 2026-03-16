@@ -6,7 +6,6 @@
  *  2. Legacy CSS custom properties →  --bg-*, --text-* (used by custom scoped styles)
  *
  * Both layers use the same slate palette so everything stays consistent.
- * To retheme the app change values here; vite.config.ts controls the primary color.
  */
 
 /* ─── 1. Nuxt UI semantic tokens (dark slate palette) ─────────────────────── */

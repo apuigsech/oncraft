@@ -57,22 +57,24 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div id="app">
-    <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
-    <div class="main-content" :class="{ 'with-chat': showChat }">
-      <div class="board-area">
-        <KanbanBoard v-if="projectsStore.activeProject" />
-        <div v-else class="empty-state">
-          <p>Add a project to get started</p>
+  <UApp>
+    <div id="app">
+      <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
+      <div class="main-content" :class="{ 'with-chat': showChat }">
+        <div class="board-area">
+          <KanbanBoard v-if="projectsStore.activeProject" />
+          <div v-else class="empty-state">
+            <p>Add a project to get started</p>
+          </div>
         </div>
+        <div v-if="showChat" class="divider" @mousedown="startResize" />
+        <ConsolePanel v-if="showChat && isConsoleMode" :style="{ width: consoleWidth + 'px' }" />
+        <ChatPanel v-else-if="showChat" :style="{ width: chatWidth + 'px' }" />
       </div>
-      <div v-if="showChat" class="divider" @mousedown="startResize" />
-      <ConsolePanel v-if="showChat && isConsoleMode" :style="{ width: consoleWidth + 'px' }" />
-      <ChatPanel v-else-if="showChat" :style="{ width: chatWidth + 'px' }" />
+      <ProjectSettings v-if="showSettings" @close="showSettings = false" />
+      <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
     </div>
-    <ProjectSettings v-if="showSettings" @close="showSettings = false" />
-    <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
-  </div>
+  </UApp>
 </template>
 
 <style scoped>

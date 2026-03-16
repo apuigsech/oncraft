@@ -167,46 +167,47 @@ function selectSlashCommand(command: string) {
 
     <!-- Input area -->
     <div class="chat-input-area">
-      <InputToolbar
-        v-if="card"
-        :model="sessionConfig.model"
-        :effort="sessionConfig.effort"
-        :permission-mode="sessionConfig.permissionMode"
-        :git-branch="sessionConfig.gitBranch"
-        :worktree-path="sessionConfig.worktreePath"
-        :worktree-branch="sessionConfig.worktreeBranch"
-        @update:model="v => card && sessionsStore.updateSessionConfig(card.id, { model: v })"
-        @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
-        @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
-      />
-
       <div class="progress-area">
         <AgentProgressBar :events="progressEvents" :is-active="isActive" />
       </div>
 
-      <!-- UChatPrompt — replaces manual textarea + auto-resize -->
+      <!-- Slash command palette — positioned absolutely above the prompt -->
+      <SlashCommandPalette
+        :filter="input"
+        :visible="showSlashPalette"
+        :commands="sessionsStore.availableCommands"
+        @select="selectSlashCommand"
+      />
+
+      <!-- UChatPrompt — the main chat input box -->
       <UChatPrompt
         v-model="input"
-        :placeholder="isActive ? 'Claude is working...' : 'Message Claude... (Shift+Enter for new line)'"
+        :placeholder="isActive ? 'Claude is working...' : 'Message Claude...'"
         :disabled="isActive"
         :rows="1"
         :maxrows="6"
-        variant="outline"
+        variant="subtle"
         @submit="sendMessage"
       >
-        <template #header>
-          <SlashCommandPalette
-            :filter="input"
-            :visible="showSlashPalette"
-            :commands="sessionsStore.availableCommands"
-            @select="selectSlashCommand"
-          />
-        </template>
+        <!-- Default slot: submit button beside textarea (docs pattern) -->
+        <UChatPromptSubmit
+          :status="chatStatus"
+          color="neutral"
+          @stop="handleStop"
+        />
 
-        <template #trailing>
-          <UChatPromptSubmit
-            :status="chatStatus"
-            @stop="handleStop"
+        <!-- Footer slot: toolbar controls -->
+        <template v-if="card" #footer>
+          <InputToolbar
+            :model="sessionConfig.model"
+            :effort="sessionConfig.effort"
+            :permission-mode="sessionConfig.permissionMode"
+            :git-branch="sessionConfig.gitBranch"
+            :worktree-path="sessionConfig.worktreePath"
+            :worktree-branch="sessionConfig.worktreeBranch"
+            @update:model="v => card && sessionsStore.updateSessionConfig(card.id, { model: v })"
+            @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
+            @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
           />
         </template>
       </UChatPrompt>
@@ -238,7 +239,7 @@ function selectSlashCommand(command: string) {
 .chat-messages-inner { flex: 1; padding: 12px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
 
-.chat-input-area { padding: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.chat-input-area { position: relative; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .progress-area { min-height: 0; }
 
 /* User text */
