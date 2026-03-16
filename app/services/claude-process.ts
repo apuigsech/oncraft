@@ -312,6 +312,12 @@ function _utilRequest(
   });
 }
 
+// N-3: Preload the utility sidecar in background so it's ready
+// when the user first opens a chat or lists sessions.
+export function preloadUtilSidecar(): void {
+  _ensureUtilSidecar();
+}
+
 export async function listSessionsViaSidecar(projectPath: string): Promise<SessionInfo[]> {
   const result = await _utilRequest(
     { cmd: 'listSessions', projectPath },
