@@ -38,7 +38,7 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value = { ...DEFAULT_SETTINGS, ...raw };
       }
     } catch (err) {
-      console.warn('[ClaudBan] Could not load settings, using defaults:', err);
+      if (import.meta.dev) console.warn('[ClaudBan] Could not load settings, using defaults:', err);
     }
     loaded.value = true;
   }

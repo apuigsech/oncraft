@@ -81,7 +81,7 @@ export async function spawnSession(
   });
 
   command.stderr.on('data', (data: string) => {
-    console.warn('[ClaudBan] sidecar stderr:', data);
+    if (import.meta.dev) console.warn('[ClaudBan] sidecar stderr:', data);
   });
 
   command.on('close', (payload) => {
@@ -94,11 +94,11 @@ export async function spawnSession(
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     activeQueries.delete(cardId);
-    console.log('[ClaudBan] sidecar closed, code:', payload.code);
+    if (import.meta.dev) console.log('[ClaudBan] sidecar closed, code:', payload.code);
   });
 
   command.on('error', (err: string) => {
-    console.error('[ClaudBan] sidecar error:', err);
+    if (import.meta.dev) console.error('[ClaudBan] sidecar error:', err);
     dispatchMessage(cardId, {
       type: 'system',
       content: `Sidecar error: ${err}`,

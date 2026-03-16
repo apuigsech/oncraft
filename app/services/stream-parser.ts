@@ -130,7 +130,7 @@ export function parseStreamLine(line: string): StreamMessage | null {
       timestamp: Date.now(),
     };
   } catch (e) {
-    console.warn('[ClaudBan] parse error:', line.substring(0, 200), e);
+    if (import.meta.dev) console.warn('[ClaudBan] parse error:', line.substring(0, 200), e);
     return null;
   }
 }
