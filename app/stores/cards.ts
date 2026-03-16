@@ -6,6 +6,34 @@ export const useCardsStore = defineStore('cards', () => {
   const cards = ref<Card[]>([]);
   const loadedProjectId = ref<string | null>(null);
 
+  // N-2: Debounce DB writes for card updates.
+  // During streaming, updateCardState and updateCardSessionId can fire
+  // multiple times per second for the same card. We update the in-memory
+  // state immediately but coalesce DB writes with a 500ms debounce per card.
+  const _pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function _debouncedDbWrite(card: Card): void {
+    const existing = _pendingWrites.get(card.id);
+    if (existing) clearTimeout(existing);
+    _pendingWrites.set(card.id, setTimeout(async () => {
+      _pendingWrites.delete(card.id);
+      // Re-read from reactive array to get latest state
+      const current = cards.value.find(c => c.id === card.id);
+      if (current) await db.updateCard(current);
+    }, 500));
+  }
+
+  // Flush a specific card's pending write immediately (e.g. before delete)
+  function _flushDbWrite(cardId: string): void {
+    const timer = _pendingWrites.get(cardId);
+    if (timer) {
+      clearTimeout(timer);
+      _pendingWrites.delete(cardId);
+      const card = cards.value.find(c => c.id === cardId);
+      if (card) db.updateCard(card);
+    }
+  }
+
   function cardsByColumn(columnName: string): Card[] {
     return cards.value
       .filter(c => c.columnName === columnName && !c.archived)
@@ -48,26 +76,28 @@ export const useCardsStore = defineStore('cards', () => {
     await db.updateCard(card);
   }
 
+  // N-2: These hot-path functions update in-memory state immediately
+  // but debounce the DB write to avoid IPC round-trips on every state change.
   async function updateCardState(cardId: string, state: Card['state']): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
     card.state = state;
     card.lastActivityAt = new Date().toISOString();
-    await db.updateCard(card);
+    _debouncedDbWrite(card);
   }
 
   async function updateCardSessionId(cardId: string, sessionId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
     card.sessionId = sessionId;
-    await db.updateCard(card);
+    _debouncedDbWrite(card);
   }
 
   async function updateCardConsoleSessionId(cardId: string, consoleSessionId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
     card.consoleSessionId = consoleSessionId;
-    await db.updateCard(card);
+    _debouncedDbWrite(card);
   }
 
   async function reorderColumn(columnName: string, cardIds: string[]): Promise<void> {
@@ -116,6 +146,12 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function removeCard(cardId: string): Promise<void> {
+    // N-2: Cancel any pending debounced write — card is being deleted
+    const pendingTimer = _pendingWrites.get(cardId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      _pendingWrites.delete(cardId);
+    }
     await db.deleteCard(cardId);
     cards.value = cards.value.filter(c => c.id !== cardId);
   }
