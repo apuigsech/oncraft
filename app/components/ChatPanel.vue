@@ -71,6 +71,29 @@ function handleStop() {
 function selectSlashCommand(command: string) {
   input.value = command + ' ';
 }
+
+// Scroll to bottom when the chat opens or the active card changes
+const messagesWrapper = ref<HTMLElement | null>(null);
+
+function scrollToBottom() {
+  const el = messagesWrapper.value;
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+watch(() => sessionsStore.activeChatCardId, () => {
+  nextTick(scrollToBottom);
+});
+
+// Also scroll when messages are loaded (e.g. history arrives async after chat opens)
+watch(() => rawMessages.value.length, (newLen, oldLen) => {
+  if (oldLen === 0 && newLen > 0) {
+    nextTick(scrollToBottom);
+  }
+});
+
+onMounted(() => {
+  nextTick(scrollToBottom);
+});
 </script>
 
 <template>
@@ -106,7 +129,7 @@ function selectSlashCommand(command: string) {
     </div>
 
     <!-- Messages area — UChatMessages handles scroll + auto-scroll -->
-    <div class="chat-messages-wrapper">
+    <div ref="messagesWrapper" class="chat-messages-wrapper">
       <TaskListDisplay :messages="rawMessages" />
 
       <UChatMessages
