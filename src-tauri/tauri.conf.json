@@ -5,9 +5,9 @@
   "identifier": "com.mmshark.claudban",
   "build": {
     "beforeDevCommand": "pnpm build:sidecar && pnpm dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build && pnpm build:sidecar",
-    "frontendDist": "../dist"
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "pnpm build:sidecar && pnpm build",
+    "frontendDist": "../.output/public"
   },
   "app": {
     "windows": [
