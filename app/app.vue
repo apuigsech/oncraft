@@ -1,4 +1,12 @@
 <script setup lang="ts">
+// ME-5: Lazy-load heavy components that are not needed at startup.
+// ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
+// Settings dialogs are rarely opened.
+const ChatPanel = defineAsyncComponent(() => import('~/components/ChatPanel.vue'))
+const ConsolePanel = defineAsyncComponent(() => import('~/components/ConsolePanel.vue'))
+const ProjectSettings = defineAsyncComponent(() => import('~/components/ProjectSettings.vue'))
+const GlobalSettings = defineAsyncComponent(() => import('~/components/GlobalSettings.vue'))
+
 const projectsStore = useProjectsStore()
 const settingsStore = useSettingsStore()
 const cardsStore = useCardsStore()

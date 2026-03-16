@@ -32,6 +32,8 @@ export default defineNuxtConfig({
             if (id.includes('highlight.js')) return 'hljs';
             // Separate marked into its own chunk (~80 kB)
             if (id.includes('marked')) return 'marked';
+            // ME-5: Separate xterm into its own lazy-loaded chunk (~300 kB)
+            if (id.includes('@xterm')) return 'xterm';
             // Separate Tauri plugins into their own chunk
             if (id.includes('@tauri-apps')) return 'tauri';
             // Separate Nuxt UI components into their own chunk

@@ -1,64 +1,96 @@
-import { marked } from 'marked';
-import hljs from 'highlight.js/lib/core';
+// ME-5: Lazy-load marked + highlight.js on first use.
+// These are large dependencies (~400KB hljs, ~80KB marked) that are not needed
+// until the user actually opens a chat panel with assistant messages.
 
-// Register only common languages to keep bundle small
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import bash from 'highlight.js/lib/languages/bash';
-import json from 'highlight.js/lib/languages/json';
-import css from 'highlight.js/lib/languages/css';
-import xml from 'highlight.js/lib/languages/xml';
-import yaml from 'highlight.js/lib/languages/yaml';
-import rust from 'highlight.js/lib/languages/rust';
-import sql from 'highlight.js/lib/languages/sql';
-import markdown from 'highlight.js/lib/languages/markdown';
+type MarkedModule = typeof import('marked');
+type HljsModule = typeof import('highlight.js/lib/core');
 
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('js', javascript);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('ts', typescript);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('py', python);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('sh', bash);
-hljs.registerLanguage('shell', bash);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('html', xml);
-hljs.registerLanguage('xml', xml);
-hljs.registerLanguage('vue', xml);
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('yml', yaml);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('rs', rust);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('md', markdown);
+let _marked: MarkedModule['marked'] | null = null;
+let _hljs: HljsModule['default'] | null = null;
+let _initPromise: Promise<void> | null = null;
 
-const renderer = new marked.Renderer();
+async function _initMarkdownEngine(): Promise<void> {
+  if (_marked && _hljs) return;
+  if (_initPromise) { await _initPromise; return; }
 
-// Custom code block renderer with syntax highlighting
-renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
-  let highlighted: string;
-  if (lang && hljs.getLanguage(lang)) {
-    highlighted = hljs.highlight(text, { language: lang }).value;
-  } else {
-    highlighted = hljs.highlightAuto(text).value;
-  }
-  const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
-  return `<div class="code-block">${langLabel}<pre><code class="hljs">${highlighted}</code></pre></div>`;
-};
+  _initPromise = (async () => {
+    const [markedMod, hljsMod] = await Promise.all([
+      import('marked'),
+      import('highlight.js/lib/core'),
+    ]);
 
-// Inline code
-renderer.codespan = function ({ text }: { text: string }) {
-  return `<code class="inline-code">${text}</code>`;
-};
+    _marked = markedMod.marked;
+    _hljs = hljsMod.default;
 
-marked.setOptions({ renderer, breaks: true });
+    // Register languages in parallel
+    const langs = await Promise.all([
+      import('highlight.js/lib/languages/javascript'),
+      import('highlight.js/lib/languages/typescript'),
+      import('highlight.js/lib/languages/python'),
+      import('highlight.js/lib/languages/bash'),
+      import('highlight.js/lib/languages/json'),
+      import('highlight.js/lib/languages/css'),
+      import('highlight.js/lib/languages/xml'),
+      import('highlight.js/lib/languages/yaml'),
+      import('highlight.js/lib/languages/rust'),
+      import('highlight.js/lib/languages/sql'),
+      import('highlight.js/lib/languages/markdown'),
+    ]);
 
+    const names: [string, number][] = [
+      ['javascript', 0], ['js', 0],
+      ['typescript', 1], ['ts', 1],
+      ['python', 2], ['py', 2],
+      ['bash', 3], ['sh', 3], ['shell', 3],
+      ['json', 4], ['css', 5],
+      ['html', 6], ['xml', 6], ['vue', 6],
+      ['yaml', 7], ['yml', 7],
+      ['rust', 8], ['rs', 8],
+      ['sql', 9],
+      ['markdown', 10], ['md', 10],
+    ];
+    for (const [name, idx] of names) {
+      _hljs!.registerLanguage(name, langs[idx].default);
+    }
+
+    // Configure marked renderer
+    const renderer = new _marked!.Renderer();
+
+    renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
+      let highlighted: string;
+      if (lang && _hljs!.getLanguage(lang)) {
+        highlighted = _hljs!.highlight(text, { language: lang }).value;
+      } else {
+        highlighted = _hljs!.highlightAuto(text).value;
+      }
+      const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
+      return `<div class="code-block">${langLabel}<pre><code class="hljs">${highlighted}</code></pre></div>`;
+    };
+
+    renderer.codespan = function ({ text }: { text: string }) {
+      return `<code class="inline-code">${text}</code>`;
+    };
+
+    _marked!.setOptions({ renderer, breaks: true });
+  })();
+
+  await _initPromise;
+}
+
+// Synchronous render — uses pre-initialized engine.
+// Falls back to plain-text HTML-escaped output if called before init completes.
 export function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false }) as string;
+  if (!_marked) {
+    // Trigger lazy init for next call; return escaped text for this call
+    _initMarkdownEngine();
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  return _marked.parse(text, { async: false }) as string;
+}
+
+// Eagerly trigger initialization (call this when chat opens, not at app startup)
+export function ensureMarkdownReady(): Promise<void> {
+  return _initMarkdownEngine();
 }
 
 // QW-5: Debounced markdown rendering for streaming content.
