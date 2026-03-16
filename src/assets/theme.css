@@ -1,0 +1,52 @@
+/**
+ * ClaudBan design tokens.
+ *
+ * Two layers:
+ *  1. Nuxt UI dark-mode overrides  →  --ui-* variables (what UButton, UDropdownMenu etc. use)
+ *  2. Legacy CSS custom properties →  --bg-*, --text-* (used by custom scoped styles)
+ *
+ * Both layers use the same slate palette so everything stays consistent.
+ * To retheme the app change values here; vite.config.ts controls the primary color.
+ */
+
+/* ─── 1. Nuxt UI semantic tokens (dark slate palette) ─────────────────────── */
+.dark {
+  /* Backgrounds */
+  --ui-bg:           #0f172a;   /* slate-950  — main app bg */
+  --ui-bg-muted:     #1e293b;   /* slate-800 */
+  --ui-bg-elevated:  #1e293b;   /* slate-800  — dropdowns, popovers */
+  --ui-bg-accented:  #334155;   /* slate-700  — hover states */
+  --ui-bg-inverted:  #f1f5f9;   /* slate-100 */
+
+  /* Text */
+  --ui-text-dimmed:      #475569;   /* slate-600 */
+  --ui-text-muted:       #64748b;   /* slate-500 */
+  --ui-text-toned:       #94a3b8;   /* slate-400 */
+  --ui-text:             #cbd5e1;   /* slate-300 */
+  --ui-text-highlighted: #f1f5f9;   /* slate-100 */
+  --ui-text-inverted:    #0f172a;   /* slate-950 */
+
+  /* Borders */
+  --ui-border:          #334155;   /* slate-700 */
+  --ui-border-muted:    #1e293b;   /* slate-800 */
+  --ui-border-accented: #475569;   /* slate-600 */
+  --ui-border-inverted: #f1f5f9;   /* slate-100 */
+
+  /* Border radius (matches our app's 6px cards) */
+  --ui-radius: 0.375rem;   /* 6px */
+}
+
+/* ─── 2. Legacy CSS custom properties (used by scoped styles) ─────────────── */
+:root {
+  --bg-primary:     #0f172a;   /* slate-950 */
+  --bg-secondary:   #1e293b;   /* slate-800 */
+  --bg-tertiary:    #334155;   /* slate-700 */
+  --text-primary:   #e2e8f0;   /* slate-200 */
+  --text-secondary: #94a3b8;   /* slate-400 */
+  --text-muted:     #64748b;   /* slate-500 */
+  --border:         #475569;   /* slate-600 */
+  --accent:         #3b82f6;   /* blue-500  */
+  --success:        #22c55e;   /* green-500 */
+  --warning:        #fbbf24;   /* amber-400 */
+  --error:          #ef4444;   /* red-500   */
+}

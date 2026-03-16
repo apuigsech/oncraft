@@ -55,34 +55,37 @@ async function onPipelinesUpdate(pipelines: PipelineConfig[]) {
 </script>
 
 <template>
-  <div class="settings-overlay" @click.self="emit('close')">
-    <div class="settings-panel">
-      <div class="settings-header">
-        <h3>Project Settings</h3>
-        <button class="close-btn" @click="emit('close')">x</button>
-      </div>
-      <div v-if="project" class="settings-body">
-        <div class="setting-group">
-          <label class="label">Project Path</label>
-          <code class="path">{{ project.path }}</code>
+  <UModal
+    :model-value="true"
+    @update:model-value="emit('close')"
+    title="Project Settings"
+    :ui="{ content: 'max-h-[80vh] overflow-y-auto' }"
+  >
+    <template #body>
+      <div v-if="project" class="flex flex-col gap-5">
+        <div class="flex flex-col gap-1">
+          <p class="text-xs text-muted uppercase tracking-wide">Project Path</p>
+          <UBadge variant="soft" color="neutral" class="font-mono text-xs">{{ project.path }}</UBadge>
         </div>
-        <ColumnEditor v-if="config" :columns="config.columns"
-          @update="onColumnsUpdate" @column-removed="onColumnRemoved" @column-renamed="onColumnRenamed" />
-        <PipelineEditor v-if="config" :pipelines="config.pipelines" :columns="config.columns" @update="onPipelinesUpdate" />
+        <ColumnEditor
+          v-if="config"
+          :columns="config.columns"
+          @update="onColumnsUpdate"
+          @column-removed="onColumnRemoved"
+          @column-renamed="onColumnRenamed"
+        />
+        <PipelineEditor
+          v-if="config"
+          :pipelines="config.pipelines"
+          :columns="config.columns"
+          @update="onPipelinesUpdate"
+        />
       </div>
-    </div>
-  </div>
+    </template>
+    <template #footer>
+      <div class="flex justify-end">
+        <UButton variant="ghost" @click="emit('close')">Close</UButton>
+      </div>
+    </template>
+  </UModal>
 </template>
-
-<style scoped>
-.settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.settings-panel { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; width: 560px; max-height: 80vh; display: flex; flex-direction: column; }
-.settings-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.settings-header h3 { font-size: 16px; }
-.close-btn { font-size: 16px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
-.close-btn:hover { background: var(--bg-tertiary); }
-.settings-body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
-.setting-group { display: flex; flex-direction: column; gap: 4px; }
-.label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-.path { font-size: 12px; color: var(--text-secondary); background: var(--bg-primary); padding: 6px 8px; border-radius: 4px; }
-</style>

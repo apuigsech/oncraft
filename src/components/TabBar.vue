@@ -8,6 +8,8 @@ const projectsStore = useProjectsStore();
 const cardsStore = useCardsStore();
 const pipelinesStore = usePipelinesStore();
 
+const emit = defineEmits<{ 'open-settings': []; 'open-global-settings': [] }>();
+
 async function switchProject(projectId: string) {
   await projectsStore.setActive(projectId);
   const project = projectsStore.activeProject;
@@ -47,27 +49,65 @@ async function addProject() {
 
 <template>
   <div class="tab-bar">
+    <!-- Project tabs -->
     <div
       v-for="project in projectsStore.projects"
       :key="project.id"
       class="tab"
-      :class="{ active: project.id === projectsStore.activeProjectId }"
+      :class="{ 'tab--active': project.id === projectsStore.activeProjectId }"
       @click="switchProject(project.id)"
     >
       <span class="tab-name">{{ project.name }}</span>
-      <button class="tab-close" @click.stop="closeProject(project.id)" title="Close project">&times;</button>
+      <UButton
+        variant="ghost"
+        color="neutral"
+        size="xs"
+        icon="i-lucide-x"
+        class="tab-close"
+        :padded="false"
+        @click.stop="closeProject(project.id)"
+        title="Close project"
+      />
     </div>
-    <button class="tab add-tab" @click="addProject">+</button>
-    <div style="flex:1" />
-    <button
+
+    <!-- Add project -->
+    <UButton
+      variant="ghost"
+      color="neutral"
+      size="sm"
+      icon="i-lucide-plus"
+      class="add-tab"
+      :padded="false"
+      title="Add project"
+      @click="addProject"
+    />
+
+    <div class="spacer" />
+
+    <!-- Project settings -->
+    <UButton
       v-if="projectsStore.activeProject"
-      class="tab settings-tab"
-      @click="$emit('open-settings')"
+      variant="ghost"
+      color="neutral"
+      size="xs"
+      icon="i-lucide-settings"
       title="Project settings"
+      @click="emit('open-settings')"
     >
       Settings
-    </button>
-    <button class="tab settings-tab" @click="$emit('open-global-settings')" title="Global settings">Global</button>
+    </UButton>
+
+    <!-- Global settings -->
+    <UButton
+      variant="ghost"
+      color="neutral"
+      size="xs"
+      icon="i-lucide-globe"
+      title="Global settings"
+      @click="emit('open-global-settings')"
+    >
+      Global
+    </UButton>
   </div>
 </template>
 
@@ -82,25 +122,26 @@ async function addProject() {
   align-items: flex-end;
   -webkit-app-region: drag;
 }
+
 .tab {
-  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 16px;
   border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
+  cursor: pointer;
   -webkit-app-region: no-drag;
   transition: background 0.15s;
 }
-.tab { display: flex; align-items: center; gap: 6px; }
 .tab:hover { background: var(--bg-tertiary); }
-.tab.active { background: var(--bg-primary); color: var(--text-primary); }
+.tab--active { background: var(--bg-primary); color: var(--text-primary); }
 .tab-name { pointer-events: none; }
-.tab-close {
-  font-size: 14px; line-height: 1; padding: 0 2px; border-radius: 3px;
-  color: var(--text-muted); opacity: 0; transition: opacity 0.15s;
-}
+.tab-close { opacity: 0; transition: opacity 0.15s; -webkit-app-region: no-drag; }
 .tab:hover .tab-close { opacity: 1; }
-.tab-close:hover { background: var(--bg-tertiary); color: var(--error); }
-.add-tab { color: var(--text-muted); font-size: 16px; padding: 4px 12px; }
-.settings-tab { color: var(--text-muted); font-size: 12px; }
+
+.add-tab { -webkit-app-region: no-drag; }
+.spacer { flex: 1; }
 </style>

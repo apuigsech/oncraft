@@ -75,34 +75,54 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   }
 }
 
-async function createSession(name: string, description: string, useWorktree: boolean) {
+async function createSession(name: string, description: string) {
   showNewDialog.value = false;
   const project = projectsStore.activeProject;
   if (!project) return;
-  const card = await cardsStore.addCard(project.id, props.column.name, name, description, { useWorktree });
+  const card = await cardsStore.addCard(project.id, props.column.name, name, description);
   sessionsStore.openChat(card.id);
 }
 </script>
 
 <template>
   <div class="kanban-column">
+    <!-- Column header -->
     <div class="column-header">
       <div class="column-title">
         <span class="color-dot" :style="{ background: column.color }" />
         <span>{{ column.name }}</span>
-        <span class="card-count">{{ dragCards.length }}</span>
+        <UBadge variant="soft" color="neutral" size="sm" class="card-count">
+          {{ dragCards.length }}
+        </UBadge>
       </div>
       <div class="header-actions">
-        <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">&#8615;</button>
-        <button class="action-btn" @click="showNewDialog = true" title="New session">+</button>
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          icon="i-lucide-download"
+          :padded="false"
+          title="Import existing sessions"
+          @click="showImportDialog = true"
+        />
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          icon="i-lucide-plus"
+          :padded="false"
+          title="New session"
+          @click="showNewDialog = true"
+        />
       </div>
     </div>
+
+    <!-- Cards with drag-and-drop -->
     <VueDraggable
       v-model="dragCards"
       group="kanban"
       :animation="150"
       ghost-class="ghost"
-      handle=".drag-handle"
       draggable=".kanban-card"
       :force-fallback="true"
       :data-column-name="column.name"
@@ -116,6 +136,7 @@ async function createSession(name: string, description: string, useWorktree: boo
         :column-color="column.color"
       />
     </VueDraggable>
+
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"
@@ -129,17 +150,40 @@ async function createSession(name: string, description: string, useWorktree: boo
 
 <style scoped>
 .kanban-column {
-  min-width: 260px; max-width: 300px; flex-shrink: 0;
-  display: flex; flex-direction: column; background: var(--bg-primary);
-  border-radius: 8px; border: 1px solid var(--bg-tertiary); height: 100%;
+  min-width: 260px;
+  max-width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--bg-tertiary);
+  height: 100%;
 }
-.column-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--bg-tertiary); }
-.column-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
-.color-dot { width: 10px; height: 10px; border-radius: 50%; }
-.card-count { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+.column-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .header-actions { display: flex; gap: 2px; }
-.action-btn { font-size: 16px; color: var(--text-muted); padding: 0 5px; border-radius: 4px; }
-.action-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.column-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 100px; }
+.column-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 100px;
+}
 .ghost { opacity: 0.4; }
 </style>

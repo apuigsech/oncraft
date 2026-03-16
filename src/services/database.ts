@@ -132,6 +132,18 @@ export async function deleteCard(id: string): Promise<void> {
   await d.execute('DELETE FROM cards WHERE id = $1', [id]);
 }
 
+export async function batchUpdateCardPositions(
+  updates: { id: string; columnName: string; columnOrder: number }[]
+): Promise<void> {
+  const d = await getDb();
+  for (const u of updates) {
+    await d.execute(
+      'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
+      [u.columnName, u.columnOrder, u.id]
+    );
+  }
+}
+
 export async function updateCardsColumn(
   cardIds: string[], columnName: string
 ): Promise<void> {

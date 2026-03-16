@@ -15,7 +15,8 @@ const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
-const inputRef = ref<HTMLTextAreaElement | null>(null);
+const inputRef = ref<HTMLTextAreaElement | null>(null); // native textarea ref
+
 const showSlashPalette = computed(() => {
   const show = input.value.startsWith('/') && !input.value.includes(' ');
   if (show) console.log('[ClaudBan] slash palette visible, filter:', input.value, 'commands:', sessionsStore.availableCommands.length);
@@ -42,40 +43,35 @@ const metrics = computed(() => {
   return sessionsStore.getSessionMetrics(sessionsStore.activeChatCardId);
 });
 
-const progressEvents = computed(() => {
-  if (!sessionsStore.activeChatCardId) return [];
-  return sessionsStore.getProgressEvents(sessionsStore.activeChatCardId);
-});
-
 const sessionConfig = computed(() => {
   if (!sessionsStore.activeChatCardId) return { model: 'sonnet' as const, effort: 'high' as const, permissionMode: 'default' as const };
   return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
-// Auto-scroll when new messages arrive (watch length, not deep content)
+const progressEvents = computed(() => {
+  if (!sessionsStore.activeChatCardId) return [];
+  return sessionsStore.getProgressEvents(sessionsStore.activeChatCardId);
+});
+
+// Auto-scroll when new messages arrive
 watch(
   () => messages.value.length,
   async () => {
     await nextTick();
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-    }
+    if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
   }
 );
 
-// Auto-scroll during streaming (last message content grows without changing array length)
+// Auto-scroll during streaming (last message grows without length change)
 watch(
   () => {
     const msgs = messages.value;
-    if (msgs.length === 0) return 0;
-    const last = msgs[msgs.length - 1];
-    return last?.content?.length ?? 0;
+    if (!msgs.length) return 0;
+    return msgs[msgs.length - 1]?.content?.length ?? 0;
   },
   async () => {
     await nextTick();
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-    }
+    if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
   }
 );
 
@@ -99,9 +95,7 @@ function handleInterrupt() {
   }
 }
 
-function onInput() {
-  autoGrowTextarea();
-}
+function onInput() { autoGrowTextarea(); }
 
 function autoGrowTextarea() {
   nextTick(() => {
@@ -114,19 +108,20 @@ function autoGrowTextarea() {
 
 function resetTextareaHeight() {
   nextTick(() => {
-    if (inputRef.value) {
-      inputRef.value.style.height = 'auto';
-    }
+    if (inputRef.value) inputRef.value.style.height = 'auto';
   });
 }
 </script>
 
 <template>
   <div class="chat-panel">
+    <!-- Header -->
     <div class="chat-header">
       <div class="chat-title">
         <strong>{{ card?.name || 'Session' }}</strong>
-        <span class="chat-phase">{{ card?.columnName }}</span>
+        <UBadge v-if="card?.columnName" variant="soft" color="neutral" size="sm">
+          {{ card.columnName }}
+        </UBadge>
       </div>
       <div class="header-metrics">
         <ContextGauge
@@ -140,8 +135,17 @@ function resetTextareaHeight() {
           :duration-ms="metrics.durationMs"
         />
       </div>
-      <button class="close-btn" @click="sessionsStore.closeChat()">x</button>
+      <UButton
+        variant="ghost"
+        color="neutral"
+        size="sm"
+        icon="i-lucide-x"
+        :padded="false"
+        @click="sessionsStore.closeChat()"
+      />
     </div>
+
+    <!-- Messages -->
     <div ref="messagesContainer" class="chat-messages">
       <TaskListDisplay :messages="messages" />
       <template v-for="(msg, i) in messages" :key="i">
@@ -151,14 +155,10 @@ function resetTextareaHeight() {
         />
         <ChatMessage v-else :message="msg" />
       </template>
-      <div v-if="sessionsStore.loadingHistory" class="loading-history">
-        <span class="loading-spinner"></span> Loading chat history...
-      </div>
-      <div v-else-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
+      <div v-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
     </div>
-    <div class="progress-area">
-      <AgentProgressBar :events="progressEvents" :is-active="isActive" />
-    </div>
+
+    <!-- Input area -->
     <div class="chat-input-area">
       <InputToolbar
         v-if="card"
@@ -172,6 +172,9 @@ function resetTextareaHeight() {
         @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
         @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
       />
+      <div class="progress-area">
+        <AgentProgressBar :events="progressEvents" :is-active="isActive" />
+      </div>
       <div class="input-wrapper">
         <SlashCommandPalette
           :filter="input"
@@ -189,13 +192,27 @@ function resetTextareaHeight() {
           :disabled="isActive"
           @keydown.enter.exact.prevent="sendMessage"
           @input="onInput"
+          class="chat-textarea"
         />
-        <button v-if="isActive" class="stop-btn" @click="handleInterrupt" title="Stop generation">
-          Stop
-        </button>
-        <button v-else class="send-btn" :disabled="!input.trim()" @click="sendMessage">
-          Send
-        </button>
+        <UButton
+          v-if="isActive"
+          color="error"
+          variant="soft"
+          size="sm"
+          icon="i-lucide-square"
+          class="send-btn"
+          @click="handleInterrupt"
+        />
+        <UButton
+          v-else
+          color="primary"
+          variant="soft"
+          size="sm"
+          icon="i-lucide-arrow-up"
+          :disabled="!input.trim()"
+          class="send-btn"
+          @click="sendMessage"
+        />
       </div>
     </div>
   </div>
@@ -203,49 +220,46 @@ function resetTextareaHeight() {
 
 <style scoped>
 .chat-panel {
-  min-width: 320px; max-width: 600px;
-  border-left: 1px solid var(--border); background: var(--bg-primary);
-  display: flex; flex-direction: column;
+  min-width: 320px;
+  max-width: 600px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
 }
-.chat-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
 .chat-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.chat-phase { font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); padding: 2px 8px; border-radius: 3px; }
 .header-metrics { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 10px; }
-.close-btn { font-size: 16px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
-.close-btn:hover { background: var(--bg-tertiary); }
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
-.loading-history {
-  text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-}
-.loading-spinner {
-  width: 14px; height: 14px; border: 2px solid var(--border);
-  border-top-color: var(--accent); border-radius: 50%;
-  animation: spin 0.6s linear infinite; display: inline-block;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.progress-area { padding: 0 12px; min-height: 0; }
 .chat-input-area { padding: 10px; border-top: 1px solid var(--border); }
+.progress-area { min-height: 0; }
 .input-wrapper { position: relative; }
-.input-row { display: flex; gap: 8px; }
-textarea {
-  flex: 1; background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 6px; padding: 8px; font-size: 13px; resize: none;
-  min-height: 36px; max-height: 150px; overflow-y: auto;
-  font-family: inherit; line-height: 1.4;
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-textarea {
+  flex: 1;
+  resize: none;
+  overflow-y: auto;
+  min-height: 36px;
+  max-height: 150px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
 }
-textarea:focus { outline: none; border-color: var(--accent); }
-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
-.send-btn {
-  background: var(--accent); color: white; padding: 8px 16px;
-  border-radius: 6px; font-size: 13px; align-self: flex-end;
-}
-.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.stop-btn {
-  background: var(--error); color: white; padding: 8px 16px;
-  border-radius: 6px; font-size: 13px; align-self: flex-end;
-  font-weight: 600;
-}
-.stop-btn:hover { opacity: 0.9; }
+.chat-textarea:focus { outline: none; border-color: var(--accent); }
+.chat-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-textarea::placeholder { color: var(--text-muted); }
+.send-btn { align-self: flex-end; flex-shrink: 0; }
 </style>

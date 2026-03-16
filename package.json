@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "build:sidecar": "cd src-sidecar && bun install && bun build --compile --target=bun agent-bridge.ts --outfile ../src-tauri/binaries/agent-bridge-$(rustc -vV | sed -n 's/host: //p')",
+    "build:sidecar": "cd src-sidecar && ~/.bun/bin/bun install && ~/.bun/bin/bun build --compile --target=bun agent-bridge.ts --outfile ../src-tauri/binaries/agent-bridge-$(rustc -vV | sed -n 's/host: //p')",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@nuxt/ui": "^4.5.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
@@ -24,7 +25,8 @@
     "sortablejs": "^1.15.7",
     "uuid": "^13.0.0",
     "vue": "^3.5.13",
-    "vue-draggable-plus": "^0.6.1"
+    "vue-draggable-plus": "^0.6.1",
+    "vue-router": "^5.0.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -32,7 +34,7 @@
     "@types/sortablejs": "^1.15.9",
     "@types/uuid": "^11.0.0",
     "@vitejs/plugin-vue": "^5.2.1",
-    "typescript": "~5.6.2",
+    "typescript": "~5.9.3",
     "vite": "^6.0.3",
     "vue-tsc": "^2.1.10"
   }

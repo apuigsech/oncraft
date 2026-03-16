@@ -7,7 +7,6 @@ const props = defineProps<{
   isActive: boolean;
 }>();
 
-// The most recent event is the "current" status
 const latest = computed(() => props.events[props.events.length - 1] ?? null);
 
 const subtypeIcon: Record<string, string> = {
@@ -18,8 +17,6 @@ const subtypeIcon: Record<string, string> = {
 };
 
 const icon = computed(() => subtypeIcon[latest.value?.subtype ?? ''] ?? '◌');
-
-// Visible only while the agent is active and there is at least one event
 const visible = computed(() => props.isActive && !!latest.value);
 </script>
 
@@ -50,8 +47,6 @@ const visible = computed(() => props.isActive && !!latest.value);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
-/* Pulsing spinner dot */
 .progress-spinner {
   display: inline-block;
   width: 6px;
@@ -61,26 +56,12 @@ const visible = computed(() => props.isActive && !!latest.value);
   flex-shrink: 0;
   animation: pulse 1.2s ease-in-out infinite;
 }
-
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.4; transform: scale(0.7); }
 }
-
-.progress-icon {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--accent);
-}
-
-.progress-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-/* Fade transition */
+.progress-icon { flex-shrink: 0; font-size: 10px; color: var(--accent); }
+.progress-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .progress-fade-enter-active,
 .progress-fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .progress-fade-enter-from,

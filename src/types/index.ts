@@ -19,7 +19,7 @@ export interface Card {
   createdAt: string;
   lastActivityAt: string;
   archived: boolean;
-  useWorktree: boolean;
+  useWorktree?: boolean;
   worktreeName?: string;
 }
 
