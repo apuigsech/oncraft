@@ -35,23 +35,27 @@ function startResize(e: MouseEvent) {
 }
 
 onMounted(async () => {
-  try {
-    await settingsStore.load()
-    console.log('[ClaudBan] settings loaded')
-  } catch (err) {
-    console.warn('[ClaudBan] settings load failed, using defaults:', err)
+  // QW-1: Parallel store loads — settings and projects are independent
+  const [settingsResult, projectsResult] = await Promise.allSettled([
+    settingsStore.load(),
+    projectsStore.load(),
+  ])
+
+  if (settingsResult.status === 'rejected') {
+    if (import.meta.dev) console.warn('[ClaudBan] settings load failed, using defaults:', settingsResult.reason)
   }
-  try {
-    await projectsStore.load()
-    console.log('[ClaudBan] projects loaded:', projectsStore.projects.length, 'projects, active:', projectsStore.activeProjectId)
-    if (projectsStore.activeProject) {
-      await cardsStore.loadForProject(projectsStore.activeProject.id)
-      await pipelinesStore.loadForProject(projectsStore.activeProject.path)
-      sessionsStore.loadAvailableCommands(projectsStore.activeProject.path)
-      console.log('[ClaudBan] active project loaded:', projectsStore.activeProject.name)
-    }
-  } catch (err) {
-    console.error('[ClaudBan] project load error:', err)
+  if (projectsResult.status === 'rejected') {
+    if (import.meta.dev) console.error('[ClaudBan] project load error:', projectsResult.reason)
+    return
+  }
+
+  if (projectsStore.activeProject) {
+    // QW-1: Cards and pipelines are independent — load in parallel
+    await Promise.allSettled([
+      cardsStore.loadForProject(projectsStore.activeProject.id),
+      pipelinesStore.loadForProject(projectsStore.activeProject.path),
+    ])
+    // QW-2: loadAvailableCommands deferred — will load on first chat open
   }
 })
 </script>
