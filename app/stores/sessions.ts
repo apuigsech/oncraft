@@ -15,6 +15,35 @@ export const useSessionsStore = defineStore('sessions', () => {
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
   const progressEvents: Record<string, AgentProgressEvent[]> = reactive({});
 
+  // QW-3: Buffer streaming tokens and flush via requestAnimationFrame
+  // instead of mutating reactive state on every single token arrival
+  const _streamingBuffers = new Map<string, string>();
+  const _streamingRafPending = new Set<string>();
+
+  function _flushStreamingBuffer(cardId: string): void {
+    const buffered = _streamingBuffers.get(cardId);
+    if (!buffered) return;
+    _streamingBuffers.delete(cardId);
+    _streamingRafPending.delete(cardId);
+
+    const msgs = messages[cardId];
+    if (!msgs?.length) return;
+    const last = msgs[msgs.length - 1];
+    if (last?.type === 'assistant' && last.subtype === 'streaming') {
+      last.content += buffered;
+    }
+  }
+
+  function _bufferStreamingToken(cardId: string, token: string): void {
+    const existing = _streamingBuffers.get(cardId) || '';
+    _streamingBuffers.set(cardId, existing + token);
+
+    if (!_streamingRafPending.has(cardId)) {
+      _streamingRafPending.add(cardId);
+      requestAnimationFrame(() => _flushStreamingBuffer(cardId));
+    }
+  }
+
   function getProgressEvents(cardId: string): AgentProgressEvent[] {
     return progressEvents[cardId] || [];
   }
@@ -46,12 +75,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (!messages[cardId]) { messages[cardId] = []; }
     if (msg.type === 'system' && !msg.content && !msg.sessionId) return;
 
-    // Streaming: append text to the last streaming assistant message
+    // QW-3: Streaming tokens are buffered and flushed via rAF
+    // to avoid mutating reactive state on every single token (~10-20/s)
     if (msg.subtype === 'streaming' && msg.type === 'assistant') {
       const msgs = messages[cardId];
       const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
       if (last && last.type === 'assistant' && last.subtype === 'streaming') {
-        last.content += msg.content;
+        _bufferStreamingToken(cardId, msg.content);
         return;
       }
     }
@@ -69,8 +99,10 @@ export const useSessionsStore = defineStore('sessions', () => {
       return;
     }
 
-    // When a complete assistant message arrives after streaming, replace the streaming one
+    // When a complete assistant message arrives after streaming, flush buffer and replace
     if (msg.type === 'assistant' && !msg.subtype) {
+      // QW-3: Flush any pending streaming buffer before replacing
+      _flushStreamingBuffer(cardId);
       const msgs = messages[cardId];
       const lastIdx = msgs.length - 1;
       if (lastIdx >= 0 && msgs[lastIdx].type === 'assistant' && msgs[lastIdx].subtype === 'streaming') {
@@ -198,7 +230,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function loadAvailableCommands(projectPath?: string): Promise<void> {
     const cmds = await listCommandsViaSidecar(projectPath);
-    console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
+    if (import.meta.dev) console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
     availableCommands.value = cmds;
   }
 
@@ -218,9 +250,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       const cardsStore = useCardsStore();
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-        console.log('[ClaudBan] loading history for session:', card.sessionId);
+        if (import.meta.dev) console.log('[ClaudBan] loading history for session:', card.sessionId);
         const history = await loadHistoryViaSidecar(card.sessionId);
-        console.log('[ClaudBan] loaded', history.length, 'messages from history');
+        if (import.meta.dev) console.log('[ClaudBan] loaded', history.length, 'messages from history');
         if (history.length > 0) {
           messages[cardId] = history;
         }
