@@ -3,6 +3,7 @@ import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
   onMessage, offMessage,
+  listCommandsViaSidecar, loadHistoryViaSidecar,
 } from '~/services/claude-process';
 
 export const useSessionsStore = defineStore('sessions', () => {
@@ -196,7 +197,6 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function loadAvailableCommands(projectPath?: string): Promise<void> {
-    const { listCommandsViaSidecar } = await import('~/services/claude-process');
     const cmds = await listCommandsViaSidecar(projectPath);
     console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
     availableCommands.value = cmds;
@@ -219,7 +219,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
         console.log('[ClaudBan] loading history for session:', card.sessionId);
-        const { loadHistoryViaSidecar } = await import('~/services/claude-process');
         const history = await loadHistoryViaSidecar(card.sessionId);
         console.log('[ClaudBan] loaded', history.length, 'messages from history');
         if (history.length > 0) {
