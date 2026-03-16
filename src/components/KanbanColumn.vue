@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { vDraggable } from 'vue-draggable-plus';
-import type { ColumnConfig } from '../types';
+import { ref, watch } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
+import type { ColumnConfig, Card } from '../types';
 import { useCardsStore } from '../stores/cards';
 import { useProjectsStore } from '../stores/projects';
 import { useSessionsStore } from '../stores/sessions';
@@ -20,35 +20,55 @@ const pipelinesStore = usePipelinesStore();
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
 
-const columnCards = computed(() => cardsStore.cardsByColumn(props.column.name));
+// Mutable local list for VueDraggable
+const localCards = ref<Card[]>([]);
+let syncing = false;
 
-async function onAdd(evt: { item: HTMLElement; newIndex?: number }) {
-  const cardId = evt.item.dataset.cardId;
-  if (!cardId) return;
-  const card = cardsStore.cards.find(c => c.id === cardId);
-  if (!card) return;
+// Sync store → local (but not while dragging)
+watch(
+  () => cardsStore.cardsByColumn(props.column.name),
+  (storeCards) => {
+    if (syncing) return;
+    localCards.value = [...storeCards];
+  },
+  { immediate: true },
+);
 
-  const fromColumn = card.columnName;
-  await cardsStore.moveCard(cardId, props.column.name, evt.newIndex ?? 0);
+// When VueDraggable modifies localCards (via v-model), persist to store
+async function onEnd() {
+  // After any drag operation ends, sync local state to store
+  syncing = true;
 
-  const project = projectsStore.activeProject;
-  if (!project) return;
-  const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
-  if (pipeline) {
-    const prompt = resolveTemplate(pipeline.prompt, {
-      session: { name: card.name, id: card.sessionId },
-      project: { path: project.path, name: project.name },
-      card: { description: card.description },
-      column: { from: fromColumn, to: props.column.name },
-    });
-    await sessionsStore.send(cardId, prompt);
-    sessionsStore.openChat(cardId);
+  // Find cards that were added to this column (their columnName doesn't match)
+  for (let i = 0; i < localCards.value.length; i++) {
+    const card = localCards.value[i];
+    if (card.columnName !== props.column.name) {
+      const fromColumn = card.columnName;
+      await cardsStore.moveCard(card.id, props.column.name, i);
+
+      // Trigger pipeline if configured
+      const project = projectsStore.activeProject;
+      if (project) {
+        const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
+        if (pipeline) {
+          const prompt = resolveTemplate(pipeline.prompt, {
+            session: { name: card.name, id: card.sessionId },
+            project: { path: project.path, name: project.name },
+            card: { description: card.description },
+            column: { from: fromColumn, to: props.column.name },
+          });
+          sessionsStore.send(card.id, prompt);
+          sessionsStore.openChat(card.id);
+        }
+      }
+    }
   }
-}
 
-function onUpdate() {
-  const ids = columnCards.value.map(c => c.id);
-  cardsStore.reorderColumn(props.column.name, ids);
+  // Update order for all cards in this column
+  const ids = localCards.value.map(c => c.id);
+  await cardsStore.reorderColumn(props.column.name, ids);
+
+  syncing = false;
 }
 
 async function createSession(name: string, description: string) {
@@ -66,34 +86,28 @@ async function createSession(name: string, description: string) {
       <div class="column-title">
         <span class="color-dot" :style="{ background: column.color }" />
         <span>{{ column.name }}</span>
-        <span class="card-count">{{ columnCards.length }}</span>
+        <span class="card-count">{{ localCards.length }}</span>
       </div>
       <div class="header-actions">
         <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">&#8615;</button>
         <button class="action-btn" @click="showNewDialog = true" title="New session">+</button>
       </div>
     </div>
-    <div
-      v-draggable="[
-        columnCards,
-        {
-          animation: 150,
-          ghostClass: 'ghost',
-          group: 'kanban',
-          onAdd,
-          onUpdate,
-        }
-      ]"
+    <VueDraggable
+      v-model="localCards"
+      :animation="150"
+      ghost-class="ghost"
+      group="kanban"
       class="column-body"
+      @end="onEnd"
     >
       <KanbanCard
-        v-for="card in columnCards"
+        v-for="card in localCards"
         :key="card.id"
-        :data-card-id="card.id"
         :card="card"
         :column-color="column.color"
       />
-    </div>
+    </VueDraggable>
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"
