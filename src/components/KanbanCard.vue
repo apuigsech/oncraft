@@ -76,7 +76,9 @@ async function handleDelete(cardId: string) {
   <div class="kanban-card" :style="{ borderLeftColor: props.columnColor }"
     @click="openChat" @contextmenu="onContextMenu">
     <div class="card-header">
+      <span class="drag-handle" title="Drag to move">⠿</span>
       <span class="card-name">{{ card.name }}</span>
+      <span v-if="card.useWorktree" class="worktree-badge" title="Isolated worktree">WT</span>
       <StatusIndicator :state="card.state" />
     </div>
     <p v-if="card.description" class="card-desc">{{ card.description }}</p>
@@ -106,6 +108,13 @@ async function handleDelete(cardId: string) {
   padding: 10px; cursor: pointer; transition: background 0.15s;
 }
 .kanban-card:hover { background: var(--bg-tertiary); }
+.drag-handle {
+  cursor: grab; color: var(--text-muted); font-size: 14px; padding: 0 4px 0 0;
+  opacity: 0; transition: opacity 0.15s; user-select: none; flex-shrink: 0;
+}
+.kanban-card:hover .drag-handle { opacity: 0.6; }
+.drag-handle:hover { opacity: 1 !important; color: var(--text-primary); }
+.drag-handle:active { cursor: grabbing; }
 .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .card-name { font-size: 13px; font-weight: 600; }
 .card-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -113,4 +122,5 @@ async function handleDelete(cardId: string) {
 .card-meta { font-size: 11px; color: var(--text-muted); }
 .card-tags { display: flex; gap: 4px; }
 .tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--bg-tertiary); color: var(--text-secondary); }
+.worktree-badge { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: var(--bg-tertiary); color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; letter-spacing: 0.5px; flex-shrink: 0; }
 </style>

@@ -49,6 +49,8 @@ onMounted(async () => {
     if (projectsStore.activeProject) {
       await cardsStore.loadForProject(projectsStore.activeProject.id);
       await pipelinesStore.loadForProject(projectsStore.activeProject.path);
+      // Pre-load slash commands in background so they're ready when opening any chat
+      sessionsStore.loadAvailableCommands(projectsStore.activeProject.path);
       console.log('[ClaudBan] active project loaded:', projectsStore.activeProject.name);
     }
   } catch (err) {

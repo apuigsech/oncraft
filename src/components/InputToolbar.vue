@@ -6,6 +6,8 @@ defineProps<{
   effort: EffortLevel;
   permissionMode: PermissionMode;
   gitBranch?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
 }>();
 
 const emit = defineEmits<{
@@ -78,8 +80,12 @@ function modeColor(mode: PermissionMode): string {
     </div>
 
     <div class="toolbar-right">
-      <!-- Git branch -->
-      <span v-if="gitBranch" class="git-branch" :title="'Branch: ' + gitBranch">
+      <!-- Worktree info (takes priority over plain git branch) -->
+      <span v-if="worktreeBranch" class="worktree-info" :title="'Worktree: ' + (worktreePath || '')">
+        WT {{ worktreeBranch }}
+      </span>
+      <!-- Git branch (fallback when no worktree) -->
+      <span v-else-if="gitBranch" class="git-branch" :title="'Branch: ' + gitBranch">
         <span class="branch-icon">&#9095;</span> {{ gitBranch }}
       </span>
     </div>
@@ -118,4 +124,9 @@ function modeColor(mode: PermissionMode): string {
   background: var(--bg-primary); padding: 2px 8px; border-radius: 3px;
 }
 .branch-icon { font-size: 12px; }
+.worktree-info {
+  color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px;
+  background: var(--bg-primary); padding: 2px 8px; border-radius: 3px;
+  border: 1px solid var(--accent);
+}
 </style>

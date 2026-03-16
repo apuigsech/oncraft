@@ -17,7 +17,12 @@ const isStreaming = computed(() => props.message.subtype === 'streaming');
 </script>
 
 <template>
-  <div class="chat-message" :class="[message.type, { thinking: isThinking, streaming: isStreaming }]">
+  <!-- Skip rendering entirely if there is nothing visible to show -->
+  <div
+    v-if="message.type === 'assistant' || message.type === 'user' || (message.type === 'system' && message.content)"
+    class="chat-message"
+    :class="[message.type, { thinking: isThinking, streaming: isStreaming }]"
+  >
     <div v-if="message.type === 'assistant'" class="msg-bubble assistant" :class="{ thinking: isThinking }">
       <span class="msg-role">{{ isThinking ? 'Thinking...' : 'Claude' }}</span>
       <div class="msg-content markdown-body" v-html="renderedContent" />

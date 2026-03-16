@@ -1,20 +1,41 @@
 import { defineStore } from 'pinia';
 import { ref, reactive } from 'vue';
-import type { StreamMessage, SessionConfig } from '../types';
+import type { StreamMessage, AgentProgressEvent, SessionConfig } from '../types';
 import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
-  onMessage, offMessage,
+  onMessage, offMessage, onProgress, offProgress,
 } from '../services/claude-process';
 import { useCardsStore } from './cards';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
+  const loadingHistory = ref(false);
   const historyLoaded = new Set<string>();
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
+  // Progress events per card: keeps the last N events as a rolling buffer
+  const progressEvents: Record<string, AgentProgressEvent[]> = reactive({});
+  const PROGRESS_BUFFER_SIZE = 20;
+
+  function getProgressEvents(cardId: string): AgentProgressEvent[] {
+    return progressEvents[cardId] || [];
+  }
+
+  function appendProgressEvent(cardId: string, event: AgentProgressEvent): void {
+    if (!progressEvents[cardId]) progressEvents[cardId] = [];
+    progressEvents[cardId].push(event);
+    // Keep only the last N events
+    if (progressEvents[cardId].length > PROGRESS_BUFFER_SIZE) {
+      progressEvents[cardId].splice(0, progressEvents[cardId].length - PROGRESS_BUFFER_SIZE);
+    }
+  }
+
+  function clearProgressEvents(cardId: string): void {
+    progressEvents[cardId] = [];
+  }
 
   function getSessionMetrics(cardId: string) {
     if (!sessionMetrics[cardId]) {
@@ -88,9 +109,14 @@ export const useSessionsStore = defineStore('sessions', () => {
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
       }
       if (msg.subtype === 'init') {
-        const initData = msg as unknown as Record<string, unknown>;
-        if (initData.gitBranch) {
-          updateSessionConfig(cardId, { gitBranch: initData.gitBranch as string });
+        if (msg.gitBranch) {
+          updateSessionConfig(cardId, { gitBranch: msg.gitBranch });
+        }
+        if (msg.worktreePath) {
+          updateSessionConfig(cardId, {
+            worktreePath: msg.worktreePath,
+            worktreeBranch: msg.worktreeBranch,
+          });
         }
       }
 
@@ -111,6 +137,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           m.outputTokens = msg.usage.outputTokens || m.outputTokens;
         }
         markQueryComplete(cardId);
+        clearProgressEvents(cardId);
         cardsStore.updateCardState(cardId, 'idle');
         if (!msg.content) return;
       }
@@ -118,10 +145,15 @@ export const useSessionsStore = defineStore('sessions', () => {
       // On error, mark query complete and set card to error state
       if (msg.subtype === 'error') {
         markQueryComplete(cardId);
+        clearProgressEvents(cardId);
         cardsStore.updateCardState(cardId, 'error');
       }
 
       appendMessage(cardId, msg);
+    });
+
+    onProgress(cardId, (event: AgentProgressEvent) => {
+      appendProgressEvent(cardId, event);
     });
   }
 
@@ -147,6 +179,11 @@ export const useSessionsStore = defineStore('sessions', () => {
       ? card.sessionId : undefined;
 
     const config = getSessionConfig(cardId);
+
+    // If card uses worktree, ensure config has the worktree name
+    if (card?.useWorktree && card.worktreeName) {
+      config.worktreeName = card.worktreeName;
+    }
 
     // If sidecar is already alive (previous query completed), reuse it
     if (isProcessActive(cardId)) {
@@ -183,6 +220,8 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function stopSession(cardId: string): Promise<void> {
     offMessage(cardId);
+    offProgress(cardId);
+    clearProgressEvents(cardId);
     await killProcess(cardId);
     const cardsStore = useCardsStore();
     await cardsStore.updateCardState(cardId, 'idle');
@@ -195,19 +234,19 @@ export const useSessionsStore = defineStore('sessions', () => {
     availableCommands.value = cmds;
   }
 
-  async function openChat(cardId: string): Promise<void> {
+  function openChat(cardId: string): void {
+    // Open the chat panel IMMEDIATELY — no awaits blocking the UI
     activeChatCardId.value = cardId;
 
-    // Load available commands if we haven't yet
-    if (availableCommands.value.length === 0) {
-      const project = (await import('./projects')).useProjectsStore().activeProject;
-      if (project) {
-        loadAvailableCommands(project.path);
-      }
-    }
-
-    // Load history via sidecar SDK if we haven't already
+    // Load history in background (non-blocking)
     if (!historyLoaded.has(cardId) && (!messages[cardId] || messages[cardId].length === 0)) {
+      _loadHistoryInBackground(cardId);
+    }
+  }
+
+  async function _loadHistoryInBackground(cardId: string): Promise<void> {
+    loadingHistory.value = true;
+    try {
       const cardsStore = useCardsStore();
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
@@ -220,15 +259,17 @@ export const useSessionsStore = defineStore('sessions', () => {
         }
       }
       historyLoaded.add(cardId);
+    } finally {
+      loadingHistory.value = false;
     }
   }
   function closeChat(): void { activeChatCardId.value = null; }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
   return {
-    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands,
-    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
+    messages, activeChatCardId, loadingHistory, sessionConfigs, sessionMetrics, availableCommands, progressEvents,
+    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getProgressEvents,
     send, approveToolUse, rejectToolUse,
-    interruptSession, stopSession, openChat, closeChat, isActive,
+    interruptSession, stopSession, openChat, closeChat, isActive, loadAvailableCommands,
   };
 });

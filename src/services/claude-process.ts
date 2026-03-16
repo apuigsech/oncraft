@@ -1,6 +1,6 @@
 import { Command } from '@tauri-apps/plugin-shell';
-import type { StreamMessage, SessionConfig } from '../types';
-import { parseStreamLine } from './stream-parser';
+import type { StreamMessage, AgentProgressEvent, SessionConfig } from '../types';
+import { parseStreamLine, isProgressEvent, parseProgressEvent } from './stream-parser';
 
 interface SidecarProcess {
   write: (data: string) => Promise<void>;
@@ -10,6 +10,7 @@ interface SidecarProcess {
 // Track running sidecar processes by cardId
 const processes = new Map<string, SidecarProcess>();
 const messageCallbacks = new Map<string, (msg: StreamMessage) => void>();
+const progressCallbacks = new Map<string, (event: AgentProgressEvent) => void>();
 // Track whether a query is actively running (vs sidecar idle between queries)
 const activeQueries = new Set<string>();
 
@@ -21,9 +22,22 @@ export function offMessage(cardId: string): void {
   messageCallbacks.delete(cardId);
 }
 
+export function onProgress(cardId: string, callback: (event: AgentProgressEvent) => void): void {
+  progressCallbacks.set(cardId, callback);
+}
+
+export function offProgress(cardId: string): void {
+  progressCallbacks.delete(cardId);
+}
+
 function dispatchMessage(cardId: string, msg: StreamMessage): void {
   const cb = messageCallbacks.get(cardId);
   if (cb) cb(msg);
+}
+
+function dispatchProgress(cardId: string, event: AgentProgressEvent): void {
+  const cb = progressCallbacks.get(cardId);
+  if (cb) cb(event);
 }
 
 export async function spawnSession(
@@ -51,6 +65,14 @@ export async function spawnSession(
 
     for (const line of lines) {
       if (!line.trim()) continue;
+      // Check if this is an internal progress event before full parse
+      try {
+        const raw = JSON.parse(line) as Record<string, unknown>;
+        if (isProgressEvent(raw)) {
+          dispatchProgress(cardId, parseProgressEvent(raw));
+          continue;
+        }
+      } catch { /* fall through to normal parse */ }
       const msg = parseStreamLine(line);
       if (msg) {
         dispatchMessage(cardId, msg);
@@ -107,6 +129,7 @@ export async function spawnSession(
     ...(config?.model ? { model: config.model } : {}),
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
+    ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
   });
   await proc.write(startCmd);
 }
@@ -129,6 +152,7 @@ export async function sendStart(
     ...(config?.model ? { model: config.model } : {}),
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
+    ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
   });
   await proc.write(startCmd);
 }

@@ -129,6 +129,7 @@ function translateMessage(
   if (msg.type === "system") {
     const sysMsg = msg as Record<string, unknown>;
     if (sysMsg.subtype === "init") {
+      const worktree = sysMsg.worktree as { path?: string; branch?: string } | undefined;
       return {
         type: "system",
         subtype: "init",
@@ -138,6 +139,8 @@ function translateMessage(
         slashCommands: sysMsg.slash_commands || [],
         skills: sysMsg.skills || [],
         tools: sysMsg.tools || [],
+        worktreePath: worktree?.path || undefined,
+        worktreeBranch: worktree?.branch || undefined,
       };
     }
     return {
@@ -223,6 +226,9 @@ rl.on("line", async (line: string) => {
           effort: (cmd.effort as string) || undefined,
           permissionMode: (cmd.permissionMode as string) || "default",
           includePartialMessages: true,
+          ...(cmd.worktreeName ? {
+            extraArgs: { worktree: cmd.worktreeName as string },
+          } : {}),
           canUseTool: async (
             toolName: string,
             input: Record<string, unknown>,

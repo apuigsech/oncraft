@@ -19,6 +19,8 @@ export interface Card {
   createdAt: string;
   lastActivityAt: string;
   archived: boolean;
+  useWorktree: boolean;
+  worktreeName?: string;
 }
 
 export type CardState = 'active' | 'idle' | 'error' | 'completed';
@@ -58,6 +60,17 @@ export interface StreamMessage {
   costUsd?: number;
   durationMs?: number;
   retryAfter?: number;
+  gitBranch?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
+}
+
+// Internal SDK progress events — not stored in the message list, tracked separately
+export interface AgentProgressEvent {
+  subtype: 'task_started' | 'task_progress' | 'task_notification' | 'status' | string;
+  content: string;
+  timestamp: number;
+  raw?: Record<string, unknown>;
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
@@ -69,6 +82,9 @@ export interface SessionConfig {
   effort: EffortLevel;
   permissionMode: PermissionMode;
   gitBranch?: string;
+  worktreeName?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
 }
 
 export interface TemplateContext {

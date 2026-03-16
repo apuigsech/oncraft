@@ -1,10 +1,40 @@
-import type { StreamMessage } from '../types';
+import type { StreamMessage, AgentProgressEvent } from '../types';
+
+// Subtypes that come from the SDK as internal progress/status events.
+// These should NOT be shown as chat messages — they feed the progress tracker.
+const PROGRESS_SUBTYPES = new Set([
+  'task_started', 'task_progress', 'task_notification', 'status',
+]);
+
+export function isProgressEvent(data: Record<string, unknown>): boolean {
+  // Matches: { type: 'system', subtype: 'task_started'|'task_progress'|... }
+  // or top-level { type: 'task_started' | 'task_progress' | ... }
+  if (data.type === 'system' && typeof data.subtype === 'string' && PROGRESS_SUBTYPES.has(data.subtype)) return true;
+  if (typeof data.type === 'string' && PROGRESS_SUBTYPES.has(data.type)) return true;
+  return false;
+}
+
+export function parseProgressEvent(data: Record<string, unknown>): AgentProgressEvent {
+  const subtype = (data.subtype || data.type) as string;
+  // Extract a human-readable message from common fields
+  const content = (
+    (data.message as string) ||
+    (data.content as string) ||
+    (data.text as string) ||
+    (data.description as string) ||
+    subtype
+  );
+  return { subtype, content, timestamp: Date.now(), raw: data };
+}
 
 export function parseStreamLine(line: string): StreamMessage | null {
   if (!line.trim()) return null;
 
   try {
     const data = JSON.parse(line);
+
+    // Progress events are handled separately — do not emit as chat messages
+    if (isProgressEvent(data)) return null;
 
     if (data.type === 'assistant') {
       return {
@@ -72,6 +102,18 @@ export function parseStreamLine(line: string): StreamMessage | null {
     }
 
     if (data.type === 'system') {
+      if (data.subtype === 'init') {
+        return {
+          type: 'system',
+          content: data.content || '',
+          subtype: 'init',
+          sessionId: data.sessionId,
+          gitBranch: data.gitBranch,
+          worktreePath: data.worktreePath,
+          worktreeBranch: data.worktreeBranch,
+          timestamp: Date.now(),
+        };
+      }
       return {
         type: 'system',
         content: data.content || '',

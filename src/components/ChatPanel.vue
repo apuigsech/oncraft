@@ -9,6 +9,7 @@ import ContextGauge from './ContextGauge.vue';
 import SessionMetrics from './SessionMetrics.vue';
 import SlashCommandPalette from './SlashCommandPalette.vue';
 import TaskListDisplay from './TaskListDisplay.vue';
+import AgentProgressBar from './AgentProgressBar.vue';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -41,17 +42,42 @@ const metrics = computed(() => {
   return sessionsStore.getSessionMetrics(sessionsStore.activeChatCardId);
 });
 
+const progressEvents = computed(() => {
+  if (!sessionsStore.activeChatCardId) return [];
+  return sessionsStore.getProgressEvents(sessionsStore.activeChatCardId);
+});
+
 const sessionConfig = computed(() => {
   if (!sessionsStore.activeChatCardId) return { model: 'sonnet' as const, effort: 'high' as const, permissionMode: 'default' as const };
   return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
-watch(messages, async () => {
-  await nextTick();
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+// Auto-scroll when new messages arrive (watch length, not deep content)
+watch(
+  () => messages.value.length,
+  async () => {
+    await nextTick();
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+    }
   }
-}, { deep: true });
+);
+
+// Auto-scroll during streaming (last message content grows without changing array length)
+watch(
+  () => {
+    const msgs = messages.value;
+    if (msgs.length === 0) return 0;
+    const last = msgs[msgs.length - 1];
+    return last?.content?.length ?? 0;
+  },
+  async () => {
+    await nextTick();
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+    }
+  }
+);
 
 function sendMessage() {
   if (!input.value.trim() || !sessionsStore.activeChatCardId) return;
@@ -125,7 +151,13 @@ function resetTextareaHeight() {
         />
         <ChatMessage v-else :message="msg" />
       </template>
-      <div v-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
+      <div v-if="sessionsStore.loadingHistory" class="loading-history">
+        <span class="loading-spinner"></span> Loading chat history...
+      </div>
+      <div v-else-if="!messages.length" class="empty-chat">Start chatting to begin the session</div>
+    </div>
+    <div class="progress-area">
+      <AgentProgressBar :events="progressEvents" :is-active="isActive" />
     </div>
     <div class="chat-input-area">
       <InputToolbar
@@ -134,6 +166,8 @@ function resetTextareaHeight() {
         :effort="sessionConfig.effort"
         :permission-mode="sessionConfig.permissionMode"
         :git-branch="sessionConfig.gitBranch"
+        :worktree-path="sessionConfig.worktreePath"
+        :worktree-branch="sessionConfig.worktreeBranch"
         @update:model="v => card && sessionsStore.updateSessionConfig(card.id, { model: v })"
         @update:effort="v => card && sessionsStore.updateSessionConfig(card.id, { effort: v })"
         @update:permission-mode="v => card && sessionsStore.updateSessionConfig(card.id, { permissionMode: v })"
@@ -181,6 +215,17 @@ function resetTextareaHeight() {
 .close-btn:hover { background: var(--bg-tertiary); }
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
+.loading-history {
+  text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.loading-spinner {
+  width: 14px; height: 14px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.6s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress-area { padding: 0 12px; min-height: 0; }
 .chat-input-area { padding: 10px; border-top: 1px solid var(--border); }
 .input-wrapper { position: relative; }
 .input-row { display: flex; gap: 8px; }

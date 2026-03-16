@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import Sortable from 'sortablejs';
-import type { ColumnConfig } from '../types';
+import { ref, computed, watch } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
+import type { Card, ColumnConfig } from '../types';
 import { useCardsStore } from '../stores/cards';
 import { useProjectsStore } from '../stores/projects';
 import { useSessionsStore } from '../stores/sessions';
@@ -19,69 +19,67 @@ const pipelinesStore = usePipelinesStore();
 
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
-const columnBody = ref<HTMLElement | null>(null);
 
-const columnCards = computed(() => cardsStore.cardsByColumn(props.column.name));
+// Store-derived computed (read-only) for watching changes
+const storeCards = computed(() => cardsStore.cardsByColumn(props.column.name));
 
-// Initialize SortableJS directly on the DOM element
-import { onMounted, onBeforeUnmount } from 'vue';
+// Local mutable ref that vue-draggable-plus can freely mutate during drag
+const dragCards = ref<Card[]>([...storeCards.value]);
 
-let sortableInstance: Sortable | null = null;
+// Track whether we're mid-drag to avoid the watch reverting draggable's DOM changes
+let syncing = false;
 
-onMounted(() => {
-  if (!columnBody.value) return;
-  sortableInstance = new Sortable(columnBody.value, {
-    animation: 150,
-    ghostClass: 'ghost',
-    group: 'kanban',
-    onEnd: async (evt) => {
-      const cardId = evt.item.dataset.cardId;
-      if (!cardId) return;
-      const card = cardsStore.cards.find(c => c.id === cardId);
-      if (!card) return;
+// Sync store -> local ref when store changes externally (card added, archived, etc.)
+watch(storeCards, (newCards) => {
+  if (syncing) return;
+  dragCards.value = [...newCards];
+}, { deep: true });
 
-      const fromColumnName = evt.from.dataset.columnName;
-      const toColumnName = evt.to.dataset.columnName;
-      const newIndex = evt.newIndex ?? 0;
+async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: number; newIndex?: number; data: Card }) {
+  const fromColumnName = evt.from.dataset.columnName;
+  const toColumnName = evt.to.dataset.columnName;
 
-      if (!toColumnName) return;
+  if (!fromColumnName || !toColumnName) return;
 
-      // If moved to a different column
-      if (fromColumnName !== toColumnName) {
-        await cardsStore.moveCard(cardId, toColumnName, newIndex);
+  const card = evt.data;
+  const newIndex = evt.newIndex ?? 0;
 
-        // Pipeline trigger
-        const project = projectsStore.activeProject;
-        if (project && fromColumnName) {
-          const pipeline = pipelinesStore.findPipeline(project.path, fromColumnName, toColumnName);
-          if (pipeline) {
-            const prompt = resolveTemplate(pipeline.prompt, {
-              session: { name: card.name, id: card.sessionId },
-              project: { path: project.path, name: project.name },
-              card: { description: card.description },
-              column: { from: fromColumnName, to: toColumnName },
-            });
-            sessionsStore.send(cardId, prompt);
-            sessionsStore.openChat(cardId);
-          }
+  if (!card) return;
+
+  syncing = true;
+  try {
+    if (fromColumnName !== toColumnName) {
+      await cardsStore.moveCard(card.id, toColumnName, newIndex);
+
+      // Pipeline trigger
+      const project = projectsStore.activeProject;
+      if (project) {
+        const pipeline = pipelinesStore.findPipeline(project.path, fromColumnName, toColumnName);
+        if (pipeline) {
+          const prompt = resolveTemplate(pipeline.prompt, {
+            session: { name: card.name, id: card.sessionId },
+            project: { path: project.path, name: project.name },
+            card: { description: card.description },
+            column: { from: fromColumnName, to: toColumnName },
+          });
+          sessionsStore.send(card.id, prompt);
+          sessionsStore.openChat(card.id);
         }
-      } else {
-        // Reorder within same column
-        await cardsStore.moveCard(cardId, toColumnName, newIndex);
       }
-    },
-  });
-});
+    } else {
+      await cardsStore.applyColumnOrder(props.column.name, dragCards.value);
+    }
+  } finally {
+    dragCards.value = [...storeCards.value];
+    syncing = false;
+  }
+}
 
-onBeforeUnmount(() => {
-  sortableInstance?.destroy();
-});
-
-async function createSession(name: string, description: string) {
+async function createSession(name: string, description: string, useWorktree: boolean) {
   showNewDialog.value = false;
   const project = projectsStore.activeProject;
   if (!project) return;
-  const card = await cardsStore.addCard(project.id, props.column.name, name, description);
+  const card = await cardsStore.addCard(project.id, props.column.name, name, description, { useWorktree });
   sessionsStore.openChat(card.id);
 }
 </script>
@@ -92,22 +90,32 @@ async function createSession(name: string, description: string) {
       <div class="column-title">
         <span class="color-dot" :style="{ background: column.color }" />
         <span>{{ column.name }}</span>
-        <span class="card-count">{{ columnCards.length }}</span>
+        <span class="card-count">{{ dragCards.length }}</span>
       </div>
       <div class="header-actions">
         <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">&#8615;</button>
         <button class="action-btn" @click="showNewDialog = true" title="New session">+</button>
       </div>
     </div>
-    <div ref="columnBody" :data-column-name="column.name" class="column-body">
+    <VueDraggable
+      v-model="dragCards"
+      group="kanban"
+      :animation="150"
+      ghost-class="ghost"
+      handle=".drag-handle"
+      draggable=".kanban-card"
+      :force-fallback="true"
+      :data-column-name="column.name"
+      class="column-body"
+      @end="onDragEnd"
+    >
       <KanbanCard
-        v-for="card in columnCards"
+        v-for="card in dragCards"
         :key="card.id"
-        :data-card-id="card.id"
         :card="card"
         :column-color="column.color"
       />
-    </div>
+    </VueDraggable>
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"

@@ -33,12 +33,21 @@ async function runMigrations(db: Database): Promise<void> {
       tags TEXT DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      archived INTEGER DEFAULT 0
+      archived INTEGER DEFAULT 0,
+      use_worktree INTEGER DEFAULT 0,
+      worktree_name TEXT DEFAULT ''
     )
   `);
   // Migration: add archived column if missing (for existing DBs)
   try {
     await db.execute('ALTER TABLE cards ADD COLUMN archived INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  // Migration: add worktree columns if missing (for existing DBs)
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN use_worktree INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute("ALTER TABLE cards ADD COLUMN worktree_name TEXT DEFAULT ''");
   } catch { /* column already exists */ }
 }
 
@@ -81,7 +90,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     id: string; project_id: string; name: string; description: string;
     column_name: string; column_order: number; session_id: string;
     state: string; tags: string; created_at: string; last_activity_at: string;
-    archived: number;
+    archived: number; use_worktree: number; worktree_name: string;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => ({
     id: r.id, projectId: r.project_id, name: r.name, description: r.description,
@@ -89,17 +98,19 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     state: r.state as Card['state'], tags: JSON.parse(r.tags),
     createdAt: r.created_at, lastActivityAt: r.last_activity_at,
     archived: r.archived === 1,
+    useWorktree: r.use_worktree === 1,
+    worktreeName: r.worktree_name || undefined,
   }));
 }
 
 export async function insertCard(card: Card): Promise<void> {
   const d = await getDb();
   await d.execute(
-    `INSERT INTO cards (id, project_id, name, description, column_name, column_order, session_id, state, tags, created_at, last_activity_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO cards (id, project_id, name, description, column_name, column_order, session_id, state, tags, created_at, last_activity_at, use_worktree, worktree_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [card.id, card.projectId, card.name, card.description, card.columnName,
      card.columnOrder, card.sessionId, card.state, JSON.stringify(card.tags),
-     card.createdAt, card.lastActivityAt]
+     card.createdAt, card.lastActivityAt, card.useWorktree ? 1 : 0, card.worktreeName || '']
   );
 }
 
@@ -107,10 +118,12 @@ export async function updateCard(card: Card): Promise<void> {
   const d = await getDb();
   await d.execute(
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
-     session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9 WHERE id=$10`,
+     session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
+     use_worktree=$10, worktree_name=$11 WHERE id=$12`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
-     card.lastActivityAt, card.archived ? 1 : 0, card.id]
+     card.lastActivityAt, card.archived ? 1 : 0,
+     card.useWorktree ? 1 : 0, card.worktreeName || '', card.id]
   );
 }
 
@@ -127,6 +140,18 @@ export async function updateCardsColumn(
     await d.execute(
       'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
       [columnName, i, cardIds[i]]
+    );
+  }
+}
+
+export async function batchUpdateCardPositions(
+  updates: { id: string; columnName: string; columnOrder: number }[]
+): Promise<void> {
+  const d = await getDb();
+  for (const u of updates) {
+    await d.execute(
+      'UPDATE cards SET column_name = $1, column_order = $2 WHERE id = $3',
+      [u.columnName, u.columnOrder, u.id]
     );
   }
 }
