@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import type { ColumnConfig, Card } from '../types';
 import { useCardsStore } from '../stores/cards';
@@ -22,31 +22,38 @@ const showImportDialog = ref(false);
 
 // Mutable local list for VueDraggable
 const localCards = ref<Card[]>([]);
-let syncing = false;
 
-// Sync store → local (but not while dragging)
+// Global drag lock — shared across all columns via window
+function isDragging(): boolean {
+  return (window as unknown as Record<string, boolean>).__claudban_dragging === true;
+}
+function setDragging(v: boolean) {
+  (window as unknown as Record<string, boolean>).__claudban_dragging = v;
+}
+
+// Sync store → local, but skip while dragging
 watch(
   () => cardsStore.cardsByColumn(props.column.name),
   (storeCards) => {
-    if (syncing) return;
+    if (isDragging()) return;
     localCards.value = [...storeCards];
   },
   { immediate: true },
 );
 
-// When VueDraggable modifies localCards (via v-model), persist to store
-async function onEnd() {
-  // After any drag operation ends, sync local state to store
-  syncing = true;
+function onStart() {
+  setDragging(true);
+}
 
-  // Find cards that were added to this column (their columnName doesn't match)
+async function onEnd() {
+  // Persist all changes: find moved cards and update their column
   for (let i = 0; i < localCards.value.length; i++) {
     const card = localCards.value[i];
     if (card.columnName !== props.column.name) {
       const fromColumn = card.columnName;
       await cardsStore.moveCard(card.id, props.column.name, i);
 
-      // Trigger pipeline if configured
+      // Trigger pipeline
       const project = projectsStore.activeProject;
       if (project) {
         const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
@@ -64,11 +71,15 @@ async function onEnd() {
     }
   }
 
-  // Update order for all cards in this column
+  // Reorder
   const ids = localCards.value.map(c => c.id);
-  await cardsStore.reorderColumn(props.column.name, ids);
+  if (ids.length > 0) {
+    await cardsStore.reorderColumn(props.column.name, ids);
+  }
 
-  syncing = false;
+  // Release drag lock after a tick so all columns can sync
+  await nextTick();
+  setDragging(false);
 }
 
 async function createSession(name: string, description: string) {
@@ -99,6 +110,7 @@ async function createSession(name: string, description: string) {
       ghost-class="ghost"
       group="kanban"
       class="column-body"
+      @start="onStart"
       @end="onEnd"
     >
       <KanbanCard
