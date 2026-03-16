@@ -138,6 +138,7 @@ function resetTextareaHeight() {
         <SlashCommandPalette
           :filter="input"
           :visible="showSlashPalette"
+          :commands="sessionsStore.availableCommands"
           @select="selectSlashCommand"
         />
       </div>

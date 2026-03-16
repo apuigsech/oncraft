@@ -13,6 +13,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const activeChatCardId = ref<string | null>(null);
   const historyLoaded = new Set<string>();
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
+  const availableCommands = ref<string[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
 
   function getSessionMetrics(cardId: string) {
@@ -86,8 +87,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (msg.sessionId) {
         cardsStore.updateCardSessionId(cardId, msg.sessionId);
       }
-      if (msg.subtype === 'init' && (msg as unknown as Record<string, unknown>).gitBranch) {
-        updateSessionConfig(cardId, { gitBranch: (msg as unknown as Record<string, unknown>).gitBranch as string });
+      if (msg.subtype === 'init') {
+        const initData = msg as unknown as Record<string, unknown>;
+        if (initData.gitBranch) {
+          updateSessionConfig(cardId, { gitBranch: initData.gitBranch as string });
+        }
+        // Capture available slash commands and skills from init
+        const cmds = initData.slashCommands as string[] | undefined;
+        if (cmds && cmds.length > 0) {
+          availableCommands.value = cmds.map(c => c.startsWith('/') ? c : '/' + c);
+        }
       }
 
       // Accumulate usage metrics from assistant messages
@@ -207,7 +216,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
   return {
-    messages, activeChatCardId, sessionConfigs, sessionMetrics,
+    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
     send, approveToolUse, rejectToolUse,
     interruptSession, stopSession, openChat, closeChat, isActive,

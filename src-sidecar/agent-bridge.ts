@@ -135,6 +135,9 @@ function translateMessage(
         sessionId: sysMsg.session_id,
         gitBranch: sysMsg.git_branch || undefined,
         model: sysMsg.model || undefined,
+        slashCommands: sysMsg.slash_commands || [],
+        skills: sysMsg.skills || [],
+        tools: sysMsg.tools || [],
       };
     }
     return {
