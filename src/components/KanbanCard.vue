@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { Card } from '../types';
 import StatusIndicator from './StatusIndicator.vue';
 import CardContextMenu from './CardContextMenu.vue';
+import EditCardDialog from './EditCardDialog.vue';
 import { useSessionsStore } from '../stores/sessions';
 import { useCardsStore } from '../stores/cards';
 import { deleteSessionViaSidecar } from '../services/claude-process';
@@ -12,6 +13,7 @@ const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 
 const showMenu = ref(false);
+const showEdit = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
 
@@ -33,6 +35,16 @@ function onContextMenu(e: MouseEvent) {
   menuX.value = e.clientX;
   menuY.value = e.clientY;
   showMenu.value = true;
+}
+
+function handleEdit() {
+  showMenu.value = false;
+  showEdit.value = true;
+}
+
+async function saveEdit(name: string, description: string) {
+  showEdit.value = false;
+  await cardsStore.updateCardInfo(props.card.id, name, description);
 }
 
 async function handleArchive(cardId: string) {
@@ -77,8 +89,13 @@ async function handleDelete(cardId: string) {
     <CardContextMenu
       v-if="showMenu"
       :x="menuX" :y="menuY" :card-id="card.id" :archived="card.archived"
-      @archive="handleArchive" @unarchive="handleUnarchive"
+      @edit="handleEdit" @archive="handleArchive" @unarchive="handleUnarchive"
       @delete="handleDelete" @close="showMenu = false"
+    />
+    <EditCardDialog
+      v-if="showEdit"
+      :name="card.name" :description="card.description"
+      @save="saveEdit" @cancel="showEdit = false"
     />
   </div>
 </template>

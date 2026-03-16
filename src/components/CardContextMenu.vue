@@ -7,6 +7,7 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
+  edit: [cardId: string];
   archive: [cardId: string];
   unarchive: [cardId: string];
   delete: [cardId: string];
@@ -18,6 +19,10 @@ const emit = defineEmits<{
   <Teleport to="body">
     <div class="menu-backdrop" @click="emit('close')" @contextmenu.prevent="emit('close')" />
     <div class="context-menu" :style="{ left: x + 'px', top: y + 'px' }">
+      <button class="menu-item" @click="emit('edit', cardId)">
+        <span class="menu-icon">✏️</span> Edit
+      </button>
+      <div class="menu-divider" />
       <button v-if="!archived" class="menu-item" @click="emit('archive', cardId)">
         <span class="menu-icon">📦</span> Archive
       </button>
@@ -49,4 +54,5 @@ const emit = defineEmits<{
 .menu-item.danger { color: var(--error); }
 .menu-item.danger:hover { background: rgba(239,68,68,0.1); }
 .menu-icon { font-size: 14px; }
+.menu-divider { height: 1px; background: var(--bg-tertiary); margin: 3px 6px; }
 </style>

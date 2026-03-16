@@ -68,6 +68,14 @@ export const useCardsStore = defineStore('cards', () => {
     }
   }
 
+  async function updateCardInfo(cardId: string, name: string, description: string): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.name = name;
+    card.description = description;
+    await db.updateCard(card);
+  }
+
   async function archiveCard(cardId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
@@ -89,7 +97,7 @@ export const useCardsStore = defineStore('cards', () => {
 
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
-    addCard, moveCard, updateCardState, updateCardSessionId,
+    addCard, moveCard, updateCardState, updateCardSessionId, updateCardInfo,
     reorderColumn, archiveCard, unarchiveCard, removeCard,
   };
 });
