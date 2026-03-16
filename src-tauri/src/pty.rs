@@ -108,28 +108,49 @@ pub fn pty_spawn(
         );
     }
 
-    // Spawn a thread to read PTY output and emit to frontend
+    // ME-2: Spawn a thread to read PTY output with throttled emission.
+    // Instead of emitting an IPC event per read() chunk (potentially 30-50/s),
+    // accumulate output and flush at most every 16ms (~60 Hz) or when the
+    // buffer exceeds 8 KB, whichever comes first. This dramatically reduces
+    // IPC event pressure on the WebView while keeping terminal output fluid.
     let app_clone = app.clone();
     let read_id = pty_id.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        let mut accum = String::new();
+        let mut last_flush = std::time::Instant::now();
+        let flush_interval = std::time::Duration::from_millis(16);
+        let flush_size = 8192;
+
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF
                 Ok(n) => {
-                    // PTY output is often UTF-8 but can contain partial sequences;
-                    // use lossy conversion to avoid panics
-                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(
-                        "pty-output",
-                        PtyOutput {
-                            id: read_id.clone(),
-                            data: text,
-                        },
-                    );
+                    accum.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    let elapsed = last_flush.elapsed();
+                    if elapsed >= flush_interval || accum.len() >= flush_size {
+                        let _ = app_clone.emit(
+                            "pty-output",
+                            PtyOutput {
+                                id: read_id.clone(),
+                                data: std::mem::take(&mut accum),
+                            },
+                        );
+                        last_flush = std::time::Instant::now();
+                    }
                 }
                 Err(_) => break,
             }
+        }
+        // Flush remaining accumulated output on EOF/error
+        if !accum.is_empty() {
+            let _ = app_clone.emit(
+                "pty-output",
+                PtyOutput {
+                    id: read_id.clone(),
+                    data: accum,
+                },
+            );
         }
     });
 
