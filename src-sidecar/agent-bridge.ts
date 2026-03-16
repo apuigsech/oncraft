@@ -360,28 +360,7 @@ rl.on("line", async (line: string) => {
       scanSkillDir(join(projectDir, ".claude", "skills"), "project skill");
     }
 
-    // Scan plugin-installed skills
-    try {
-      const pluginsFile = join(home, ".claude", "plugins", "installed_plugins.json");
-      if (existsSync(pluginsFile)) {
-        const plugins = JSON.parse(readFileSync(pluginsFile, "utf-8"));
-        if (Array.isArray(plugins)) {
-          for (const plugin of plugins) {
-            const pluginDir = plugin.path || plugin.directory;
-            if (pluginDir && existsSync(pluginDir)) {
-              // Scan skills within plugin
-              const skillsDir = join(pluginDir, "skills");
-              if (existsSync(skillsDir)) {
-                const pluginName = plugin.name || basename(pluginDir);
-                scanSkillDir(skillsDir, `plugin: ${pluginName}`);
-              }
-            }
-          }
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Scan plugin cache for skills too
+    // Scan plugin cache for both commands/ and skills/
     try {
       const cacheDir = join(home, ".claude", "plugins", "cache");
       if (existsSync(cacheDir)) {
@@ -399,16 +378,65 @@ rl.on("line", async (line: string) => {
               .reverse();
             if (versions.length === 0) continue;
             const latestDir = join(cacheDir, vendor.name, plugin.name, versions[0]);
+            const pluginName = plugin.name;
+            const pluginLabel = `plugin: ${pluginName}`;
+
+            // Scan commands/ (e.g. speckit-specify.md -> /spec-kit:speckit-specify)
+            const commandsDir = join(latestDir, "commands");
+            if (existsSync(commandsDir)) {
+              try {
+                const entries = readdirSync(commandsDir, { withFileTypes: true });
+                for (const entry of entries) {
+                  if (entry.name.endsWith(".md")) {
+                    const cmdBase = entry.name.replace(/\.md$/, "");
+                    const cmdName = `/${pluginName}:${cmdBase}`;
+                    let desc = pluginLabel;
+                    try {
+                      const content = readFileSync(join(commandsDir, entry.name), "utf-8");
+                      const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
+                      if (match) desc = match[1].trim().replace(/^['"]|['"]$/g, "");
+                    } catch { /* ignore */ }
+                    commands.push({ name: cmdName, desc, source: pluginLabel });
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+
+            // Scan skills/ (e.g. spec-writing/SKILL.md -> /spec-kit:spec-writing)
             const skillsDir = join(latestDir, "skills");
             if (existsSync(skillsDir)) {
-              scanSkillDir(skillsDir, `plugin: ${plugin.name}`);
+              try {
+                const entries = readdirSync(skillsDir, { withFileTypes: true });
+                for (const entry of entries) {
+                  if (entry.isDirectory()) {
+                    const skillMd = join(skillsDir, entry.name, "SKILL.md");
+                    if (existsSync(skillMd)) {
+                      let desc = pluginLabel;
+                      try {
+                        const content = readFileSync(skillMd, "utf-8");
+                        const match = content.match(/^---\n[\s\S]*?description:\s*['"]*(.+?)['"]*\n/);
+                        if (match) desc = match[1].trim();
+                      } catch { /* ignore */ }
+                      commands.push({ name: `/${pluginName}:${entry.name}`, desc, source: pluginLabel });
+                    }
+                  }
+                }
+              } catch { /* ignore */ }
             }
           }
         }
       }
     } catch { /* ignore */ }
 
-    emit({ type: "commands", commands });
+    // Deduplicate by name (keep first occurrence which has better description)
+    const seen = new Set<string>();
+    const dedupedCommands = commands.filter(c => {
+      if (seen.has(c.name)) return false;
+      seen.add(c.name);
+      return true;
+    });
+
+    emit({ type: "commands", commands: dedupedCommands });
     return;
   }
 
