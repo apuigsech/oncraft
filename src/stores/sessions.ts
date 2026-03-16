@@ -13,7 +13,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const activeChatCardId = ref<string | null>(null);
   const historyLoaded = new Set<string>();
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
-  const availableCommands = ref<string[]>([]);
+  const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
 
   function getSessionMetrics(cardId: string) {
@@ -91,11 +91,6 @@ export const useSessionsStore = defineStore('sessions', () => {
         const initData = msg as unknown as Record<string, unknown>;
         if (initData.gitBranch) {
           updateSessionConfig(cardId, { gitBranch: initData.gitBranch as string });
-        }
-        // Capture available slash commands and skills from init
-        const cmds = initData.slashCommands as string[] | undefined;
-        if (cmds && cmds.length > 0) {
-          availableCommands.value = cmds.map(c => c.startsWith('/') ? c : '/' + c);
         }
       }
 
@@ -193,8 +188,23 @@ export const useSessionsStore = defineStore('sessions', () => {
     await cardsStore.updateCardState(cardId, 'idle');
   }
 
+  async function loadAvailableCommands(projectPath?: string): Promise<void> {
+    const { listCommandsViaSidecar } = await import('../services/claude-process');
+    const cmds = await listCommandsViaSidecar(projectPath);
+    console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
+    availableCommands.value = cmds;
+  }
+
   async function openChat(cardId: string): Promise<void> {
     activeChatCardId.value = cardId;
+
+    // Load available commands if we haven't yet
+    if (availableCommands.value.length === 0) {
+      const project = (await import('./projects')).useProjectsStore().activeProject;
+      if (project) {
+        loadAvailableCommands(project.path);
+      }
+    }
 
     // Load history via sidecar SDK if we haven't already
     if (!historyLoaded.has(cardId) && (!messages[cardId] || messages[cardId].length === 0)) {

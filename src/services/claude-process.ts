@@ -171,6 +171,56 @@ export function markQueryComplete(cardId: string): void {
   activeQueries.delete(cardId);
 }
 
+export interface SlashCommand {
+  name: string;
+  desc: string;
+  source: string;
+}
+
+// List available commands/skills by scanning the filesystem via the sidecar
+export async function listCommandsViaSidecar(projectPath?: string): Promise<SlashCommand[]> {
+  return new Promise((resolve) => {
+    const command = Command.sidecar('binaries/agent-bridge');
+    let lineBuffer = '';
+    let resolved = false;
+
+    command.stdout.on('data', (data: string) => {
+      lineBuffer += data;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === 'commands') {
+            resolved = true;
+            resolve(parsed.commands || []);
+          }
+        } catch { /* ignore */ }
+      }
+    });
+
+    command.on('close', () => { if (!resolved) resolve([]); });
+    command.on('error', () => { if (!resolved) resolve([]); });
+
+    command.spawn().then(async (child) => {
+      await child.write(JSON.stringify({ cmd: 'listCommands', projectPath }) + '\n');
+      setTimeout(() => {
+        if (!resolved) {
+          if (lineBuffer.trim()) {
+            try {
+              const parsed = JSON.parse(lineBuffer);
+              if (parsed.type === 'commands') { resolved = true; resolve(parsed.commands || []); }
+            } catch { /* ignore */ }
+          }
+          if (!resolved) resolve([]);
+        }
+        child.kill();
+      }, 5000);
+    }).catch(() => resolve([]));
+  });
+}
+
 // Load session history via the sidecar's loadHistory command.
 // Spawns a temporary sidecar, sends the command, collects the result, and kills it.
 export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMessage[]> {

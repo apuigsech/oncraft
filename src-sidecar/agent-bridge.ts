@@ -1,8 +1,8 @@
 import { query, getSessionMessages, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readFileSync, readdirSync, existsSync, statSync } from "fs";
+import { join, basename, relative } from "path";
 import { homedir } from "os";
 
 // ---- load env vars from ~/.claude/settings.json ----
@@ -296,6 +296,119 @@ rl.on("line", async (line: string) => {
       process.stderr.write(`[agent-bridge] history error: ${err}\n`);
       emit({ type: "history", messages: [], error: String(err) });
     }
+    return;
+  }
+
+  // Handle listCommands — scan filesystem for available commands and skills
+  if (cmd.cmd === "listCommands") {
+    const projectDir = cmd.projectPath as string | undefined;
+    const commands: { name: string; desc: string; source: string }[] = [];
+
+    function scanCommandDir(dir: string, prefix: string, source: string): void {
+      try {
+        if (!existsSync(dir)) return;
+        const entries = readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = join(dir, entry.name);
+          if (entry.isDirectory()) {
+            scanCommandDir(fullPath, prefix ? `${prefix}:${entry.name}` : entry.name, source);
+          } else if (entry.name.endsWith(".md")) {
+            const name = entry.name.replace(/\.md$/, "");
+            const cmdName = prefix ? `/${prefix}:${name}` : `/${name}`;
+            // Try to extract description from frontmatter
+            let desc = source;
+            try {
+              const content = readFileSync(fullPath, "utf-8");
+              const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
+              if (match) desc = match[1].trim();
+            } catch { /* ignore */ }
+            commands.push({ name: cmdName, desc, source });
+          }
+        }
+      } catch { /* ignore unreadable dirs */ }
+    }
+
+    function scanSkillDir(dir: string, source: string): void {
+      try {
+        if (!existsSync(dir)) return;
+        const entries = readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const skillMd = join(dir, entry.name, "SKILL.md");
+            if (existsSync(skillMd)) {
+              let desc = source;
+              try {
+                const content = readFileSync(skillMd, "utf-8");
+                const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
+                if (match) desc = match[1].trim();
+              } catch { /* ignore */ }
+              commands.push({ name: `/${entry.name}`, desc, source });
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Scan user-level commands and skills
+    const home = homedir();
+    scanCommandDir(join(home, ".claude", "commands"), "", "user command");
+    scanSkillDir(join(home, ".claude", "skills"), "user skill");
+
+    // Scan project-level commands and skills
+    if (projectDir) {
+      scanCommandDir(join(projectDir, ".claude", "commands"), "", "project command");
+      scanSkillDir(join(projectDir, ".claude", "skills"), "project skill");
+    }
+
+    // Scan plugin-installed skills
+    try {
+      const pluginsFile = join(home, ".claude", "plugins", "installed_plugins.json");
+      if (existsSync(pluginsFile)) {
+        const plugins = JSON.parse(readFileSync(pluginsFile, "utf-8"));
+        if (Array.isArray(plugins)) {
+          for (const plugin of plugins) {
+            const pluginDir = plugin.path || plugin.directory;
+            if (pluginDir && existsSync(pluginDir)) {
+              // Scan skills within plugin
+              const skillsDir = join(pluginDir, "skills");
+              if (existsSync(skillsDir)) {
+                const pluginName = plugin.name || basename(pluginDir);
+                scanSkillDir(skillsDir, `plugin: ${pluginName}`);
+              }
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Scan plugin cache for skills too
+    try {
+      const cacheDir = join(home, ".claude", "plugins", "cache");
+      if (existsSync(cacheDir)) {
+        const vendors = readdirSync(cacheDir, { withFileTypes: true });
+        for (const vendor of vendors) {
+          if (!vendor.isDirectory()) continue;
+          const plugins = readdirSync(join(cacheDir, vendor.name), { withFileTypes: true });
+          for (const plugin of plugins) {
+            if (!plugin.isDirectory()) continue;
+            // Find latest version
+            const versions = readdirSync(join(cacheDir, vendor.name, plugin.name), { withFileTypes: true })
+              .filter(v => v.isDirectory())
+              .map(v => v.name)
+              .sort()
+              .reverse();
+            if (versions.length === 0) continue;
+            const latestDir = join(cacheDir, vendor.name, plugin.name, versions[0]);
+            const skillsDir = join(latestDir, "skills");
+            if (existsSync(skillsDir)) {
+              scanSkillDir(skillsDir, `plugin: ${plugin.name}`);
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    emit({ type: "commands", commands });
     return;
   }
 

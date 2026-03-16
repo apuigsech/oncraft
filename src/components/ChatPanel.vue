@@ -15,7 +15,11 @@ const cardsStore = useCardsStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
-const showSlashPalette = computed(() => input.value.startsWith('/') && !input.value.includes(' '));
+const showSlashPalette = computed(() => {
+  const show = input.value.startsWith('/') && !input.value.includes(' ');
+  if (show) console.log('[ClaudBan] slash palette visible, filter:', input.value, 'commands:', sessionsStore.availableCommands.length);
+  return show;
+});
 
 const card = computed(() => {
   if (!sessionsStore.activeChatCardId) return null;

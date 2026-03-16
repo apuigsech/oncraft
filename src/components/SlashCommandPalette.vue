@@ -1,42 +1,43 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+interface SlashCommand {
+  name: string;
+  desc: string;
+  source?: string;
+}
+
 const props = defineProps<{
   filter: string;
   visible: boolean;
-  commands: string[];
+  commands: SlashCommand[];
 }>();
 const emit = defineEmits<{ select: [command: string] }>();
 
-// Built-in commands that are always available
-const BUILTIN_COMMANDS: { name: string; desc: string }[] = [
+// Built-in commands always available
+const BUILTIN: SlashCommand[] = [
   { name: '/clear', desc: 'Clear conversation and start fresh' },
   { name: '/compact', desc: 'Compact context to free space' },
   { name: '/context', desc: 'Show context window usage' },
   { name: '/cost', desc: 'Show session cost and usage' },
   { name: '/diff', desc: 'Show file changes this session' },
-  { name: '/export', desc: 'Export conversation to file' },
   { name: '/help', desc: 'Show available commands' },
   { name: '/model', desc: 'Switch AI model' },
-  { name: '/permissions', desc: 'View and manage permissions' },
   { name: '/plan', desc: 'Enter plan mode' },
-  { name: '/resume', desc: 'Resume a previous session' },
-  { name: '/rewind', desc: 'Rewind to a previous point' },
-  { name: '/stats', desc: 'Show daily usage statistics' },
 ];
 
-// Merge built-in + dynamic commands from session init
 const allCommands = computed(() => {
-  const builtinNames = new Set(BUILTIN_COMMANDS.map(c => c.name));
-  const dynamic = props.commands
-    .filter(c => !builtinNames.has(c))
-    .map(c => ({ name: c, desc: 'Skill' }));
-  return [...BUILTIN_COMMANDS, ...dynamic];
+  const builtinNames = new Set(BUILTIN.map(c => c.name));
+  const dynamic = (props.commands || [])
+    .filter(c => !builtinNames.has(c.name))
+    .map(c => ({ name: c.name, desc: c.desc, source: c.source }));
+  return [...BUILTIN, ...dynamic];
 });
 
-const filtered = computed(() =>
-  allCommands.value.filter(c => c.name.startsWith(props.filter.toLowerCase()))
-);
+const filtered = computed(() => {
+  const f = props.filter.toLowerCase();
+  return allCommands.value.filter(c => c.name.toLowerCase().startsWith(f));
+});
 </script>
 
 <template>
@@ -48,6 +49,7 @@ const filtered = computed(() =>
     >
       <span class="slash-name">{{ cmd.name }}</span>
       <span class="slash-desc">{{ cmd.desc }}</span>
+      <span v-if="cmd.source" class="slash-source">{{ cmd.source }}</span>
     </div>
   </div>
 </template>
@@ -57,7 +59,7 @@ const filtered = computed(() =>
   position: absolute; bottom: 100%; left: 0; right: 0;
   background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: 6px; margin-bottom: 4px; overflow: hidden;
-  max-height: 250px; overflow-y: auto;
+  max-height: 300px; overflow-y: auto;
   box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
   z-index: 50;
 }
@@ -68,7 +70,8 @@ const filtered = computed(() =>
 .slash-item:hover { background: var(--bg-tertiary); }
 .slash-name {
   font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
-  color: var(--accent); font-weight: 600; min-width: 120px;
+  color: var(--accent); font-weight: 600; min-width: 120px; flex-shrink: 0;
 }
-.slash-desc { font-size: 11px; color: var(--text-muted); }
+.slash-desc { font-size: 11px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-source { font-size: 9px; color: var(--text-muted); background: var(--bg-tertiary); padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 </style>
