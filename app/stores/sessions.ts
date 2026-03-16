@@ -3,7 +3,7 @@ import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
   onMessage, offMessage,
-  listCommandsViaSidecar, loadHistoryViaSidecar,
+  listCommandsNative, loadHistoryViaSidecar,
 } from '~/services/claude-process';
 import { ensureMarkdownReady } from '~/services/markdown';
 
@@ -240,7 +240,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function loadAvailableCommands(projectPath?: string): Promise<void> {
-    const cmds = await listCommandsViaSidecar(projectPath);
+    // DA-1: Uses native Rust command instead of sidecar
+    const cmds = await listCommandsNative(projectPath);
     if (import.meta.dev) console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
     availableCommands.value = cmds;
   }

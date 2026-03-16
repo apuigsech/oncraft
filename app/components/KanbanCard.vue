@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Card } from '~/types';
-import { deleteSessionViaSidecar } from '~/services/claude-process';
+import { deleteSessionNative } from '~/services/claude-process';
 
 const props = defineProps<{ card: Card; columnColor: string }>();
 const sessionsStore = useSessionsStore();
@@ -59,7 +59,7 @@ async function handleDelete(cardId: string) {
   sessionsStore.closeChat();
   await cardsStore.removeCard(cardId);
   if (sessionId && !sessionId.startsWith('pending-')) {
-    deleteSessionViaSidecar(sessionId);
+    deleteSessionNative(sessionId);
   }
 }
 </script>

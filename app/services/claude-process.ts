@@ -1,4 +1,5 @@
 import { Command } from '@tauri-apps/plugin-shell';
+import { invoke } from '@tauri-apps/api/core';
 import type { StreamMessage, AgentProgressEvent, SessionConfig } from '~/types';
 import { parseStreamLine, isProgressEvent, parseProgressEvent } from './stream-parser';
 
@@ -210,11 +211,9 @@ export interface SlashCommand {
 }
 
 // ---------------------------------------------------------------------------
-// ME-1: Shared utility sidecar
-//
-// A single long-lived sidecar process is reused for all query operations
-// (listSessions, listCommands, loadHistory, deleteSession) instead of
-// spawning and killing a fresh process for each one.
+// DA-1: listCommands and deleteSession are now native Rust commands.
+// The shared utility sidecar is only needed for SDK-dependent operations
+// (listSessions, loadHistory) that require the Claude Agent SDK.
 // ---------------------------------------------------------------------------
 
 interface PendingRequest {
@@ -312,12 +311,27 @@ function _utilRequest(
   });
 }
 
-// N-3: Preload the utility sidecar in background so it's ready
-// when the user first opens a chat or lists sessions.
-export function preloadUtilSidecar(): void {
-  _ensureUtilSidecar();
+// DA-1: listCommands — native Rust command, no sidecar needed
+export async function listCommandsNative(projectPath?: string): Promise<SlashCommand[]> {
+  try {
+    return await invoke<SlashCommand[]>('list_commands', {
+      projectPath: projectPath || null,
+    });
+  } catch {
+    return [];
+  }
 }
 
+// DA-1: deleteSession — native Rust command, no sidecar needed
+export async function deleteSessionNative(sessionId: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('delete_session', { sessionId });
+  } catch {
+    return false;
+  }
+}
+
+// listSessions — still requires the Claude Agent SDK via sidecar
 export async function listSessionsViaSidecar(projectPath: string): Promise<SessionInfo[]> {
   const result = await _utilRequest(
     { cmd: 'listSessions', projectPath },
@@ -326,23 +340,7 @@ export async function listSessionsViaSidecar(projectPath: string): Promise<Sessi
   return (result.sessions as SessionInfo[]) || [];
 }
 
-export async function deleteSessionViaSidecar(sessionId: string): Promise<void> {
-  await _utilRequest(
-    { cmd: 'deleteSession', sessionId },
-    'sessionDeleted',
-    5000,
-  );
-}
-
-export async function listCommandsViaSidecar(projectPath?: string): Promise<SlashCommand[]> {
-  const result = await _utilRequest(
-    { cmd: 'listCommands', projectPath },
-    'commands',
-    5000,
-  );
-  return (result.commands as SlashCommand[]) || [];
-}
-
+// loadHistory — still requires the Claude Agent SDK via sidecar
 export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMessage[]> {
   const result = await _utilRequest(
     { cmd: 'loadHistory', sessionId },

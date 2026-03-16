@@ -481,6 +481,7 @@ dependencies = [
 name = "claudban"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "fix-path-env",
  "portable-pty",
  "serde",
