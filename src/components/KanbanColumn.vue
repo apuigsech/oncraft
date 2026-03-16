@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
-import { VueDraggable } from 'vue-draggable-plus';
-import type { ColumnConfig, Card } from '../types';
+import { ref, computed } from 'vue';
+import Sortable from 'sortablejs';
+import type { ColumnConfig } from '../types';
 import { useCardsStore } from '../stores/cards';
 import { useProjectsStore } from '../stores/projects';
 import { useSessionsStore } from '../stores/sessions';
@@ -19,68 +19,63 @@ const pipelinesStore = usePipelinesStore();
 
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
+const columnBody = ref<HTMLElement | null>(null);
 
-// Mutable local list for VueDraggable
-const localCards = ref<Card[]>([]);
+const columnCards = computed(() => cardsStore.cardsByColumn(props.column.name));
 
-// Global drag lock — shared across all columns via window
-function isDragging(): boolean {
-  return (window as unknown as Record<string, boolean>).__claudban_dragging === true;
-}
-function setDragging(v: boolean) {
-  (window as unknown as Record<string, boolean>).__claudban_dragging = v;
-}
+// Initialize SortableJS directly on the DOM element
+import { onMounted, onBeforeUnmount } from 'vue';
 
-// Sync store → local, but skip while dragging
-watch(
-  () => cardsStore.cardsByColumn(props.column.name),
-  (storeCards) => {
-    if (isDragging()) return;
-    localCards.value = [...storeCards];
-  },
-  { immediate: true },
-);
+let sortableInstance: Sortable | null = null;
 
-function onStart() {
-  setDragging(true);
-}
+onMounted(() => {
+  if (!columnBody.value) return;
+  sortableInstance = new Sortable(columnBody.value, {
+    animation: 150,
+    ghostClass: 'ghost',
+    group: 'kanban',
+    onEnd: async (evt) => {
+      const cardId = evt.item.dataset.cardId;
+      if (!cardId) return;
+      const card = cardsStore.cards.find(c => c.id === cardId);
+      if (!card) return;
 
-async function onEnd() {
-  // Persist all changes: find moved cards and update their column
-  for (let i = 0; i < localCards.value.length; i++) {
-    const card = localCards.value[i];
-    if (card.columnName !== props.column.name) {
-      const fromColumn = card.columnName;
-      await cardsStore.moveCard(card.id, props.column.name, i);
+      const fromColumnName = evt.from.dataset.columnName;
+      const toColumnName = evt.to.dataset.columnName;
+      const newIndex = evt.newIndex ?? 0;
 
-      // Trigger pipeline
-      const project = projectsStore.activeProject;
-      if (project) {
-        const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
-        if (pipeline) {
-          const prompt = resolveTemplate(pipeline.prompt, {
-            session: { name: card.name, id: card.sessionId },
-            project: { path: project.path, name: project.name },
-            card: { description: card.description },
-            column: { from: fromColumn, to: props.column.name },
-          });
-          sessionsStore.send(card.id, prompt);
-          sessionsStore.openChat(card.id);
+      if (!toColumnName) return;
+
+      // If moved to a different column
+      if (fromColumnName !== toColumnName) {
+        await cardsStore.moveCard(cardId, toColumnName, newIndex);
+
+        // Pipeline trigger
+        const project = projectsStore.activeProject;
+        if (project && fromColumnName) {
+          const pipeline = pipelinesStore.findPipeline(project.path, fromColumnName, toColumnName);
+          if (pipeline) {
+            const prompt = resolveTemplate(pipeline.prompt, {
+              session: { name: card.name, id: card.sessionId },
+              project: { path: project.path, name: project.name },
+              card: { description: card.description },
+              column: { from: fromColumnName, to: toColumnName },
+            });
+            sessionsStore.send(cardId, prompt);
+            sessionsStore.openChat(cardId);
+          }
         }
+      } else {
+        // Reorder within same column
+        await cardsStore.moveCard(cardId, toColumnName, newIndex);
       }
-    }
-  }
+    },
+  });
+});
 
-  // Reorder
-  const ids = localCards.value.map(c => c.id);
-  if (ids.length > 0) {
-    await cardsStore.reorderColumn(props.column.name, ids);
-  }
-
-  // Release drag lock after a tick so all columns can sync
-  await nextTick();
-  setDragging(false);
-}
+onBeforeUnmount(() => {
+  sortableInstance?.destroy();
+});
 
 async function createSession(name: string, description: string) {
   showNewDialog.value = false;
@@ -97,29 +92,22 @@ async function createSession(name: string, description: string) {
       <div class="column-title">
         <span class="color-dot" :style="{ background: column.color }" />
         <span>{{ column.name }}</span>
-        <span class="card-count">{{ localCards.length }}</span>
+        <span class="card-count">{{ columnCards.length }}</span>
       </div>
       <div class="header-actions">
         <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">&#8615;</button>
         <button class="action-btn" @click="showNewDialog = true" title="New session">+</button>
       </div>
     </div>
-    <VueDraggable
-      v-model="localCards"
-      :animation="150"
-      ghost-class="ghost"
-      group="kanban"
-      class="column-body"
-      @start="onStart"
-      @end="onEnd"
-    >
+    <div ref="columnBody" :data-column-name="column.name" class="column-body">
       <KanbanCard
-        v-for="card in localCards"
+        v-for="card in columnCards"
         :key="card.id"
+        :data-card-id="card.id"
         :card="card"
         :column-color="column.color"
       />
-    </VueDraggable>
+    </div>
     <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"
