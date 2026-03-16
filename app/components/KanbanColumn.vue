@@ -108,6 +108,8 @@ async function createSession(name: string, description: string, useWorktree: boo
       ghost-class="ghost"
       draggable=".kanban-card"
       :force-fallback="true"
+      :delay="120"
+      :delay-on-touch-only="false"
       :data-column-name="column.name"
       class="column-body"
       @end="onDragEnd"
