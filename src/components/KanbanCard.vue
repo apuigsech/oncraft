@@ -49,12 +49,14 @@ async function handleUnarchive(cardId: string) {
 async function handleDelete(cardId: string) {
   showMenu.value = false;
   if (!confirm(`Delete "${props.card.name}" and its Claude session? This cannot be undone.`)) return;
+  const sessionId = props.card.sessionId;
   sessionsStore.closeChat();
-  // Delete the Claude session file
-  if (props.card.sessionId && !props.card.sessionId.startsWith('pending-')) {
-    await deleteSessionViaSidecar(props.card.sessionId);
-  }
+  // Remove from board immediately
   await cardsStore.removeCard(cardId);
+  // Delete Claude session file in background
+  if (sessionId && !sessionId.startsWith('pending-')) {
+    deleteSessionViaSidecar(sessionId);
+  }
 }
 </script>
 
