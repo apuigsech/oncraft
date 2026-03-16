@@ -153,6 +153,11 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     const config = getSessionConfig(cardId);
 
+    // Ensure worktreeName from card is reflected in session config
+    if (card?.useWorktree && card.worktreeName && !config.worktreeName) {
+      config.worktreeName = card.worktreeName;
+    }
+
     // If sidecar is already alive (previous query completed), reuse it
     if (isProcessActive(cardId)) {
       try {

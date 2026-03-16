@@ -75,11 +75,14 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   }
 }
 
-async function createSession(name: string, description: string) {
+async function createSession(name: string, description: string, useWorktree: boolean) {
   showNewDialog.value = false;
   const project = projectsStore.activeProject;
   if (!project) return;
-  const card = await cardsStore.addCard(project.id, props.column.name, name, description);
+  const card = await cardsStore.addCard(project.id, props.column.name, name, description, useWorktree);
+  if (useWorktree && card.worktreeName) {
+    sessionsStore.updateSessionConfig(card.id, { worktreeName: card.worktreeName });
+  }
   sessionsStore.openChat(card.id);
 }
 </script>

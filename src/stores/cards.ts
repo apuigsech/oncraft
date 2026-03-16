@@ -23,13 +23,18 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function addCard(
-    projectId: string, columnName: string, name: string, description: string
+    projectId: string, columnName: string, name: string, description: string, useWorktree?: boolean
   ): Promise<Card> {
     const columnCards = cards.value.filter(c => c.columnName === columnName);
+    const worktreeName = useWorktree
+      ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      : undefined;
     const card: Card = {
       id: uuidv4(), projectId, name, description, columnName,
       columnOrder: columnCards.length, sessionId: '', state: 'idle', tags: [],
       createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), archived: false,
+      useWorktree: useWorktree || false,
+      worktreeName,
     };
     await db.insertCard(card);
     cards.value.push(card);
