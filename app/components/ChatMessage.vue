@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import type { StreamMessage } from '~/types';
-import { renderMarkdown } from '~/services/markdown';
+import { renderMarkdown, useDebouncedMarkdown } from '~/services/markdown';
 
 const props = defineProps<{ message: StreamMessage }>();
 
-const renderedContent = computed(() => {
-  if (props.message.type === 'assistant') {
-    return renderMarkdown(props.message.content);
-  }
-  return '';
-});
-
 const isThinking = computed(() => props.message.subtype === 'thinking');
 const isStreaming = computed(() => props.message.subtype === 'streaming');
+
+// QW-5: Use debounced markdown for streaming messages to avoid
+// re-parsing the full markdown on every token arrival.
+// Non-streaming messages use immediate rendering (no debounce).
+const debouncedHtml = useDebouncedMarkdown(
+  () => (props.message.type === 'assistant' && isStreaming.value) ? props.message.content : '',
+  80,
+);
+const renderedContent = computed(() => {
+  if (props.message.type !== 'assistant') return '';
+  if (isStreaming.value) return debouncedHtml.value;
+  return renderMarkdown(props.message.content);
+});
 </script>
 
 <template>

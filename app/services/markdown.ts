@@ -60,3 +60,43 @@ marked.setOptions({ renderer, breaks: true });
 export function renderMarkdown(text: string): string {
   return marked.parse(text, { async: false }) as string;
 }
+
+// QW-5: Debounced markdown rendering for streaming content.
+// Returns a ref that updates at most every `delayMs` while the source keeps changing,
+// avoiding re-parsing the full markdown on every token (~10-20/s during streaming).
+export function useDebouncedMarkdown(source: () => string, delayMs = 80) {
+  const rendered = ref('');
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastSource = '';
+
+  function flush() {
+    timer = null;
+    const text = source();
+    if (text !== lastSource) {
+      lastSource = text;
+      rendered.value = text ? renderMarkdown(text) : '';
+    }
+  }
+
+  watch(source, (text) => {
+    // Immediate render if empty → non-empty (first content)
+    if (!lastSource && text) {
+      lastSource = text;
+      rendered.value = renderMarkdown(text);
+      return;
+    }
+    // Debounce subsequent updates
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, delayMs);
+  }, { immediate: true });
+
+  // Final flush on scope dispose to ensure last content is rendered
+  onScopeDispose(() => {
+    if (timer) {
+      clearTimeout(timer);
+      flush();
+    }
+  });
+
+  return rendered;
+}

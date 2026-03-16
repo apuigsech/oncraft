@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toUIMessages, toChatStatus } from '~/services/message-adapter';
 import type { ToolInvocationUIPart } from '~/services/message-adapter';
-import { renderMarkdown } from '~/services/markdown';
+import { renderMarkdown, useDebouncedMarkdown } from '~/services/markdown';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -131,7 +131,12 @@ function selectSlashCommand(command: string) {
           <template v-for="(part, idx) in parts" :key="idx">
             <!-- Text parts: user = plain text, assistant = rendered markdown -->
             <template v-if="part.type === 'text'">
-              <div v-if="role === 'assistant'" class="markdown-body" v-html="renderMarkdown(part.text)" />
+              <!-- QW-5: MarkdownContent debounces parsing during streaming -->
+              <MarkdownContent
+                v-if="role === 'assistant'"
+                :text="part.text"
+                :streaming="chatStatus === 'streaming'"
+              />
               <div v-else-if="role === 'user'" class="user-text">{{ part.text }}</div>
               <div v-else class="system-text">{{ part.text }}</div>
             </template>
