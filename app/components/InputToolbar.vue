@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ModelAlias, EffortLevel, PermissionMode } from '~/types';
 
-defineProps<{
+const props = defineProps<{
   model: ModelAlias;
   effort: EffortLevel;
   permissionMode: PermissionMode;
@@ -16,161 +16,104 @@ const emit = defineEmits<{
   'update:permissionMode': [value: PermissionMode];
 }>();
 
-const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
-  { value: 'low',    label: 'Lo'  },
-  { value: 'medium', label: 'Med' },
-  { value: 'high',   label: 'Hi'  },
-  { value: 'max',    label: 'Max' },
+const MODEL_OPTIONS = [
+  { label: 'Opus',   value: 'opus' as ModelAlias,   icon: 'i-simple-icons-anthropic' },
+  { label: 'Sonnet', value: 'sonnet' as ModelAlias, icon: 'i-simple-icons-anthropic' },
+  { label: 'Haiku',  value: 'haiku' as ModelAlias,  icon: 'i-simple-icons-anthropic' },
 ];
 
-const MODE_OPTIONS: { value: PermissionMode; label: string; icon: string }[] = [
-  { value: 'default',           label: 'Default',   icon: 'i-lucide-lock'           },
-  { value: 'acceptEdits',       label: 'Auto-edit', icon: 'i-lucide-pencil'         },
-  { value: 'plan',              label: 'Plan',      icon: 'i-lucide-clipboard-list' },
-  { value: 'bypassPermissions', label: 'YOLO',      icon: 'i-lucide-zap'            },
+const EFFORT_OPTIONS = [
+  { label: 'Lo',  value: 'low' as EffortLevel },
+  { label: 'Med', value: 'medium' as EffortLevel },
+  { label: 'Hi',  value: 'high' as EffortLevel },
+  { label: 'Max', value: 'max' as EffortLevel },
 ];
 
-function modeColor(mode: PermissionMode): string {
-  switch (mode) {
-    case 'default': return 'var(--text-secondary)';
-    case 'acceptEdits': return 'var(--success)';
-    case 'plan': return 'var(--warning)';
-    case 'bypassPermissions': return 'var(--error)';
-  }
-}
+const MODE_OPTIONS = [
+  { label: 'Default',   value: 'default' as PermissionMode,           icon: 'i-lucide-lock',           chip: { color: 'neutral' as const } },
+  { label: 'Auto-edit', value: 'acceptEdits' as PermissionMode,       icon: 'i-lucide-pencil',         chip: { color: 'primary' as const } },
+  { label: 'Plan',      value: 'plan' as PermissionMode,              icon: 'i-lucide-clipboard-list', chip: { color: 'warning' as const } },
+  { label: 'YOLO',      value: 'bypassPermissions' as PermissionMode, icon: 'i-lucide-zap',            chip: { color: 'error' as const } },
+];
+
+const selectedModel = computed({
+  get: () => props.model,
+  set: (v: ModelAlias) => emit('update:model', v)
+});
+
+const selectedMode = computed({
+  get: () => props.permissionMode,
+  set: (v: PermissionMode) => emit('update:permissionMode', v)
+});
+
+const currentModelIcon = computed(() => MODEL_OPTIONS.find(m => m.value === props.model)?.icon);
+const currentModeIcon = computed(() => MODE_OPTIONS.find(m => m.value === props.permissionMode)?.icon);
 </script>
 
 <template>
-  <div class="input-toolbar">
-    <div class="toolbar-left">
-      <!-- Model selector -->
-      <select
-        :value="model"
-        class="toolbar-select"
-        @change="emit('update:model', ($event.target as HTMLSelectElement).value as ModelAlias)"
-      >
-        <option value="opus">Opus</option>
-        <option value="sonnet">Sonnet</option>
-        <option value="haiku">Haiku</option>
-      </select>
+  <div class="flex items-center gap-1 flex-1 min-w-0">
+    <!-- Model selector -->
+    <USelectMenu
+      v-model="selectedModel"
+      :items="MODEL_OPTIONS"
+      :icon="currentModelIcon"
+      size="sm"
+      variant="ghost"
+      value-key="value"
+      :search-input="false"
+      class="data-[state=open]:bg-elevated"
+      :ui="{
+        trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
+      }"
+    />
 
-      <!-- Effort level -->
-      <div class="effort-group">
-        <button
-          v-for="opt in EFFORT_OPTIONS"
-          :key="opt.value"
-          class="effort-btn"
-          :class="{ 'effort-btn--active': effort === opt.value }"
-          :title="'Effort: ' + opt.value"
-          @click="emit('update:effort', opt.value)"
-        >{{ opt.label }}</button>
-      </div>
+    <!-- Effort level -->
+    <UButtonGroup size="xs">
+      <UButton
+        v-for="opt in EFFORT_OPTIONS"
+        :key="opt.value"
+        :label="opt.label"
+        :variant="effort === opt.value ? 'solid' : 'ghost'"
+        :color="effort === opt.value ? 'primary' : 'neutral'"
+        @click="emit('update:effort', opt.value)"
+      />
+    </UButtonGroup>
 
-      <!-- Permission mode -->
-      <select
-        :value="permissionMode"
-        class="toolbar-select mode-select"
-        :style="{ color: modeColor(permissionMode) }"
-        @change="emit('update:permissionMode', ($event.target as HTMLSelectElement).value as PermissionMode)"
-      >
-        <option v-for="opt in MODE_OPTIONS" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-    </div>
+    <!-- Permission mode -->
+    <USelectMenu
+      v-model="selectedMode"
+      :items="MODE_OPTIONS"
+      :icon="currentModeIcon"
+      size="sm"
+      variant="ghost"
+      value-key="value"
+      :search-input="false"
+      class="data-[state=open]:bg-elevated"
+      :ui="{
+        trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
+      }"
+    />
 
-    <div class="toolbar-right">
-      <span
+    <!-- Branch info (right side) -->
+    <div class="ml-auto flex-shrink-0">
+      <UBadge
         v-if="worktreeBranch"
-        class="worktree-info"
+        variant="subtle"
+        color="primary"
+        size="sm"
+        icon="i-lucide-git-branch"
+        :label="'WT ' + worktreeBranch"
         :title="'Worktree: ' + (worktreePath || '')"
-      >
-        <UIcon name="i-lucide-git-branch" class="branch-icon" />
-        WT {{ worktreeBranch }}
-      </span>
-      <span
+      />
+      <UBadge
         v-else-if="gitBranch"
-        class="git-branch"
+        variant="soft"
+        color="neutral"
+        size="sm"
+        icon="i-lucide-git-branch"
+        :label="gitBranch"
         :title="'Branch: ' + gitBranch"
-      >
-        <UIcon name="i-lucide-git-branch" class="branch-icon" />
-        {{ gitBranch }}
-      </span>
+      />
     </div>
   </div>
 </template>
-
-<style scoped>
-.input-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 10px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--bg-tertiary);
-  font-size: 11px;
-  gap: 8px;
-}
-.toolbar-left  { display: flex; align-items: center; gap: 6px; }
-.toolbar-right { display: flex; align-items: center; gap: 6px; }
-
-/* Native selects — dark themed */
-.toolbar-select {
-  background: var(--bg-primary);
-  border: 1px solid var(--bg-tertiary);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  font-family: inherit;
-  color: var(--text-secondary);
-  cursor: pointer;
-  height: 22px;
-}
-.toolbar-select:focus { outline: none; border-color: var(--accent); }
-.mode-select { font-weight: 600; }
-
-/* Effort segmented group */
-.effort-group {
-  display: flex;
-  border: 1px solid var(--bg-tertiary);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.effort-btn {
-  padding: 0 8px;
-  height: 22px;
-  font-size: 10px;
-  font-family: inherit;
-  color: var(--text-muted);
-  background: var(--bg-primary);
-  border: none;
-  border-right: 1px solid var(--bg-tertiary);
-  cursor: pointer;
-  transition: all 0.12s;
-}
-.effort-btn:last-child { border-right: none; }
-.effort-btn:hover:not(.effort-btn--active) { background: var(--bg-secondary); color: var(--text-secondary); }
-.effort-btn--active { background: var(--bg-tertiary); color: var(--accent); font-weight: 700; }
-
-/* Branch / worktree indicators */
-.git-branch {
-  color: var(--text-muted);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  background: var(--bg-primary);
-  padding: 2px 8px;
-  border-radius: 3px;
-  display: flex; align-items: center; gap: 4px;
-}
-.worktree-info {
-  color: var(--accent);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  background: var(--bg-primary);
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  display: flex; align-items: center; gap: 4px;
-}
-.branch-icon { width: 12px; height: 12px; flex-shrink: 0; }
-</style>
