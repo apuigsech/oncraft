@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, watch } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import type { ColumnConfig, Card } from '../types';
 import { useCardsStore } from '../stores/cards';
@@ -20,42 +20,42 @@ const pipelinesStore = usePipelinesStore();
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
 
-// Writable computed for VueDraggable v-model compatibility.
-// Reads from store; writes are handled by event handlers (onAdd, onUpdate).
-const columnCards = computed<Card[]>({
-  get: () => cardsStore.cardsByColumn(props.column.name),
-  set: () => {
-    // Mutations handled via onAdd / onUpdate event handlers below.
-  },
-});
+// Local mutable array for VueDraggable — synced from store
+const columnCards = ref<Card[]>([]);
 
-async function onAdd(evt: { newIndex?: number }) {
-  // After VueDraggable moves the item into columnCards, find the card at the new index
-  const newIdx = evt.newIndex ?? 0;
-  const card = columnCards.value[newIdx];
-  if (!card) return;
-  const fromColumn = card.columnName;
-  await cardsStore.moveCard(card.id, props.column.name, newIdx);
+// Keep local list in sync with store
+watch(
+  () => cardsStore.cardsByColumn(props.column.name),
+  (newCards) => { columnCards.value = [...newCards]; },
+  { immediate: true, deep: true },
+);
 
-  const project = projectsStore.activeProject;
-  if (!project) return;
-  const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
-  if (pipeline) {
-    const prompt = resolveTemplate(pipeline.prompt, {
-      session: { name: card.name, id: card.sessionId },
-      project: { path: project.path, name: project.name },
-      card: { description: card.description },
-      column: { from: fromColumn, to: props.column.name },
-    });
-    // send() handles spawning/resuming the Claude process automatically
-    await sessionsStore.send(card.id, prompt);
-    sessionsStore.openChat(card.id);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function onChange(evt: any) {
+  if (evt.added) {
+    const card = evt.added.element;
+    const fromColumn = card.columnName;
+    await cardsStore.moveCard(card.id, props.column.name, evt.added.newIndex);
+
+    const project = projectsStore.activeProject;
+    if (!project) return;
+    const pipeline = pipelinesStore.findPipeline(project.path, fromColumn, props.column.name);
+    if (pipeline) {
+      const prompt = resolveTemplate(pipeline.prompt, {
+        session: { name: card.name, id: card.sessionId },
+        project: { path: project.path, name: project.name },
+        card: { description: card.description },
+        column: { from: fromColumn, to: props.column.name },
+      });
+      await sessionsStore.send(card.id, prompt);
+      sessionsStore.openChat(card.id);
+    }
   }
-}
 
-async function onUpdate() {
-  const ids = columnCards.value.map(c => c.id);
-  await cardsStore.reorderColumn(props.column.name, ids);
+  if (evt.moved) {
+    const ids = columnCards.value.map(c => c.id);
+    await cardsStore.reorderColumn(props.column.name, ids);
+  }
 }
 
 async function createSession(name: string, description: string) {
@@ -87,8 +87,7 @@ async function createSession(name: string, description: string) {
       ghost-class="ghost"
       group="kanban"
       class="column-body"
-      @add="onAdd"
-      @update="onUpdate"
+      @change="onChange"
     >
       <KanbanCard
         v-for="card in columnCards"
