@@ -63,6 +63,13 @@ export const useCardsStore = defineStore('cards', () => {
     await db.updateCard(card);
   }
 
+  async function updateCardConsoleSessionId(cardId: string, consoleSessionId: string): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.consoleSessionId = consoleSessionId;
+    await db.updateCard(card);
+  }
+
   async function reorderColumn(columnName: string, cardIds: string[]): Promise<void> {
     await db.updateCardsColumn(cardIds, columnName);
     for (let i = 0; i < cardIds.length; i++) {
@@ -115,7 +122,7 @@ export const useCardsStore = defineStore('cards', () => {
 
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
-    addCard, moveCard, updateCardState, updateCardSessionId, updateCardInfo,
+    addCard, moveCard, updateCardState, updateCardSessionId, updateCardConsoleSessionId, updateCardInfo,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,
   };
 });

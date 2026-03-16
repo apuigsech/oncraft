@@ -49,6 +49,10 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute("ALTER TABLE cards ADD COLUMN worktree_name TEXT DEFAULT ''");
   } catch { /* column already exists */ }
+  // Migration: add console_session_id for console mode (terminal) sessions
+  try {
+    await db.execute("ALTER TABLE cards ADD COLUMN console_session_id TEXT DEFAULT ''");
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -89,12 +93,14 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
   const rows = await d.select<Array<{
     id: string; project_id: string; name: string; description: string;
     column_name: string; column_order: number; session_id: string;
+    console_session_id: string;
     state: string; tags: string; created_at: string; last_activity_at: string;
     archived: number; use_worktree: number; worktree_name: string;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => ({
     id: r.id, projectId: r.project_id, name: r.name, description: r.description,
     columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
+    consoleSessionId: r.console_session_id || undefined,
     state: r.state as Card['state'], tags: JSON.parse(r.tags),
     createdAt: r.created_at, lastActivityAt: r.last_activity_at,
     archived: r.archived === 1,
@@ -119,11 +125,12 @@ export async function updateCard(card: Card): Promise<void> {
   await d.execute(
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
      session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
-     use_worktree=$10, worktree_name=$11 WHERE id=$12`,
+     use_worktree=$10, worktree_name=$11, console_session_id=$12 WHERE id=$13`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
      card.lastActivityAt, card.archived ? 1 : 0,
-     card.useWorktree ? 1 : 0, card.worktreeName || '', card.id]
+     card.useWorktree ? 1 : 0, card.worktreeName || '',
+     card.consoleSessionId || '', card.id]
   );
 }
 

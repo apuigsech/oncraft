@@ -8,13 +8,23 @@ const sessionsStore = useSessionsStore()
 const showSettings = ref(false)
 const showGlobalSettings = ref(false)
 const showChat = computed(() => sessionsStore.activeChatCardId !== null)
+const isConsoleMode = computed(() => settingsStore.settings.chatMode === 'console')
 const chatWidth = ref(400)
+const consoleWidth = ref(520)
 
 function startResize(e: MouseEvent) {
   const startX = e.clientX
-  const startWidth = chatWidth.value
+  const isConsole = isConsoleMode.value
+  const startWidth = isConsole ? consoleWidth.value : chatWidth.value
+  const maxW = isConsole ? 1000 : 600
+  const minW = 320
   function onMouseMove(ev: MouseEvent) {
-    chatWidth.value = Math.max(320, Math.min(600, startWidth - (ev.clientX - startX)))
+    const newWidth = Math.max(minW, Math.min(maxW, startWidth - (ev.clientX - startX)))
+    if (isConsole) {
+      consoleWidth.value = newWidth
+    } else {
+      chatWidth.value = newWidth
+    }
   }
   function onMouseUp() {
     document.removeEventListener('mousemove', onMouseMove)
@@ -57,7 +67,8 @@ onMounted(async () => {
         </div>
       </div>
       <div v-if="showChat" class="divider" @mousedown="startResize" />
-      <ChatPanel v-if="showChat" :style="{ width: chatWidth + 'px' }" />
+      <ConsolePanel v-if="showChat && isConsoleMode" :style="{ width: consoleWidth + 'px' }" />
+      <ChatPanel v-else-if="showChat" :style="{ width: chatWidth + 'px' }" />
     </div>
     <ProjectSettings v-if="showSettings" @close="showSettings = false" />
     <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />

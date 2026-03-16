@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     { name: 'Review', color: '#f472b6' },
     { name: 'Done', color: '#22c55e' },
   ],
+  chatMode: 'integrated',
 };
 
 export const useSettingsStore = defineStore('settings', () => {

@@ -14,6 +14,7 @@ export interface Card {
   columnName: string;
   columnOrder: number;
   sessionId: string;
+  consoleSessionId?: string;
   state: CardState;
   tags: string[];
   createdAt: string;
@@ -41,9 +42,12 @@ export interface ProjectConfig {
   pipelines: PipelineConfig[];
 }
 
+export type ChatMode = 'integrated' | 'console';
+
 export interface GlobalSettings {
   theme: 'dark' | 'light';
   defaultColumns: ColumnConfig[];
+  chatMode: ChatMode;
 }
 
 export interface StreamMessage {

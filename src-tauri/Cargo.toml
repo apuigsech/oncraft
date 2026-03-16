@@ -27,4 +27,5 @@ tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2.4.5"
 tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+portable-pty = "0.8"
 
