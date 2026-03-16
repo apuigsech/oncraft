@@ -96,24 +96,12 @@ async function createSession(name: string, description: string) {
         </UBadge>
       </div>
       <div class="header-actions">
-        <UButton
-          variant="ghost"
-          color="neutral"
-          size="xs"
-          icon="i-lucide-download"
-          :padded="false"
-          title="Import existing sessions"
-          @click="showImportDialog = true"
-        />
-        <UButton
-          variant="ghost"
-          color="neutral"
-          size="xs"
-          icon="i-lucide-plus"
-          :padded="false"
-          title="New session"
-          @click="showNewDialog = true"
-        />
+        <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">
+          <UIcon name="i-lucide-download" />
+        </button>
+        <button class="action-btn" @click="showNewDialog = true" title="New session">
+          <UIcon name="i-lucide-plus" />
+        </button>
       </div>
     </div>
 
@@ -176,6 +164,16 @@ async function createSession(name: string, description: string) {
 }
 .color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .header-actions { display: flex; gap: 2px; }
+.action-btn {
+  font-size: 16px;
+  color: var(--text-muted);
+  padding: 0 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.action-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .column-body {
   flex: 1;
   overflow-y: auto;

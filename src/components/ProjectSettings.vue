@@ -55,37 +55,54 @@ async function onPipelinesUpdate(pipelines: PipelineConfig[]) {
 </script>
 
 <template>
-  <UModal
-    :model-value="true"
-    @update:model-value="emit('close')"
-    title="Project Settings"
-    :ui="{ content: 'max-h-[80vh] overflow-y-auto' }"
-  >
-    <template #body>
-      <div v-if="project" class="flex flex-col gap-5">
-        <div class="flex flex-col gap-1">
-          <p class="text-xs text-muted uppercase tracking-wide">Project Path</p>
-          <UBadge variant="soft" color="neutral" class="font-mono text-xs">{{ project.path }}</UBadge>
+  <div class="dialog-overlay" @click.self="emit('close')">
+    <div class="dialog">
+      <div class="dialog-header">
+        <h3>Project Settings</h3>
+        <button class="close-btn" @click="emit('close')">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div v-if="project" class="settings-content">
+          <div class="field">
+            <span class="field-label">Project Path</span>
+            <span class="field-value mono">{{ project.path }}</span>
+          </div>
+          <ColumnEditor
+            v-if="config"
+            :columns="config.columns"
+            @update="onColumnsUpdate"
+            @column-removed="onColumnRemoved"
+            @column-renamed="onColumnRenamed"
+          />
+          <PipelineEditor
+            v-if="config"
+            :pipelines="config.pipelines"
+            :columns="config.columns"
+            @update="onPipelinesUpdate"
+          />
         </div>
-        <ColumnEditor
-          v-if="config"
-          :columns="config.columns"
-          @update="onColumnsUpdate"
-          @column-removed="onColumnRemoved"
-          @column-renamed="onColumnRenamed"
-        />
-        <PipelineEditor
-          v-if="config"
-          :pipelines="config.pipelines"
-          :columns="config.columns"
-          @update="onPipelinesUpdate"
-        />
       </div>
-    </template>
-    <template #footer>
-      <div class="flex justify-end">
-        <UButton variant="ghost" @click="emit('close')">Close</UButton>
+      <div class="dialog-footer">
+        <button class="btn-secondary" @click="emit('close')">Close</button>
       </div>
-    </template>
-  </UModal>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; width: 500px; max-height: 80vh; display: flex; flex-direction: column; }
+.dialog-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.dialog-header h3 { font-size: 16px; }
+.close-btn { font-size: 18px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
+.close-btn:hover { background: var(--bg-tertiary); }
+.dialog-body { flex: 1; overflow-y: auto; padding: 18px; }
+.settings-content { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.field-value { font-size: 13px; color: var(--text-secondary); }
+.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; background: var(--bg-primary); padding: 4px 8px; border-radius: 4px; }
+.dialog-footer { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
+.btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
+.btn-secondary:hover { background: var(--bg-tertiary); }
+</style>

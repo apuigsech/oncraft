@@ -156,14 +156,3 @@ export async function updateCardsColumn(
   }
 }
 
-export async function batchUpdateCardPositions(
-  updates: { id: string; columnName: string; columnOrder: number }[]
-): Promise<void> {
-  const d = await getDb();
-  for (const u of updates) {
-    await d.execute(
-      'UPDATE cards SET column_name = $1, column_order = $2 WHERE id = $3',
-      [u.columnName, u.columnOrder, u.id]
-    );
-  }
-}

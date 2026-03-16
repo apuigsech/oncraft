@@ -234,6 +234,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, progressEvents,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getProgressEvents,
     send, approveToolUse, rejectToolUse,
-    interruptSession, stopSession, openChat, closeChat, isActive,
+    loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive,
   };
 });

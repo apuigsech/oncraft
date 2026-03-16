@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { DropdownMenuItem } from '@nuxt/ui';
 import type { ModelAlias, EffortLevel, PermissionMode } from '../types';
 
-const props = defineProps<{
+defineProps<{
   model: ModelAlias;
   effort: EffortLevel;
   permissionMode: PermissionMode;
@@ -25,12 +23,6 @@ const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
   { value: 'max',    label: 'Max' },
 ];
 
-const MODEL_OPTIONS: { value: ModelAlias; label: string }[] = [
-  { value: 'opus',   label: 'Opus'   },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'haiku',  label: 'Haiku'  },
-];
-
 const MODE_OPTIONS: { value: PermissionMode; label: string; icon: string }[] = [
   { value: 'default',           label: 'Default',   icon: 'i-lucide-lock'           },
   { value: 'acceptEdits',       label: 'Auto-edit', icon: 'i-lucide-pencil'         },
@@ -38,51 +30,31 @@ const MODE_OPTIONS: { value: PermissionMode; label: string; icon: string }[] = [
   { value: 'bypassPermissions', label: 'YOLO',      icon: 'i-lucide-zap'            },
 ];
 
-const modelItems = computed((): DropdownMenuItem[][] => [
-  MODEL_OPTIONS.map(o => ({
-    label: o.label,
-    active: props.model === o.value,
-    onSelect: () => emit('update:model', o.value),
-  })),
-]);
-
-const modeItems = computed((): DropdownMenuItem[][] => [
-  MODE_OPTIONS.map(o => ({
-    label: o.label,
-    icon: o.icon,
-    active: props.permissionMode === o.value,
-    onSelect: () => emit('update:permissionMode', o.value),
-  })),
-]);
-
-const currentModel = computed(() => MODEL_OPTIONS.find(o => o.value === props.model)?.label ?? props.model);
-const currentMode  = computed(() => MODE_OPTIONS.find(o => o.value === props.permissionMode)!);
-
-const modeColor = computed((): 'neutral' | 'success' | 'warning' | 'error' => {
-  switch (props.permissionMode) {
-    case 'acceptEdits':       return 'success';
-    case 'plan':              return 'warning';
-    case 'bypassPermissions': return 'error';
-    default:                  return 'neutral';
+function modeColor(mode: PermissionMode): string {
+  switch (mode) {
+    case 'default': return 'var(--text-secondary)';
+    case 'acceptEdits': return 'var(--success)';
+    case 'plan': return 'var(--warning)';
+    case 'bypassPermissions': return 'var(--error)';
   }
-});
+}
 </script>
 
 <template>
   <div class="input-toolbar">
     <div class="toolbar-left">
-
       <!-- Model selector -->
-      <UDropdownMenu :items="modelItems" :content="{ side: 'top', sideOffset: 6 }" size="xs">
-        <UButton
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          trailing-icon="i-lucide-chevron-down"
-        >{{ currentModel }}</UButton>
-      </UDropdownMenu>
+      <select
+        :value="model"
+        class="toolbar-select"
+        @change="emit('update:model', ($event.target as HTMLSelectElement).value as ModelAlias)"
+      >
+        <option value="opus">Opus</option>
+        <option value="sonnet">Sonnet</option>
+        <option value="haiku">Haiku</option>
+      </select>
 
-      <!-- Effort segmented group -->
+      <!-- Effort level -->
       <div class="effort-group">
         <button
           v-for="opt in EFFORT_OPTIONS"
@@ -94,17 +66,17 @@ const modeColor = computed((): 'neutral' | 'success' | 'warning' | 'error' => {
         >{{ opt.label }}</button>
       </div>
 
-      <!-- Permission mode selector -->
-      <UDropdownMenu :items="modeItems" :content="{ side: 'top', sideOffset: 6 }" size="xs">
-        <UButton
-          size="xs"
-          variant="ghost"
-          :color="modeColor"
-          :leading-icon="currentMode.icon"
-          trailing-icon="i-lucide-chevron-down"
-        >{{ currentMode.label }}</UButton>
-      </UDropdownMenu>
-
+      <!-- Permission mode -->
+      <select
+        :value="permissionMode"
+        class="toolbar-select mode-select"
+        :style="{ color: modeColor(permissionMode) }"
+        @change="emit('update:permissionMode', ($event.target as HTMLSelectElement).value as PermissionMode)"
+      >
+        <option v-for="opt in MODE_OPTIONS" :key="opt.value" :value="opt.value">
+          {{ opt.label }}
+        </option>
+      </select>
     </div>
 
     <div class="toolbar-right">
@@ -133,13 +105,29 @@ const modeColor = computed((): 'neutral' | 'success' | 'warning' | 'error' => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2px 8px;
+  padding: 4px 10px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--bg-tertiary);
-  gap: 6px;
+  font-size: 11px;
+  gap: 8px;
 }
-.toolbar-left  { display: flex; align-items: center; gap: 4px; }
+.toolbar-left  { display: flex; align-items: center; gap: 6px; }
 .toolbar-right { display: flex; align-items: center; gap: 6px; }
+
+/* Native selects — dark themed */
+.toolbar-select {
+  background: var(--bg-primary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  height: 22px;
+}
+.toolbar-select:focus { outline: none; border-color: var(--accent); }
+.mode-select { font-weight: 600; }
 
 /* Effort segmented group */
 .effort-group {
@@ -150,7 +138,7 @@ const modeColor = computed((): 'neutral' | 'success' | 'warning' | 'error' => {
 }
 .effort-btn {
   padding: 0 8px;
-  height: 24px;
+  height: 22px;
   font-size: 10px;
   font-family: inherit;
   color: var(--text-muted);
