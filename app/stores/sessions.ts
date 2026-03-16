@@ -5,6 +5,7 @@ import {
   onMessage, offMessage,
   listCommandsViaSidecar, loadHistoryViaSidecar,
 } from '~/services/claude-process';
+import { ensureMarkdownReady } from '~/services/markdown';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, StreamMessage[]> = reactive({});
@@ -14,6 +15,11 @@ export const useSessionsStore = defineStore('sessions', () => {
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
   const progressEvents: Record<string, AgentProgressEvent[]> = reactive({});
+
+  // ME-3: Maximum messages kept in memory per card.
+  // Older messages are discarded to prevent unbounded memory growth in long sessions.
+  const MAX_MESSAGES_PER_CARD = 500;
+  const MAX_PROGRESS_EVENTS_PER_CARD = 50;
 
   // QW-3: Buffer streaming tokens and flush via requestAnimationFrame
   // instead of mutating reactive state on every single token arrival
@@ -112,6 +118,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
 
     messages[cardId].push(msg);
+
+    // ME-3: Trim old messages to prevent unbounded memory growth
+    if (messages[cardId].length > MAX_MESSAGES_PER_CARD) {
+      messages[cardId] = messages[cardId].slice(-MAX_MESSAGES_PER_CARD);
+    }
   }
 
   function setupMessageListener(cardId: string): void {
@@ -237,6 +248,9 @@ export const useSessionsStore = defineStore('sessions', () => {
   async function openChat(cardId: string): Promise<void> {
     activeChatCardId.value = cardId;
 
+    // ME-5: Eagerly init markdown engine when chat opens (lazy-loaded deps)
+    ensureMarkdownReady();
+
     // Load available commands if we haven't yet
     if (availableCommands.value.length === 0) {
       const project = useProjectsStore().activeProject;
@@ -263,10 +277,21 @@ export const useSessionsStore = defineStore('sessions', () => {
   function closeChat(): void { activeChatCardId.value = null; }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
+  // ME-3: Purge in-memory messages for a card (e.g. when archived or removed)
+  function purgeCard(cardId: string): void {
+    delete messages[cardId];
+    delete sessionConfigs[cardId];
+    delete sessionMetrics[cardId];
+    delete progressEvents[cardId];
+    historyLoaded.delete(cardId);
+    _streamingBuffers.delete(cardId);
+    _streamingRafPending.delete(cardId);
+  }
+
   return {
     messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, progressEvents,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getProgressEvents,
     send, approveToolUse, rejectToolUse,
-    loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive,
+    loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, purgeCard,
   };
 });
