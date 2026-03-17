@@ -225,6 +225,7 @@ rl.on("line", async (line: string) => {
           model: (cmd.model as string) || undefined,
           effort: (cmd.effort as string) || undefined,
           permissionMode: (cmd.permissionMode as string) || "default",
+          settingSources: ["user", "project"],
           includePartialMessages: true,
           ...(cmd.worktreeName ? {
             extraArgs: { worktree: cmd.worktreeName as string },
