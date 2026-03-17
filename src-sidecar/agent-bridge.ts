@@ -93,9 +93,19 @@ function translateMessage(
     if (!Array.isArray(content)) return null;
 
     const results: Record<string, unknown>[] = [];
+    const images: { data: string; mediaType: string; name: string }[] = [];
     for (const block of content as Record<string, unknown>[]) {
       if (block.type === "text") {
         results.push({ type: "user", content: block.text });
+      } else if (block.type === "image") {
+        const source = block.source as { type: string; media_type: string; data: string } | undefined;
+        if (source?.type === "base64" && source.data) {
+          images.push({
+            data: source.data,
+            mediaType: source.media_type,
+            name: "image",
+          });
+        }
       } else if (block.type === "tool_result") {
         results.push({
           type: "tool_result",
@@ -105,6 +115,13 @@ function translateMessage(
               ? block.content
               : JSON.stringify(block.content),
         });
+      }
+    }
+    // Attach extracted images to the first user text message
+    if (images.length > 0 && results.length > 0) {
+      const firstUser = results.find(r => r.type === "user");
+      if (firstUser) {
+        firstUser.images = images;
       }
     }
     if (results.length === 0) return null;
@@ -213,8 +230,30 @@ rl.on("line", async (line: string) => {
     process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}\n`);
 
     try {
+      // Build multimodal prompt when images are attached
+      const images = cmd.images as { data: string; mediaType: string }[] | undefined;
+      let promptValue: string | Record<string, unknown>;
+      if (images && Array.isArray(images) && images.length > 0) {
+        const contentBlocks: Record<string, unknown>[] = [];
+        for (const img of images) {
+          contentBlocks.push({
+            type: "image",
+            source: { type: "base64", media_type: img.mediaType, data: img.data },
+          });
+        }
+        contentBlocks.push({ type: "text", text: cmd.prompt as string });
+        promptValue = {
+          type: "user",
+          message: { role: "user", content: contentBlocks },
+          parent_tool_use_id: null,
+          session_id: "",
+        };
+      } else {
+        promptValue = cmd.prompt as string;
+      }
+
       const conversation = query({
-        prompt: cmd.prompt as string,
+        prompt: promptValue as string,
         options: {
           pathToClaudeCodeExecutable: cliPath,
           executable: "node",

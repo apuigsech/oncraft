@@ -42,6 +42,14 @@ export interface ProjectConfig {
   pipelines: PipelineConfig[];
 }
 
+export interface ImageAttachment {
+  id: string;
+  data: string;
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  name: string;
+  size: number;
+}
+
 export type ChatMode = 'integrated' | 'console';
 
 export interface GlobalSettings {
@@ -63,6 +71,7 @@ export interface StreamMessage {
   usage?: { inputTokens: number; outputTokens: number };
   costUsd?: number;
   durationMs?: number;
+  images?: ImageAttachment[];
   retryAfter?: number;
   gitBranch?: string;
   worktreePath?: string;

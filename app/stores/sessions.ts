@@ -171,11 +171,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     });
   }
 
-  async function send(cardId: string, message: string): Promise<void> {
+  async function send(cardId: string, message: string, images?: import('~/types').ImageAttachment[]): Promise<void> {
     const cardsStore = useCardsStore();
     const card = cardsStore.cards.find(c => c.id === cardId);
 
-    appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now() });
+    appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now(), ...(images?.length ? { images } : {}) });
 
     // Block only if a query is actively running (not just sidecar alive)
     if (isQueryActive(cardId)) {
@@ -202,7 +202,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // If sidecar is already alive (previous query completed), reuse it
     if (isProcessActive(cardId)) {
       try {
-        await sendStart(cardId, project.path, message, sessionId, config);
+        await sendStart(cardId, project.path, message, sessionId, config, images);
       } catch (err) {
         appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
         await cardsStore.updateCardState(cardId, 'idle');
@@ -211,7 +211,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       // No sidecar running — spawn a new one
       setupMessageListener(cardId);
       try {
-        await spawnSession(cardId, project.path, message, sessionId, config);
+        await spawnSession(cardId, project.path, message, sessionId, config, images);
       } catch (err) {
         appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
         await cardsStore.updateCardState(cardId, 'idle');

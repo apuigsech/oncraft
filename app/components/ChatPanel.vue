@@ -2,10 +2,128 @@
 import { toUIMessages, toChatStatus } from '~/services/message-adapter';
 import type { ToolInvocationUIPart } from '~/services/message-adapter';
 import { renderMarkdown, useDebouncedMarkdown } from '~/services/markdown';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { readFile } from '@tauri-apps/plugin-fs';
+import type { ImageAttachment } from '~/types';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const input = ref('');
+
+// ─── Image attachments ───
+const pendingAttachments = ref<ImageAttachment[]>([]);
+const isDragOver = ref(false);
+const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+
+const toast = useToast();
+
+function addAttachmentFromFile(file: File): void {
+  if (!SUPPORTED_TYPES.has(file.type)) {
+    toast.add({ title: 'Unsupported image format', description: `${file.type || 'unknown'} is not supported. Use JPEG, PNG, GIF, or WebP.`, color: 'error' });
+    return;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    toast.add({ title: 'Image too large', description: `${(file.size / 1024 / 1024).toFixed(1)}MB exceeds the 20MB limit.`, color: 'error' });
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result as string;
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return;
+    pendingAttachments.value.push({
+      id: crypto.randomUUID(),
+      data: base64,
+      mediaType: file.type as ImageAttachment['mediaType'],
+      name: file.name || 'pasted-image.png',
+      size: file.size,
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeAttachment(id: string): void {
+  pendingAttachments.value = pendingAttachments.value.filter(a => a.id !== id);
+}
+
+function handlePaste(event: ClipboardEvent): void {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        event.preventDefault();
+        addAttachmentFromFile(file);
+      }
+    }
+  }
+}
+
+function handleDragOver(event: DragEvent): void {
+  event.preventDefault();
+  isDragOver.value = true;
+}
+
+function handleDragLeave(): void {
+  isDragOver.value = false;
+}
+
+function handleDrop(event: DragEvent): void {
+  event.preventDefault();
+  isDragOver.value = false;
+  const files = event.dataTransfer?.files;
+  if (!files) return;
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      addAttachmentFromFile(file);
+    }
+  }
+}
+
+async function openFilePicker(): Promise<void> {
+  try {
+    const selected = await openDialog({
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+      multiple: true,
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    for (const filePath of paths) {
+      const bytes = await readFile(filePath);
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const mediaTypeMap: Record<string, string> = {
+        jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+        gif: 'image/gif', webp: 'image/webp',
+      };
+      const mediaType = mediaTypeMap[ext];
+      if (!mediaType) continue;
+      if (bytes.length > MAX_IMAGE_SIZE) {
+        toast.add({ title: 'Image too large', description: `File exceeds the 20MB limit.`, color: 'error' });
+        continue;
+      }
+      // Convert Uint8Array to base64
+      let binary = '';
+      const chunk = 8192;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      const base64 = btoa(binary);
+      const name = filePath.split('/').pop() || filePath.split('\\').pop() || 'image';
+      pendingAttachments.value.push({
+        id: crypto.randomUUID(),
+        data: base64,
+        mediaType: mediaType as ImageAttachment['mediaType'],
+        name,
+        size: bytes.length,
+      });
+    }
+  } catch (err) {
+    // User cancelled or error
+    if (import.meta.dev) console.warn('[ClaudBan] file picker error:', err);
+  }
+}
 
 const showSlashPalette = computed(() => {
   return input.value.startsWith('/') && !input.value.includes(' ');
@@ -55,11 +173,16 @@ function findToolStreamMessage(part: ToolInvocationUIPart) {
 }
 
 function sendMessage() {
-  if (!input.value.trim() || !sessionsStore.activeChatCardId) return;
+  const hasText = input.value.trim().length > 0;
+  const hasImages = pendingAttachments.value.length > 0;
+  if (!hasText && !hasImages) return;
+  if (!sessionsStore.activeChatCardId) return;
   const cardId = sessionsStore.activeChatCardId;
-  const msg = input.value.trim();
+  const msg = input.value.trim() || (hasImages ? 'Here are the attached images.' : '');
+  const images = hasImages ? [...pendingAttachments.value] : undefined;
   input.value = '';
-  sessionsStore.send(cardId, msg);
+  pendingAttachments.value = [];
+  sessionsStore.send(cardId, msg, images);
 }
 
 function handleStop() {
@@ -70,6 +193,30 @@ function handleStop() {
 
 function selectSlashCommand(command: string) {
   input.value = command + ' ';
+}
+
+// Preserve scroll position when the task list collapses/expands
+const taskListEl = ref<InstanceType<typeof TaskListDisplay> | null>(null);
+
+function onTaskListToggle() {
+  const wrapper = messagesWrapper.value;
+  const taskEl = (taskListEl.value as any)?.$el as HTMLElement | undefined;
+  if (!wrapper || !taskEl) return;
+
+  // Capture current state before the DOM updates
+  const oldHeight = taskEl.offsetHeight;
+  const wasAtBottom = wrapper.scrollTop + wrapper.clientHeight >= wrapper.scrollHeight - 2;
+
+  nextTick(() => {
+    if (wasAtBottom) {
+      // If user was at bottom, stay at bottom
+      wrapper.scrollTop = wrapper.scrollHeight;
+    } else {
+      // Compensate: the flex container redistributed space, adjust scrollTop by the height delta
+      const delta = taskEl.offsetHeight - oldHeight;
+      wrapper.scrollTop = Math.max(0, wrapper.scrollTop + delta);
+    }
+  });
 }
 
 // Scroll to bottom when the chat opens or the active card changes
@@ -128,10 +275,11 @@ onMounted(() => {
       />
     </div>
 
+    <!-- Task list — sticky, always visible above the scrollable messages -->
+    <TaskListDisplay ref="taskListEl" :messages="rawMessages" class="task-list-sticky" @toggle="onTaskListToggle" />
+
     <!-- Messages area — UChatMessages handles scroll + auto-scroll -->
     <div ref="messagesWrapper" class="chat-messages-wrapper">
-      <TaskListDisplay :messages="rawMessages" />
-
       <UChatMessages
         :messages="uiMessages"
         :status="chatStatus"
@@ -152,8 +300,19 @@ onMounted(() => {
         <!-- Custom content rendering per message -->
         <template #content="{ role, parts }">
           <template v-for="(part, idx) in parts" :key="idx">
+            <!-- Image parts -->
+            <template v-if="part.type === 'image'">
+              <div class="chat-image">
+                <img
+                  :src="`data:${part.mediaType};base64,${part.data}`"
+                  :alt="part.name"
+                  loading="lazy"
+                />
+              </div>
+            </template>
+
             <!-- Text parts: user = plain text, assistant = rendered markdown -->
-            <template v-if="part.type === 'text'">
+            <template v-else-if="part.type === 'text'">
               <!-- QW-5: MarkdownContent debounces parsing during streaming -->
               <MarkdownContent
                 v-if="role === 'assistant'"
@@ -194,10 +353,23 @@ onMounted(() => {
     </div>
 
     <!-- Input area -->
-    <div class="chat-input-area">
+    <div
+      class="chat-input-area"
+      :class="{ 'drag-over': isDragOver }"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+      @paste="handlePaste"
+    >
       <div class="progress-area">
         <AgentProgressBar :events="progressEvents" :is-active="isActive" />
       </div>
+
+      <!-- Image attachment previews -->
+      <ImageAttachmentBar
+        :attachments="pendingAttachments"
+        @remove="removeAttachment"
+      />
 
       <!-- Slash command palette — positioned absolutely above the prompt -->
       <SlashCommandPalette
@@ -206,6 +378,12 @@ onMounted(() => {
         :commands="sessionsStore.availableCommands"
         @select="selectSlashCommand"
       />
+
+      <!-- Drop zone overlay -->
+      <div v-if="isDragOver" class="drop-overlay">
+        <UIcon name="i-lucide-image-plus" class="drop-icon" />
+        <span>Drop image here</span>
+      </div>
 
       <!-- UChatPrompt — the main chat input box -->
       <UChatPrompt
@@ -217,7 +395,16 @@ onMounted(() => {
         variant="subtle"
         @submit="sendMessage"
       >
-        <!-- Default slot: submit button beside textarea (docs pattern) -->
+        <!-- Default slot: attach + submit buttons beside textarea -->
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          icon="i-lucide-paperclip"
+          :padded="false"
+          :disabled="isActive"
+          @click="openFilePicker"
+        />
         <UChatPromptSubmit
           :status="chatStatus"
           color="neutral"
@@ -263,12 +450,28 @@ onMounted(() => {
 .chat-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .header-metrics { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 10px; }
 
+.task-list-sticky { flex-shrink: 0; border-bottom: 1px solid var(--border); }
 .chat-messages-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 .chat-messages-inner { flex: 1; padding: 12px; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
 
 .chat-input-area { position: relative; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.chat-input-area.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 8px; }
 .progress-area { min-height: 0; }
+
+/* Drop zone overlay */
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  border-radius: 8px; font-size: 13px; color: var(--accent); font-weight: 600;
+  pointer-events: none;
+}
+.drop-icon { width: 32px; height: 32px; }
+
+/* Chat images in messages */
+.chat-image { margin: 4px 0; }
+.chat-image img { max-width: 300px; max-height: 300px; border-radius: 8px; object-fit: contain; }
 
 /* User text */
 .user-text { white-space: pre-wrap; font-size: 13px; line-height: 1.6; word-break: break-word; }

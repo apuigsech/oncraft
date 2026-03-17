@@ -28,7 +28,14 @@ export interface ToolInvocationUIPart {
   errorText?: string;
 }
 
-export type UIMessagePart = TextUIPart | ReasoningUIPart | ToolInvocationUIPart;
+export interface ImageUIPart {
+  type: 'image';
+  data: string;
+  mediaType: string;
+  name: string;
+}
+
+export type UIMessagePart = TextUIPart | ReasoningUIPart | ToolInvocationUIPart | ImageUIPart;
 
 export interface UIMessage {
   id: string;
@@ -61,10 +68,17 @@ export function toUIMessages(messages: StreamMessage[]): UIMessage[] {
         result.push(currentAssistant);
         currentAssistant = null;
       }
+      const userParts: UIMessagePart[] = [];
+      if (msg.images?.length) {
+        for (const img of msg.images) {
+          userParts.push({ type: 'image', data: img.data, mediaType: img.mediaType, name: img.name });
+        }
+      }
+      userParts.push({ type: 'text', text: msg.content });
       result.push({
         id: `user-${i}`,
         role: 'user',
-        parts: [{ type: 'text', text: msg.content }],
+        parts: userParts,
       });
     } else if (msg.type === 'system' && msg.content) {
       if (currentAssistant) {

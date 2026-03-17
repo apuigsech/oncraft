@@ -47,6 +47,7 @@ export async function spawnSession(
   prompt: string,
   sessionId?: string,
   config?: SessionConfig,
+  images?: import('~/types').ImageAttachment[],
 ): Promise<void> {
   // Kill existing process for this card if any
   if (processes.has(cardId)) {
@@ -131,6 +132,7 @@ export async function spawnSession(
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
+    ...(images?.length ? { images: images.map(i => ({ data: i.data, mediaType: i.mediaType })) } : {}),
   });
   await proc.write(startCmd);
 }
@@ -141,6 +143,7 @@ export async function sendStart(
   prompt: string,
   sessionId?: string,
   config?: SessionConfig,
+  images?: import('~/types').ImageAttachment[],
 ): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
@@ -154,6 +157,7 @@ export async function sendStart(
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
+    ...(images?.length ? { images: images.map(i => ({ data: i.data, mediaType: i.mediaType })) } : {}),
   });
   await proc.write(startCmd);
 }
@@ -328,6 +332,31 @@ export async function listCommandsNative(projectPath?: string): Promise<SlashCom
   }
 }
 
+// Git branch ahead/behind counts relative to the principal branch.
+export interface BranchStatus {
+  ahead: number;
+  behind: number;
+  branch: string;
+  base: string;
+  error?: string;
+}
+
+export async function gitBranchStatus(
+  repoPath: string,
+  branch?: string,
+  base?: string,
+): Promise<BranchStatus | null> {
+  try {
+    return await invoke<BranchStatus>('git_branch_status', {
+      repoPath,
+      branch: branch ?? null,
+      base: base ?? null,
+    });
+  } catch {
+    return null;
+  }
+}
+
 // DA-1: deleteSession — native Rust command, no sidecar needed
 export async function deleteSessionNative(sessionId: string): Promise<boolean> {
   try {
@@ -353,15 +382,29 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMe
     'history',
   );
   const rawMessages = (result.messages as Record<string, unknown>[]) || [];
-  return rawMessages.map((m) => ({
-    type: m.type as StreamMessage['type'],
-    content: (m.content as string) || '',
-    toolName: m.toolName as string | undefined,
-    toolInput: m.toolInput as Record<string, unknown> | undefined,
-    toolResult: m.content as string | undefined,
-    toolUseId: m.toolUseId as string | undefined,
-    subtype: m.subtype as string | undefined,
-    sessionId: m.sessionId as string | undefined,
-    timestamp: Date.now(),
-  } satisfies StreamMessage));
+  return rawMessages.map((m) => {
+    const msg: StreamMessage = {
+      type: m.type as StreamMessage['type'],
+      content: (m.content as string) || '',
+      toolName: m.toolName as string | undefined,
+      toolInput: m.toolInput as Record<string, unknown> | undefined,
+      toolResult: m.content as string | undefined,
+      toolUseId: m.toolUseId as string | undefined,
+      subtype: m.subtype as string | undefined,
+      sessionId: m.sessionId as string | undefined,
+      timestamp: Date.now(),
+    };
+    // Map images from history (sidecar extracts them from SDK image blocks)
+    const rawImages = m.images as { data: string; mediaType: string; name: string }[] | undefined;
+    if (rawImages?.length) {
+      msg.images = rawImages.map(img => ({
+        id: crypto.randomUUID(),
+        data: img.data,
+        mediaType: img.mediaType as import('~/types').ImageAttachment['mediaType'],
+        name: img.name || 'image',
+        size: 0, // Size not available from history
+      }));
+    }
+    return msg;
+  });
 }
