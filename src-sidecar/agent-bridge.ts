@@ -1,4 +1,4 @@
-import { query, getSessionMessages, listSessions, type SDKMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages, listSessions, type SDKMessage, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { createInterface } from "readline";
 import { readFileSync, readdirSync, existsSync, statSync, unlinkSync } from "fs";
@@ -234,8 +234,9 @@ rl.on("line", async (line: string) => {
       // The SDK's query() accepts prompt: string | AsyncIterable<SDKUserMessage>.
       // For multimodal content we must wrap the SDKUserMessage in an async generator.
       const images = cmd.images as { data: string; mediaType: string }[] | undefined;
-      let promptValue: string | AsyncIterable<SDKMessage>;
+      let promptValue: string | AsyncIterable<SDKUserMessage>;
       if (images && Array.isArray(images) && images.length > 0) {
+        process.stderr.write(`[agent-bridge] multimodal prompt with ${images.length} image(s)\n`);
         const contentBlocks: Record<string, unknown>[] = [];
         for (const img of images) {
           contentBlocks.push({
@@ -249,14 +250,14 @@ rl.on("line", async (line: string) => {
           message: { role: "user" as const, content: contentBlocks },
           parent_tool_use_id: null,
           session_id: "",
-        };
-        promptValue = (async function* () { yield userMessage as unknown as SDKMessage; })();
+        } as unknown as SDKUserMessage;
+        promptValue = (async function* () { yield userMessage; })();
       } else {
         promptValue = cmd.prompt as string;
       }
 
       const conversation = query({
-        prompt: promptValue as string,
+        prompt: promptValue as any,
         options: {
           pathToClaudeCodeExecutable: cliPath,
           executable: "node",
