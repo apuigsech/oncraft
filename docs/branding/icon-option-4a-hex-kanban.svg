@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Option 4A: Hex with code brackets containing kanban columns -->
+  <defs>
+    <linearGradient id="g4a" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="g4ag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagonal shape -->
+  <path d="M256 48 L432 144 L432 368 L256 464 L80 368 L80 144 Z" fill="#0f172a" stroke="url(#g4a)" stroke-width="6"/>
+  <!-- Code brackets < > -->
+  <path d="M136 224 L96 272 L136 320" stroke="url(#g4a)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M376 224 L416 272 L376 320" stroke="url(#g4a)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Three kanban columns inside the brackets -->
+  <rect x="172" y="200" width="44" height="144" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <rect x="234" y="200" width="44" height="144" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <rect x="296" y="200" width="44" height="144" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <!-- Cards in columns -->
+  <rect x="178" y="212" width="32" height="20" rx="3" fill="#475569"/>
+  <rect x="178" y="240" width="32" height="20" rx="3" fill="#475569"/>
+  <rect x="178" y="268" width="32" height="20" rx="3" fill="#475569"/>
+  <rect x="240" y="212" width="32" height="20" rx="3" fill="url(#g4a)"/>
+  <rect x="240" y="240" width="32" height="20" rx="3" fill="url(#g4a)" opacity="0.6"/>
+  <rect x="302" y="212" width="32" height="20" rx="3" fill="#22c55e"/>
+  <!-- "On" indicator -->
+  <circle cx="256" cy="112" r="14" fill="url(#g4ag)"/>
+  <circle cx="256" cy="112" r="8" fill="#4ade80" opacity="0.5"/>
+</svg>

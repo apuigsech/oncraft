@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Option 4C: Hex with columns and a flow arrow showing card movement -->
+  <defs>
+    <linearGradient id="g4c" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="g4cg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagonal shape -->
+  <path d="M256 48 L432 144 L432 368 L256 464 L80 368 L80 144 Z" fill="#0f172a" stroke="url(#g4c)" stroke-width="6"/>
+  <!-- Code brackets < > -->
+  <path d="M128 224 L88 272 L128 320" stroke="url(#g4c)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M384 224 L424 272 L384 320" stroke="url(#g4c)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Three kanban columns with dividers -->
+  <line x1="220" y1="192" x2="220" y2="352" stroke="#334155" stroke-width="2"/>
+  <line x1="292" y1="192" x2="292" y2="352" stroke="#334155" stroke-width="2"/>
+  <!-- Column 1: todo -->
+  <rect x="164" y="208" width="44" height="24" rx="4" fill="#475569"/>
+  <rect x="164" y="244" width="44" height="24" rx="4" fill="#475569"/>
+  <rect x="164" y="280" width="44" height="24" rx="4" fill="#334155"/>
+  <!-- Column 2: in progress — one card highlighted -->
+  <rect x="234" y="208" width="44" height="24" rx="4" fill="url(#g4c)"/>
+  <rect x="234" y="244" width="44" height="24" rx="4" fill="url(#g4c)" opacity="0.5"/>
+  <!-- Column 3: done -->
+  <rect x="304" y="208" width="44" height="24" rx="4" fill="#22c55e"/>
+  <!-- Flow arrow under columns -->
+  <path d="M184 336 L328 336" stroke="#64748b" stroke-width="2" stroke-dasharray="6 4"/>
+  <path d="M320 330 L332 336 L320 342" fill="#64748b"/>
+  <!-- "On" indicator -->
+  <circle cx="256" cy="108" r="14" fill="url(#g4cg)"/>
+  <circle cx="256" cy="108" r="8" fill="#4ade80" opacity="0.5"/>
+</svg>

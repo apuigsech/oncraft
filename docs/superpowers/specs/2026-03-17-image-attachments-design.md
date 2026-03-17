@@ -2,11 +2,11 @@
 
 ## Summary
 
-Add support for attaching images to chat messages in ClaudBan's integrated chat mode. Users can paste from clipboard (Cmd+V), drag and drop, or use a file picker dialog. Images are sent as base64 content blocks to the Claude Agent SDK for multimodal analysis.
+Add support for attaching images to chat messages in OnCraft's integrated chat mode. Users can paste from clipboard (Cmd+V), drag and drop, or use a file picker dialog. Images are sent as base64 content blocks to the Claude Agent SDK for multimodal analysis.
 
 ## Motivation
 
-Claude's API supports multimodal input (text + images). ClaudBan's integrated chat currently only sends plain text prompts. Users need to share screenshots, mockups, diagrams, or photos with Claude for analysis, feedback, or context.
+Claude's API supports multimodal input (text + images). OnCraft's integrated chat currently only sends plain text prompts. Users need to share screenshots, mockups, diagrams, or photos with Claude for analysis, feedback, or context.
 
 ## Approach
 

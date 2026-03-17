@@ -231,27 +231,40 @@ rl.on("line", async (line: string) => {
 
     try {
       // Build multimodal prompt when images are attached.
+      // Images are passed as file paths (written by the frontend to temp dir)
+      // to avoid sending large base64 payloads over stdin IPC.
       // The SDK's query() accepts prompt: string | AsyncIterable<SDKUserMessage>.
-      // For multimodal content we must wrap the SDKUserMessage in an async generator.
-      const images = cmd.images as { data: string; mediaType: string }[] | undefined;
+      const imagePaths = cmd.imagePaths as { path: string; mediaType: string }[] | undefined;
       let promptValue: string | AsyncIterable<SDKUserMessage>;
-      if (images && Array.isArray(images) && images.length > 0) {
-        process.stderr.write(`[agent-bridge] multimodal prompt with ${images.length} image(s)\n`);
+      if (imagePaths && Array.isArray(imagePaths) && imagePaths.length > 0) {
+        process.stderr.write(`[agent-bridge] multimodal prompt with ${imagePaths.length} image(s) from temp files\n`);
         const contentBlocks: Record<string, unknown>[] = [];
-        for (const img of images) {
-          contentBlocks.push({
-            type: "image",
-            source: { type: "base64", media_type: img.mediaType, data: img.data },
-          });
+        for (const img of imagePaths) {
+          try {
+            const data = readFileSync(img.path, "base64");
+            contentBlocks.push({
+              type: "image",
+              source: { type: "base64", media_type: img.mediaType, data },
+            });
+            // Clean up temp file after reading
+            try { unlinkSync(img.path); } catch { /* ignore */ }
+          } catch (err) {
+            process.stderr.write(`[agent-bridge] failed to read image ${img.path}: ${err}\n`);
+          }
         }
-        contentBlocks.push({ type: "text", text: cmd.prompt as string });
-        const userMessage = {
-          type: "user" as const,
-          message: { role: "user" as const, content: contentBlocks },
-          parent_tool_use_id: null,
-          session_id: "",
-        } as unknown as SDKUserMessage;
-        promptValue = (async function* () { yield userMessage; })();
+        if (contentBlocks.length > 0) {
+          contentBlocks.push({ type: "text", text: cmd.prompt as string });
+          const userMessage = {
+            type: "user" as const,
+            message: { role: "user" as const, content: contentBlocks },
+            parent_tool_use_id: null,
+            session_id: "",
+          } as unknown as SDKUserMessage;
+          promptValue = (async function* () { yield userMessage; })();
+        } else {
+          // All images failed to load, fall back to text-only
+          promptValue = cmd.prompt as string;
+        }
       } else {
         promptValue = cmd.prompt as string;
       }

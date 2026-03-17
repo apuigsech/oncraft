@@ -217,6 +217,99 @@ pub async fn list_commands(project_path: Option<String>) -> Vec<SlashCommand> {
     .unwrap_or_default()
 }
 
+/// Return how many commits the given branch is ahead of / behind a base branch.
+/// Runs `git rev-list --left-right --count <base>...<branch>` in `repo_path`.
+/// Returns `{ ahead: u32, behind: u32, branch: String, base: String }`.
+/// `branch` defaults to the current HEAD branch when omitted.
+/// `base`   defaults to the first of main/master/trunk that exists.
+#[tauri::command]
+pub async fn git_branch_status(
+    repo_path: String,
+    branch: Option<String>,
+    base: Option<String>,
+) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Resolve the working branch name
+        let branch_name = match branch {
+            Some(b) if !b.is_empty() => b,
+            _ => {
+                // Ask git for the current symbolic ref
+                let out = std::process::Command::new("git")
+                    .args(["-C", &repo_path, "symbolic-ref", "--short", "HEAD"])
+                    .output();
+                match out {
+                    Ok(o) if o.status.success() => {
+                        String::from_utf8_lossy(&o.stdout).trim().to_string()
+                    }
+                    _ => return serde_json::json!({ "error": "cannot determine current branch" }),
+                }
+            }
+        };
+
+        // Resolve the base branch
+        let base_name = match base {
+            Some(b) if !b.is_empty() => b,
+            _ => {
+                // Try common principal branch names
+                let candidates = ["main", "master", "trunk", "develop"];
+                let mut found = String::new();
+                for c in &candidates {
+                    let check = std::process::Command::new("git")
+                        .args(["-C", &repo_path, "rev-parse", "--verify", c])
+                        .output();
+                    if check.map(|o| o.status.success()).unwrap_or(false) {
+                        found = c.to_string();
+                        break;
+                    }
+                }
+                if found.is_empty() {
+                    return serde_json::json!({ "error": "cannot determine base branch" });
+                }
+                found
+            }
+        };
+
+        // Skip count if branch == base (trivially 0/0)
+        if branch_name == base_name {
+            return serde_json::json!({
+                "ahead": 0, "behind": 0,
+                "branch": branch_name, "base": base_name
+            });
+        }
+
+        // git rev-list --left-right --count <base>...<branch>
+        // Output: "<behind>\t<ahead>\n"
+        let triple_dot = format!("{}...{}", base_name, branch_name);
+        let result = std::process::Command::new("git")
+            .args(["-C", &repo_path, "rev-list", "--left-right", "--count", &triple_dot])
+            .output();
+
+        match result {
+            Ok(o) if o.status.success() => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let parts: Vec<&str> = stdout.trim().split('\t').collect();
+                if parts.len() == 2 {
+                    let behind: u32 = parts[0].parse().unwrap_or(0);
+                    let ahead:  u32 = parts[1].parse().unwrap_or(0);
+                    serde_json::json!({
+                        "ahead": ahead, "behind": behind,
+                        "branch": branch_name, "base": base_name
+                    })
+                } else {
+                    serde_json::json!({ "error": "unexpected git output", "raw": stdout.trim() })
+                }
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                serde_json::json!({ "error": stderr.trim() })
+            }
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() }))
+}
+
 /// Delete a Claude session's JSONL files from ~/.claude/projects/.
 /// Replaces the sidecar's `deleteSession` handler.
 #[tauri::command]

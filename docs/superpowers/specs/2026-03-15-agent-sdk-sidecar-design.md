@@ -6,7 +6,7 @@
 
 ## Problem
 
-ClaudBan currently invokes the `claude` CLI via Tauri's shell plugin using `execute()`, which:
+OnCraft currently invokes the `claude` CLI via Tauri's shell plugin using `execute()`, which:
 - Blocks until the entire response completes (no streaming)
 - Cannot handle tool approval callbacks (ToolCallBlock buttons are non-functional)
 - Only receives the final `result` blob from `execute()` — the stream-parser handles multiple types but `execute()` never delivers intermediate messages to it

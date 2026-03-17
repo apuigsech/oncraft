@@ -242,7 +242,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   async function loadAvailableCommands(projectPath?: string): Promise<void> {
     // DA-1: Uses native Rust command instead of sidecar
     const cmds = await listCommandsNative(projectPath);
-    if (import.meta.dev) console.log('[ClaudBan] loaded', cmds.length, 'commands from filesystem');
+    if (import.meta.dev) console.log('[OnCraft] loaded', cmds.length, 'commands from filesystem');
     availableCommands.value = cmds;
   }
 
@@ -268,9 +268,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       const cardsStore = useCardsStore();
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
-        if (import.meta.dev) console.log('[ClaudBan] loading history for session:', card.sessionId);
+        if (import.meta.dev) console.log('[OnCraft] loading history for session:', card.sessionId);
         loadHistoryViaSidecar(card.sessionId).then((history) => {
-          if (import.meta.dev) console.log('[ClaudBan] loaded', history.length, 'messages from history');
+          if (import.meta.dev) console.log('[OnCraft] loaded', history.length, 'messages from history');
           if (history.length > 0) {
             messages[cardId] = history;
           }

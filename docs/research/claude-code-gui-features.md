@@ -1,7 +1,7 @@
 # Claude Code GUI Feature Research
 
 **Date**: 2026-03-15
-**Purpose**: Comprehensive analysis of Claude Code CLI features, community GUI patterns, and SDK capabilities for building the ClaudBan desktop GUI chat panel.
+**Purpose**: Comprehensive analysis of Claude Code CLI features, community GUI patterns, and SDK capabilities for building the OnCraft desktop GUI chat panel.
 
 ---
 
@@ -12,7 +12,7 @@
 3. [Important Features (Significantly Improve UX)](#3-important-features)
 4. [Nice-to-Have Features (Polish & Power-User)](#4-nice-to-have-features)
 5. [Community GUI Comparison](#5-community-gui-comparison)
-6. [Implementation Notes for ClaudBan](#6-implementation-notes-for-claudban)
+6. [Implementation Notes for OnCraft](#6-implementation-notes-for-oncraft)
 
 ---
 
@@ -138,9 +138,9 @@ The `message.content` array in AssistantMessage contains these block types:
 
 **SDK mechanism**: `query()` with a prompt creates a new session. `resume: sessionId` option resumes. `listSessions()` returns session metadata (ID, summary, lastModified, gitBranch, cwd). `getSessionMessages()` reads past transcripts.
 
-**GUI implementation**: In ClaudBan, each card IS a session. Create session on card creation. Resume on chat open. Store `session_id` in the card's database record.
+**GUI implementation**: In OnCraft, each card IS a session. Create session on card creation. Resume on chat open. Store `session_id` in the card's database record.
 
-**Complexity**: Low. Core to ClaudBan's existing architecture.
+**Complexity**: Low. Core to OnCraft's existing architecture.
 
 ### 2.6 Process Lifecycle Management
 
@@ -503,15 +503,15 @@ The `message.content` array in AssistantMessage contains these block types:
 
 **Architecture**: Tauri + SvelteKit desktop app wrapping the CLI. Includes `.claude` configuration directory and MCP integration.
 
-**Key insight**: Closest architecture to ClaudBan (also Tauri-based). Early stage, minimal documentation.
+**Key insight**: Closest architecture to OnCraft (also Tauri-based). Early stage, minimal documentation.
 
 ---
 
-## 6. Implementation Notes for ClaudBan
+## 6. Implementation Notes for OnCraft
 
 ### Priority Matrix for Chat Panel
 
-Based on the research, here is the recommended implementation order for ClaudBan's chat panel:
+Based on the research, here is the recommended implementation order for OnCraft's chat panel:
 
 #### Phase 1: Core Chat (Must Ship)
 1. **Message streaming** - Parse `stream-json` output, render assistant/user messages with markdown
@@ -538,7 +538,7 @@ Based on the research, here is the recommended implementation order for ClaudBan
 
 ### Key Architecture Decision: stream-json vs SDK
 
-ClaudBan's design spec uses `--output-format stream-json` mode, which is the right choice because:
+OnCraft's design spec uses `--output-format stream-json` mode, which is the right choice because:
 
 1. **Full CLI ecosystem**: Skills, hooks, MCP servers, CLAUDE.md all work automatically
 2. **Process isolation**: Each session is an independent process via Tauri shell plugin

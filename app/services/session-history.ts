@@ -18,7 +18,7 @@ export async function loadSessionHistory(
   const encodedPath = projectPath.replace(/[/.]/g, '-');
   const jsonlPath = `${home}.claude/projects/${encodedPath}/${sessionId}.jsonl`;
 
-  if (import.meta.dev) console.log('[ClaudBan] loading session history from:', jsonlPath);
+  if (import.meta.dev) console.log('[OnCraft] loading session history from:', jsonlPath);
 
   try {
     const content = await readTextFile(jsonlPath);
@@ -99,10 +99,10 @@ export async function loadSessionHistory(
       }
     }
 
-    if (import.meta.dev) console.log('[ClaudBan] loaded', messages.length, 'messages from history');
+    if (import.meta.dev) console.log('[OnCraft] loaded', messages.length, 'messages from history');
     return messages;
   } catch (err) {
-    if (import.meta.dev) console.warn('[ClaudBan] could not load session history:', err);
+    if (import.meta.dev) console.warn('[OnCraft] could not load session history:', err);
     return [];
   }
 }

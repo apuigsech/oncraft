@@ -20,10 +20,10 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     try {
       const config = await loadProjectConfig(projectPath);
       configs[projectPath] = config;
-      if (import.meta.dev) console.log('[ClaudBan] config loaded for', projectPath, ':', config.columns.length, 'columns');
+      if (import.meta.dev) console.log('[OnCraft] config loaded for', projectPath, ':', config.columns.length, 'columns');
       return config;
     } catch (err) {
-      if (import.meta.dev) console.warn('[ClaudBan] Failed to load project config, using defaults:', err);
+      if (import.meta.dev) console.warn('[OnCraft] Failed to load project config, using defaults:', err);
       configs[projectPath] = { ...DEFAULT_CONFIG };
       return configs[projectPath];
     }

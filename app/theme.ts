@@ -1,5 +1,5 @@
 /**
- * Central theme definition for ClaudBan.
+ * Central theme definition for OnCraft.
  * Change values here to affect the entire UI consistently.
  *
  * These constants are used:

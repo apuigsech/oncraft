@@ -24,6 +24,7 @@ pub fn run() {
             pty::pty_kill,
             commands::list_commands,
             commands::delete_session,
+            commands::git_branch_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

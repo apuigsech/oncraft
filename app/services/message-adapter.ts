@@ -1,5 +1,5 @@
 /**
- * Adapter that converts ClaudBan's StreamMessage[] into Vercel AI SDK UIMessage[]
+ * Adapter that converts OnCraft's StreamMessage[] into Vercel AI SDK UIMessage[]
  * for consumption by Nuxt UI Chat components (UChatMessages, UChatMessage).
  */
 import type { StreamMessage } from '~/types';

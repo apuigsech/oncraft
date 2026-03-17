@@ -2,8 +2,8 @@ import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-f
 import * as yaml from 'js-yaml';
 import type { ProjectConfig, ColumnConfig, PipelineConfig } from '~/types';
 
-const CONFIG_DIR = '.claudban';
-const CONFIG_FILE = '.claudban/config.yaml';
+const CONFIG_DIR = '.oncraft';
+const CONFIG_FILE = '.oncraft/config.yaml';
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { name: 'Brainstorm', color: '#a78bfa' },
@@ -36,7 +36,7 @@ export async function loadProjectConfig(projectPath: string): Promise<ProjectCon
     const raw = yaml.load(content) as Record<string, unknown>;
     return validateConfig(raw);
   } catch (err) {
-    if (import.meta.dev) console.warn('[ClaudBan] config load error, using defaults:', err);
+    if (import.meta.dev) console.warn('[OnCraft] config load error, using defaults:', err);
     // Try to create it, but don't fail if we can't
     try { await createDefaultConfig(projectPath); } catch { /* ignore */ }
     return { columns: DEFAULT_COLUMNS, pipelines: DEFAULT_PIPELINES };
@@ -56,7 +56,7 @@ async function createDefaultConfig(projectPath: string): Promise<ProjectConfig> 
     }
     await saveProjectConfig(projectPath, config);
   } catch (err) {
-    if (import.meta.dev) console.warn('[ClaudBan] could not save default config:', err);
+    if (import.meta.dev) console.warn('[OnCraft] could not save default config:', err);
   }
   return config;
 }

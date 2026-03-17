@@ -1,10 +1,41 @@
 <script setup lang="ts">
 import type { Card } from '~/types';
-import { deleteSessionNative } from '~/services/claude-process';
+import { deleteSessionNative, gitBranchStatus } from '~/services/claude-process';
+import type { BranchStatus } from '~/services/claude-process';
 
 const props = defineProps<{ card: Card; columnColor: string }>();
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
+const projectsStore = useProjectsStore();
+
+// Branch ahead/behind status
+const branchStatus = ref<BranchStatus | null>(null);
+
+async function refreshBranchStatus() {
+  const project = projectsStore.activeProject;
+  if (!project) return;
+
+  // Prefer the worktree branch, then the session-config git branch, then HEAD
+  const config = sessionsStore.getSessionConfig(props.card.id);
+  const branch = props.card.worktreeName
+    ? props.card.worktreeName
+    : (config.gitBranch ?? undefined);
+
+  // Use worktree path as the repo root when available, otherwise the project path
+  const repoPath = config.worktreePath || project.path;
+
+  const status = await gitBranchStatus(repoPath, branch);
+  if (status && !status.error) {
+    branchStatus.value = status;
+  }
+}
+
+onMounted(() => { refreshBranchStatus(); });
+
+// Refresh whenever the card transitions back to idle (query just finished)
+watch(() => props.card.state, (newState) => {
+  if (newState === 'idle') refreshBranchStatus();
+});
 
 const showMenu = ref(false);
 const showEdit = ref(false);
@@ -87,14 +118,21 @@ async function handleDelete(cardId: string) {
       <p v-if="card.description" class="card-desc">{{ card.description }}</p>
       <div class="card-footer">
         <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
-        <div v-if="card.tags?.length" class="card-tags">
-          <UBadge
-            v-for="tag in card.tags"
-            :key="tag"
-            variant="soft"
-            color="neutral"
-            size="sm"
-          >{{ tag }}</UBadge>
+        <div class="card-footer-right">
+          <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
+            <span v-if="branchStatus.ahead > 0" class="commits-ahead">↑{{ branchStatus.ahead }}</span>
+            <span v-if="branchStatus.behind > 0" class="commits-behind">↓{{ branchStatus.behind }}</span>
+            <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="commits-synced">✓</span>
+          </div>
+          <div v-if="card.tags?.length" class="card-tags">
+            <UBadge
+              v-for="tag in card.tags"
+              :key="tag"
+              variant="soft"
+              color="neutral"
+              size="sm"
+            >{{ tag }}</UBadge>
+          </div>
         </div>
       </div>
     </div>
@@ -135,6 +173,11 @@ async function handleDelete(cardId: string) {
   white-space: nowrap;
 }
 .card-footer { display: flex; justify-content: space-between; align-items: center; }
+.card-footer-right { display: flex; align-items: center; gap: 6px; }
 .card-meta { font-size: 11px; color: var(--text-muted); }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.branch-status { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
+.commits-ahead  { color: #4ade80; font-weight: 600; }
+.commits-behind { color: #f87171; font-weight: 600; }
+.commits-synced { color: var(--text-muted); }
 </style>

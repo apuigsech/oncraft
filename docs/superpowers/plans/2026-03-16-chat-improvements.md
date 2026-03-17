@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade ClaudBan's chat panel from basic text I/O to a feature-rich Claude Code experience with streaming, markdown, tool visualization, metrics, and input enhancements.
+**Goal:** Upgrade OnCraft's chat panel from basic text I/O to a feature-rich Claude Code experience with streaming, markdown, tool visualization, metrics, and input enhancements.
 
 **Architecture:** The agent-bridge sidecar (Node.js/Bun) uses `@anthropic-ai/claude-agent-sdk` to communicate with Claude Code. The frontend (Vue 3) renders messages from the sidecar via Tauri shell plugin IPC. Changes span both sidecar and frontend.
 

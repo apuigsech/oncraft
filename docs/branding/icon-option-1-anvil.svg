@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Option 1: Abstract Anvil/Craft mark — a geometric anvil shape with a glowing "on" dot -->
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <!-- Anvil body — bold geometric shape -->
+  <path d="M128 192 L384 192 L416 320 L352 320 L352 384 L160 384 L160 320 L96 320 Z" fill="url(#g1)"/>
+  <!-- Top striking surface -->
+  <rect x="160" y="144" width="192" height="48" rx="8" fill="url(#g1)"/>
+  <!-- "On" indicator — glowing circle -->
+  <circle cx="256" cy="120" r="20" fill="#22c55e"/>
+  <circle cx="256" cy="120" r="12" fill="#4ade80" opacity="0.6"/>
+</svg>

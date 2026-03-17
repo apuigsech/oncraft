@@ -121,7 +121,7 @@ async function openFilePicker(): Promise<void> {
     }
   } catch (err) {
     // User cancelled or error
-    if (import.meta.dev) console.warn('[ClaudBan] file picker error:', err);
+    if (import.meta.dev) console.warn('[OnCraft] file picker error:', err);
   }
 }
 

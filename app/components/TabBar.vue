@@ -35,7 +35,7 @@ async function addProject() {
     await cardsStore.loadForProject(project.id);
     await pipelinesStore.loadForProject(project.path);
   } catch (err) {
-    if (import.meta.dev) console.error('[ClaudBan] addProject error:', err);
+    if (import.meta.dev) console.error('[OnCraft] addProject error:', err);
   }
 }
 </script>

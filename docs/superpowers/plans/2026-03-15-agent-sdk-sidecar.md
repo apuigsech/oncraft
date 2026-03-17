@@ -43,7 +43,7 @@
 
 ```json
 {
-  "name": "claudban-agent-bridge",
+  "name": "oncraft-agent-bridge",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -534,7 +534,7 @@ export function parseStreamLine(line: string): StreamMessage | null {
       timestamp: Date.now(),
     };
   } catch (e) {
-    console.warn('[ClaudBan] parse error:', line.substring(0, 200), e);
+    console.warn('[OnCraft] parse error:', line.substring(0, 200), e);
     return null;
   }
 }
@@ -617,7 +617,7 @@ export async function spawnSession(
   });
 
   command.stderr.on('data', (data: string) => {
-    console.warn('[ClaudBan] sidecar stderr:', data);
+    console.warn('[OnCraft] sidecar stderr:', data);
   });
 
   command.on('close', (payload) => {
@@ -629,11 +629,11 @@ export async function spawnSession(
     }
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
-    console.log('[ClaudBan] sidecar closed, code:', payload.code);
+    console.log('[OnCraft] sidecar closed, code:', payload.code);
   });
 
   command.on('error', (err: string) => {
-    console.error('[ClaudBan] sidecar error:', err);
+    console.error('[OnCraft] sidecar error:', err);
     dispatchMessage(cardId, {
       type: 'system',
       content: `Sidecar error: ${err}`,
@@ -901,7 +901,7 @@ The `send()` call is fire-and-forget — messages appear via the reactive store.
 
 - [ ] **Step 2: Remove debug console.log statements**
 
-Remove the `console.log('[ClaudBan] sendMessage called...')` and similar debug lines that are no longer needed.
+Remove the `console.log('[OnCraft] sendMessage called...')` and similar debug lines that are no longer needed.
 
 - [ ] **Step 3: Commit**
 
@@ -927,7 +927,7 @@ Replace the entire `shell:allow-spawn` and `shell:allow-execute` blocks:
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for ClaudBan",
+  "description": "Default capabilities for OnCraft",
   "windows": ["main"],
   "permissions": [
     "core:default",

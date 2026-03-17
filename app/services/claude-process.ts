@@ -1,11 +1,38 @@
 import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
+import { writeFile, mkdir } from '@tauri-apps/plugin-fs';
+import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
 import type { StreamMessage, AgentProgressEvent, SessionConfig } from '~/types';
+import type { ImageAttachment } from '~/types';
 import { parseStreamLine, isProgressEvent, parseProgressEvent } from './stream-parser';
 
 interface SidecarProcess {
   write: (data: string) => Promise<void>;
   kill: () => void;
+}
+
+// ─── Image temp file helpers ───
+// Write image attachments to temp files and return paths.
+// This avoids sending large base64 payloads over Tauri stdin IPC.
+async function writeImagesToTempFiles(images: ImageAttachment[]): Promise<{ path: string; mediaType: string }[]> {
+  const tmp = await tempDir();
+  const imgDir = await pathJoin(tmp, 'oncraft-images');
+  try { await mkdir(imgDir, { recursive: true }); } catch { /* exists */ }
+  const results: { path: string; mediaType: string }[] = [];
+  for (const img of images) {
+    const ext = img.mediaType.split('/')[1] || 'png';
+    const fileName = `${img.id}.${ext}`;
+    const filePath = await pathJoin(imgDir, fileName);
+    // Decode base64 to bytes
+    const binaryStr = atob(img.data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    await writeFile(filePath, bytes);
+    results.push({ path: filePath, mediaType: img.mediaType });
+  }
+  return results;
 }
 
 // Track running sidecar processes by cardId
@@ -83,7 +110,7 @@ export async function spawnSession(
   });
 
   command.stderr.on('data', (data: string) => {
-    if (import.meta.dev) console.warn('[ClaudBan] sidecar stderr:', data);
+    if (import.meta.dev) console.warn('[OnCraft] sidecar stderr:', data);
   });
 
   command.on('close', (payload) => {
@@ -96,11 +123,11 @@ export async function spawnSession(
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     activeQueries.delete(cardId);
-    if (import.meta.dev) console.log('[ClaudBan] sidecar closed, code:', payload.code);
+    if (import.meta.dev) console.log('[OnCraft] sidecar closed, code:', payload.code);
   });
 
   command.on('error', (err: string) => {
-    if (import.meta.dev) console.error('[ClaudBan] sidecar error:', err);
+    if (import.meta.dev) console.error('[OnCraft] sidecar error:', err);
     dispatchMessage(cardId, {
       type: 'system',
       content: `Sidecar error: ${err}`,
@@ -123,6 +150,14 @@ export async function spawnSession(
 
   // Mark query as active and send the start command
   activeQueries.add(cardId);
+
+  // Write images to temp files to avoid large base64 payloads over stdin IPC
+  let imagePaths: { path: string; mediaType: string }[] | undefined;
+  if (images?.length) {
+    imagePaths = await writeImagesToTempFiles(images);
+    if (import.meta.dev) console.log(`[OnCraft] wrote ${imagePaths.length} images to temp files`);
+  }
+
   const startCmd = JSON.stringify({
     cmd: 'start',
     prompt,
@@ -132,8 +167,11 @@ export async function spawnSession(
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
-    ...(images?.length ? { images: images.map(i => ({ data: i.data, mediaType: i.mediaType })) } : {}),
+    ...(imagePaths?.length ? { imagePaths } : {}),
   });
+  if (import.meta.dev) {
+    console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}`);
+  }
   await proc.write(startCmd);
 }
 
@@ -148,6 +186,13 @@ export async function sendStart(
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
   activeQueries.add(cardId);
+
+  // Write images to temp files to avoid large base64 payloads over stdin IPC
+  let imagePaths: { path: string; mediaType: string }[] | undefined;
+  if (images?.length) {
+    imagePaths = await writeImagesToTempFiles(images);
+  }
+
   const startCmd = JSON.stringify({
     cmd: 'start',
     prompt,
@@ -157,7 +202,7 @@ export async function sendStart(
     ...(config?.effort ? { effort: config.effort } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
-    ...(images?.length ? { images: images.map(i => ({ data: i.data, mediaType: i.mediaType })) } : {}),
+    ...(imagePaths?.length ? { imagePaths } : {}),
   });
   await proc.write(startCmd);
 }

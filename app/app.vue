@@ -52,10 +52,10 @@ onMounted(async () => {
   ])
 
   if (settingsResult.status === 'rejected') {
-    if (import.meta.dev) console.warn('[ClaudBan] settings load failed, using defaults:', settingsResult.reason)
+    if (import.meta.dev) console.warn('[OnCraft] settings load failed, using defaults:', settingsResult.reason)
   }
   if (projectsResult.status === 'rejected') {
-    if (import.meta.dev) console.error('[ClaudBan] project load error:', projectsResult.reason)
+    if (import.meta.dev) console.error('[OnCraft] project load error:', projectsResult.reason)
     return
   }
 

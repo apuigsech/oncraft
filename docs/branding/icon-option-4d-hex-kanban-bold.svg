@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Option 4D: Bolder, more solid — filled hex background, thicker brackets, bigger cards -->
+  <defs>
+    <linearGradient id="g4d" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="g4dg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexagonal shape — filled gradient -->
+  <path d="M256 48 L432 144 L432 368 L256 464 L80 368 L80 144 Z" fill="url(#g4d)"/>
+  <!-- Dark inner hex for contrast -->
+  <path d="M256 72 L412 156 L412 356 L256 440 L100 356 L100 156 Z" fill="#0f172a"/>
+  <!-- Bold code brackets < > -->
+  <path d="M140 224 L100 272 L140 320" stroke="#f1f5f9" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M372 224 L412 272 L372 320" stroke="#f1f5f9" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Three kanban columns — larger, bolder cards -->
+  <rect x="176" y="204" width="40" height="28" rx="5" fill="#475569"/>
+  <rect x="176" y="242" width="40" height="28" rx="5" fill="#475569"/>
+  <rect x="176" y="280" width="40" height="28" rx="5" fill="#334155"/>
+  <rect x="236" y="204" width="40" height="28" rx="5" fill="#f1f5f9"/>
+  <rect x="236" y="242" width="40" height="28" rx="5" fill="#f1f5f9" opacity="0.5"/>
+  <rect x="296" y="204" width="40" height="28" rx="5" fill="#4ade80"/>
+  <rect x="296" y="242" width="40" height="28" rx="5" fill="#4ade80" opacity="0.5"/>
+  <!-- "On" indicator at top -->
+  <circle cx="256" cy="108" r="16" fill="url(#g4dg)"/>
+  <circle cx="256" cy="108" r="9" fill="#4ade80" opacity="0.6"/>
+</svg>

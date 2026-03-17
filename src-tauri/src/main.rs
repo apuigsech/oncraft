@@ -5,5 +5,5 @@ fn main() {
     // Fix PATH for macOS GUI apps launched via launchd (which don't inherit shell PATH).
     // Without this, sidecars can't find `claude` CLI at /opt/homebrew/bin.
     let _ = fix_path_env::fix();
-    claudban_lib::run()
+    oncraft_lib::run()
 }
