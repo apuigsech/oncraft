@@ -34,4 +34,4 @@ target/
 src-tauri/target/
 src-tauri/binaries/
 *.db
-.claudban/
+.oncraft/
