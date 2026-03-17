@@ -230,9 +230,11 @@ rl.on("line", async (line: string) => {
     process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}\n`);
 
     try {
-      // Build multimodal prompt when images are attached
+      // Build multimodal prompt when images are attached.
+      // The SDK's query() accepts prompt: string | AsyncIterable<SDKUserMessage>.
+      // For multimodal content we must wrap the SDKUserMessage in an async generator.
       const images = cmd.images as { data: string; mediaType: string }[] | undefined;
-      let promptValue: string | Record<string, unknown>;
+      let promptValue: string | AsyncIterable<SDKMessage>;
       if (images && Array.isArray(images) && images.length > 0) {
         const contentBlocks: Record<string, unknown>[] = [];
         for (const img of images) {
@@ -242,12 +244,13 @@ rl.on("line", async (line: string) => {
           });
         }
         contentBlocks.push({ type: "text", text: cmd.prompt as string });
-        promptValue = {
-          type: "user",
-          message: { role: "user", content: contentBlocks },
+        const userMessage = {
+          type: "user" as const,
+          message: { role: "user" as const, content: contentBlocks },
           parent_tool_use_id: null,
           session_id: "",
         };
+        promptValue = (async function* () { yield userMessage as unknown as SDKMessage; })();
       } else {
         promptValue = cmd.prompt as string;
       }
