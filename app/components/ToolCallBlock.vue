@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import type { StreamMessage } from '~/types';
+import type { ChatPart } from '~/types';
 
-const props = defineProps<{ message: StreamMessage; cardId: string }>();
+const props = defineProps<{ part: ChatPart; cardId: string }>();
 const expanded = ref(false);
-const sessionsStore = useSessionsStore();
 
 const TOOL_INFO: Record<string, { icon: string; label: string }> = {
   Bash: { icon: '⚡', label: 'Run' },
@@ -22,11 +21,15 @@ const TOOL_INFO: Record<string, { icon: string; label: string }> = {
   TodoWrite: { icon: '✅', label: 'Tasks' },
 };
 
-const toolInfo = computed(() => TOOL_INFO[props.message.toolName || ''] || { icon: '🔧', label: props.message.toolName || 'Tool' });
+const toolName = computed(() => (props.part.data.toolName as string) || '');
+const toolInput = computed(() => (props.part.data.toolInput as Record<string, unknown>) || {});
+const toolResult = computed(() => props.part.data.toolResult as string | undefined);
+
+const toolInfo = computed(() => TOOL_INFO[toolName.value] || { icon: '🔧', label: toolName.value || 'Tool' });
 
 const summary = computed(() => {
-  const input = props.message.toolInput || {};
-  const name = props.message.toolName || '';
+  const input = toolInput.value;
+  const name = toolName.value;
   switch (name) {
     case 'Bash': return `$ ${(input.command as string || '').substring(0, 80)}`;
     case 'Read': return `${input.file_path}`;
@@ -43,60 +46,48 @@ const summary = computed(() => {
   }
 });
 
-const isEdit = computed(() => props.message.toolName === 'Edit');
-const isBash = computed(() => props.message.toolName === 'Bash');
-
-async function approve() { await sessionsStore.approveToolUse(props.cardId); }
-async function reject() { await sessionsStore.rejectToolUse(props.cardId); }
+const isEdit = computed(() => toolName.value === 'Edit');
+const isBash = computed(() => toolName.value === 'Bash');
 </script>
 
 <template>
-  <div class="tool-block" :class="{ 'is-confirmation': message.type === 'tool_confirmation' }">
+  <div class="tool-block">
     <div class="tool-header" @click="expanded = !expanded">
       <span class="tool-icon-emoji">{{ toolInfo.icon }}</span>
       <span class="tool-label">{{ toolInfo.label }}</span>
       <span class="tool-summary">{{ summary }}</span>
       <span class="tool-expand">{{ expanded ? '▾' : '▸' }}</span>
-      <span v-if="message.toolResult" class="tool-badge result">done</span>
-      <span v-if="message.type === 'tool_confirmation'" class="tool-badge confirm">needs approval</span>
-    </div>
-
-    <!-- Approval buttons for tool confirmation -->
-    <div v-if="message.type === 'tool_confirmation'" class="tool-confirm">
-      <div class="confirm-actions">
-        <button class="btn-approve" @click.stop="approve">Allow</button>
-        <button class="btn-reject" @click.stop="reject">Deny</button>
-      </div>
+      <span v-if="toolResult" class="tool-badge result">done</span>
     </div>
 
     <!-- Expanded detail -->
     <div v-if="expanded" class="tool-detail">
       <!-- Bash: show command and output -->
       <div v-if="isBash" class="bash-block">
-        <div class="bash-command">$ {{ message.toolInput?.command }}</div>
-        <pre v-if="message.toolInput?.description" class="bash-desc">{{ message.toolInput.description }}</pre>
+        <div class="bash-command">$ {{ toolInput.command }}</div>
+        <pre v-if="toolInput.description" class="bash-desc">{{ toolInput.description }}</pre>
       </div>
 
       <!-- Edit: show diff -->
-      <div v-else-if="isEdit && message.toolInput" class="edit-diff">
-        <div class="diff-file">{{ message.toolInput.file_path }}</div>
-        <div v-if="message.toolInput.old_string" class="diff-removed">
+      <div v-else-if="isEdit && toolInput" class="edit-diff">
+        <div class="diff-file">{{ toolInput.file_path }}</div>
+        <div v-if="toolInput.old_string" class="diff-removed">
           <span class="diff-marker">-</span>
-          <pre>{{ message.toolInput.old_string }}</pre>
+          <pre>{{ toolInput.old_string }}</pre>
         </div>
-        <div v-if="message.toolInput.new_string" class="diff-added">
+        <div v-if="toolInput.new_string" class="diff-added">
           <span class="diff-marker">+</span>
-          <pre>{{ message.toolInput.new_string }}</pre>
+          <pre>{{ toolInput.new_string }}</pre>
         </div>
       </div>
 
       <!-- Generic: show raw input -->
-      <pre v-else-if="message.toolInput" class="tool-input">{{ JSON.stringify(message.toolInput, null, 2) }}</pre>
+      <pre v-else-if="toolInput" class="tool-input">{{ JSON.stringify(toolInput, null, 2) }}</pre>
 
       <!-- Tool result -->
-      <div v-if="message.toolResult" class="tool-result-block">
+      <div v-if="toolResult" class="tool-result-block">
         <div class="result-label">Result:</div>
-        <pre class="tool-result-content">{{ message.toolResult }}</pre>
+        <pre class="tool-result-content">{{ toolResult }}</pre>
       </div>
     </div>
   </div>
@@ -107,7 +98,6 @@ async function reject() { await sessionsStore.rejectToolUse(props.cardId); }
   background: var(--bg-secondary); border: 1px solid var(--bg-tertiary);
   border-radius: 6px; font-size: 12px; overflow: hidden;
 }
-.tool-block.is-confirmation { border-color: var(--warning); }
 .tool-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px;
   cursor: pointer; transition: background 0.15s;
@@ -125,20 +115,6 @@ async function reject() { await sessionsStore.rejectToolUse(props.cardId); }
   flex-shrink: 0;
 }
 .tool-badge.result { background: rgba(34,197,94,0.15); color: var(--success); }
-.tool-badge.confirm { background: rgba(251,191,36,0.2); color: var(--warning); }
-
-.tool-confirm { padding: 6px 10px; border-top: 1px solid var(--bg-tertiary); }
-.confirm-actions { display: flex; gap: 8px; }
-.btn-approve {
-  background: var(--success); color: white; padding: 4px 14px;
-  border-radius: 4px; font-size: 12px; font-weight: 600;
-}
-.btn-reject {
-  background: transparent; color: var(--text-muted); padding: 4px 14px;
-  border-radius: 4px; font-size: 12px; border: 1px solid var(--bg-tertiary);
-}
-.btn-reject:hover { border-color: var(--error); color: var(--error); }
-
 .tool-detail { padding: 8px 10px; border-top: 1px solid var(--bg-tertiary); }
 
 /* Bash */

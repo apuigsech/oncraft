@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import type { AgentProgressEvent } from '~/types';
+import type { ChatPart } from '~/types';
 
 const props = defineProps<{
-  events: AgentProgressEvent[];
+  parts: ChatPart[];
   isActive: boolean;
 }>();
 
-const latest = computed(() => props.events[props.events.length - 1] ?? null);
+const latest = computed(() => {
+  const p = props.parts[props.parts.length - 1];
+  if (!p) return null;
+  return {
+    subtype: p.kind,
+    content: (p.data.description as string) || (p.data.content as string) || (p.data.status as string) || p.kind,
+  };
+});
 
 const subtypeIcon: Record<string, string> = {
   task_started:      '▶',

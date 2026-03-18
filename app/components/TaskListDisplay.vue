@@ -1,32 +1,20 @@
 <script setup lang="ts">
-import type { StreamMessage } from '~/types';
+import type { ChatPart } from '~/types';
 
-const props = defineProps<{ messages: StreamMessage[] }>();
+const props = defineProps<{ part: ChatPart; cardId: string }>();
 
 interface TaskItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-// Extract tasks from TodoWrite tool calls in the message history
 const tasks = computed<TaskItem[]>(() => {
-  const items: TaskItem[] = [];
-  for (const msg of props.messages) {
-    if (msg.type === 'tool_use' && msg.toolName === 'TodoWrite') {
-      const input = msg.toolInput as { todos?: Array<{ content: string; status: string }> } | undefined;
-      if (input?.todos && Array.isArray(input.todos)) {
-        // TodoWrite replaces all tasks, so clear and re-add
-        items.length = 0;
-        for (const todo of input.todos) {
-          items.push({
-            content: todo.content || '',
-            status: (todo.status as TaskItem['status']) || 'pending',
-          });
-        }
-      }
-    }
-  }
-  return items;
+  const todos = props.part.data.todos as Array<{ content: string; status: string }> | undefined;
+  if (!todos || !Array.isArray(todos)) return [];
+  return todos.map(todo => ({
+    content: todo.content || '',
+    status: (todo.status as TaskItem['status']) || 'pending',
+  }));
 });
 
 const statusIcon: Record<string, string> = {
