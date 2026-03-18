@@ -83,6 +83,8 @@ const registry: Record<string, ChatPartDefinition> = {
       }>;
       return {
         questions,
+        toolName: raw.toolName ?? 'AskUserQuestion',
+        toolInput: raw.toolInput ?? {},
         toolUseId: raw.toolUseId ?? '',
       };
     },

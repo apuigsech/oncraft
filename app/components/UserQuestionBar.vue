@@ -24,8 +24,11 @@ const isResolved = computed(() => !!props.part.resolved);
 const selected = ref<Record<number, Set<string>>>({});
 const freeformInput = ref('');
 
-function selectOption(label: string) {
-  sessionsStore.send(props.cardId, label);
+async function selectOption(label: string) {
+  // AskUserQuestion comes through canUseTool as tool_confirmation.
+  // 1. Approve the tool to unblock the sidecar
+  await sessionsStore.approveToolUse(props.cardId);
+  // 2. Mark resolved with the selected answer
   sessionsStore.resolveActionPart(props.cardId, props.part.id, label);
 }
 
@@ -36,22 +39,22 @@ function toggleOption(qIndex: number, label: string) {
   else set.add(label);
 }
 
-function submitMultiSelect(qIndex: number) {
+async function submitMultiSelect(qIndex: number) {
   const set = selected.value[qIndex];
   if (!set || set.size === 0) return;
-  const answer = Array.from(set).join(', ');
-  sessionsStore.send(props.cardId, answer);
-  sessionsStore.resolveActionPart(props.cardId, props.part.id, answer);
+  const answerText = Array.from(set).join(', ');
+  await sessionsStore.approveToolUse(props.cardId);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, answerText);
 }
 
 function isSelected(qIndex: number, label: string): boolean {
   return !!selected.value[qIndex]?.has(label);
 }
 
-function submitFreeform() {
+async function submitFreeform() {
   const text = freeformInput.value.trim();
   if (!text) return;
-  sessionsStore.send(props.cardId, text);
+  await sessionsStore.approveToolUse(props.cardId);
   sessionsStore.resolveActionPart(props.cardId, props.part.id, text);
   freeformInput.value = '';
 }
