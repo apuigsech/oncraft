@@ -1,25 +1,23 @@
-import type { StreamMessage, SessionConfig, AgentProgressEvent } from '~/types';
+import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
-  onMessage, offMessage,
+  onMessage, offMessage, onMeta, offMeta,
   listCommandsNative, loadHistoryViaSidecar,
 } from '~/services/claude-process';
 import { ensureMarkdownReady } from '~/services/markdown';
 
 export const useSessionsStore = defineStore('sessions', () => {
-  const messages: Record<string, StreamMessage[]> = reactive({});
+  const messages: Record<string, ChatPart[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
   const historyLoaded = new Set<string>();
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
-  const progressEvents: Record<string, AgentProgressEvent[]> = reactive({});
 
   // ME-3: Maximum messages kept in memory per card.
   // Older messages are discarded to prevent unbounded memory growth in long sessions.
   const MAX_MESSAGES_PER_CARD = 500;
-  const MAX_PROGRESS_EVENTS_PER_CARD = 50;
 
   // QW-3: Buffer streaming tokens and flush via requestAnimationFrame
   // instead of mutating reactive state on every single token arrival
@@ -35,8 +33,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     const msgs = messages[cardId];
     if (!msgs?.length) return;
     const last = msgs[msgs.length - 1];
-    if (last?.type === 'assistant' && last.subtype === 'streaming') {
-      last.content += buffered;
+    if (last?.kind === 'assistant' && last.data.streaming) {
+      last.data.content = (last.data.content as string) + buffered;
     }
   }
 
@@ -48,10 +46,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       _streamingRafPending.add(cardId);
       requestAnimationFrame(() => _flushStreamingBuffer(cardId));
     }
-  }
-
-  function getProgressEvents(cardId: string): AgentProgressEvent[] {
-    return progressEvents[cardId] || [];
   }
 
   function getSessionMetrics(cardId: string) {
@@ -73,51 +67,36 @@ export const useSessionsStore = defineStore('sessions', () => {
     Object.assign(config, partial);
   }
 
-  function getMessages(cardId: string): StreamMessage[] {
+  function getMessages(cardId: string): ChatPart[] {
     return messages[cardId] || [];
   }
 
-  function appendMessage(cardId: string, msg: StreamMessage): void {
+  function appendPart(cardId: string, part: ChatPart): void {
     if (!messages[cardId]) { messages[cardId] = []; }
-    if (msg.type === 'system' && !msg.content && !msg.sessionId) return;
 
     // QW-3: Streaming tokens are buffered and flushed via rAF
     // to avoid mutating reactive state on every single token (~10-20/s)
-    if (msg.subtype === 'streaming' && msg.type === 'assistant') {
+    if (part.kind === 'assistant' && part.data.streaming) {
       const msgs = messages[cardId];
       const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-      if (last && last.type === 'assistant' && last.subtype === 'streaming') {
-        _bufferStreamingToken(cardId, msg.content);
+      if (last && last.kind === 'assistant' && last.data.streaming) {
+        _bufferStreamingToken(cardId, part.data.content as string);
         return;
       }
-    }
-
-    // Tool results: merge into the matching tool_use message instead of adding separately
-    if (msg.type === 'tool_result' && msg.toolUseId) {
-      const msgs = messages[cardId];
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].type === 'tool_use' && msgs[i].toolUseId === msg.toolUseId) {
-          msgs[i].toolResult = msg.toolResult || (msg as { content?: string }).content || '';
-          return;
-        }
-      }
-      // No matching tool_use found, skip
-      return;
     }
 
     // When a complete assistant message arrives after streaming, flush buffer and replace
-    if (msg.type === 'assistant' && !msg.subtype) {
-      // QW-3: Flush any pending streaming buffer before replacing
+    if (part.kind === 'assistant' && !part.data.streaming) {
       _flushStreamingBuffer(cardId);
       const msgs = messages[cardId];
       const lastIdx = msgs.length - 1;
-      if (lastIdx >= 0 && msgs[lastIdx].type === 'assistant' && msgs[lastIdx].subtype === 'streaming') {
-        msgs[lastIdx] = msg; // Replace streaming with final
+      if (lastIdx >= 0 && msgs[lastIdx].kind === 'assistant' && msgs[lastIdx].data.streaming) {
+        msgs[lastIdx] = part; // Replace streaming with final
         return;
       }
     }
 
-    messages[cardId].push(msg);
+    messages[cardId].push(part);
 
     // ME-3: Trim old messages to prevent unbounded memory growth
     if (messages[cardId].length > MAX_MESSAGES_PER_CARD) {
@@ -125,49 +104,88 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
   }
 
-  function setupMessageListener(cardId: string): void {
-    onMessage(cardId, (msg: StreamMessage) => {
-      const cardsStore = useCardsStore();
+  function handleMeta(cardId: string, msg: SidecarMessage): void {
+    const cardsStore = useCardsStore();
 
-      // Capture session ID and git branch from init or result messages
+    // result: extract metrics, mark query complete, update card state
+    if (msg.type === 'result') {
+      const m = getSessionMetrics(cardId);
+      if (msg.costUsd) m.costUsd += msg.costUsd as number;
+      if (msg.durationMs) m.durationMs += msg.durationMs as number;
+      if (msg.usage) {
+        const usage = msg.usage as { inputTokens?: number; outputTokens?: number };
+        m.inputTokens = usage.inputTokens || m.inputTokens;
+        m.outputTokens = usage.outputTokens || m.outputTokens;
+      }
+      markQueryComplete(cardId);
+      cardsStore.updateCardState(cardId, 'idle');
+      return;
+    }
+
+    // init: extract sessionId, gitBranch, worktree info
+    if (msg.type === 'init') {
       if (msg.sessionId) {
-        cardsStore.updateCardSessionId(cardId, msg.sessionId);
+        cardsStore.updateCardSessionId(cardId, msg.sessionId as string);
       }
-      if (msg.subtype === 'init') {
-        const initData = msg as unknown as Record<string, unknown>;
-        if (initData.gitBranch) {
-          updateSessionConfig(cardId, { gitBranch: initData.gitBranch as string });
+      const partial: Partial<SessionConfig> = {};
+      if (msg.gitBranch) partial.gitBranch = msg.gitBranch as string;
+      if (msg.worktreePath) partial.worktreePath = msg.worktreePath as string;
+      if (msg.worktreeBranch) partial.worktreeBranch = msg.worktreeBranch as string;
+      if (Object.keys(partial).length > 0) {
+        updateSessionConfig(cardId, partial);
+      }
+      return;
+    }
+
+    // streaming delta: buffer the token
+    if (msg.type === 'assistant' && msg.subtype === 'streaming') {
+      if (!messages[cardId]) { messages[cardId] = []; }
+      const msgs = messages[cardId];
+      const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      if (!last || last.kind !== 'assistant' || !last.data.streaming) {
+        // Create a new streaming ChatPart
+        msgs.push({
+          id: 'assistant-streaming',
+          kind: 'assistant',
+          placement: 'inline',
+          timestamp: Date.now(),
+          data: { content: '', streaming: true },
+        });
+      }
+      _bufferStreamingToken(cardId, (msg.content as string) || '');
+      return;
+    }
+
+    // tool_result: merge into matching tool_use part
+    if (msg.type === 'tool_result') {
+      const parts = messages[cardId];
+      if (!parts) return;
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (parts[i].kind === 'tool_use' && parts[i].data.toolUseId === msg.toolUseId) {
+          parts[i].data.toolResult = (msg.content as string) || (msg.toolResult as string) || '';
+          return;
         }
       }
+      return;
+    }
+  }
 
-      // Accumulate usage metrics from assistant messages
-      if (msg.type === 'assistant' && msg.usage) {
-        const m = getSessionMetrics(cardId);
-        m.inputTokens += msg.usage.inputTokens || 0;
-        m.outputTokens += msg.usage.outputTokens || 0;
-      }
+  function resolveActionPart(cardId: string, partId: string): void {
+    const parts = messages[cardId];
+    if (!parts) return;
+    const part = parts.find(p => p.id === partId);
+    if (part) part.resolved = true;
+  }
 
-      // On result message, capture cost/duration and mark query complete
-      if (msg.subtype === 'result') {
-        const m = getSessionMetrics(cardId);
-        if (msg.costUsd) m.costUsd += msg.costUsd;
-        if (msg.durationMs) m.durationMs += msg.durationMs;
-        if (msg.usage) {
-          m.inputTokens = msg.usage.inputTokens || m.inputTokens;
-          m.outputTokens = msg.usage.outputTokens || m.outputTokens;
-        }
-        markQueryComplete(cardId);
-        cardsStore.updateCardState(cardId, 'idle');
-        if (!msg.content) return;
-      }
+  function setupMessageListener(cardId: string): void {
+    // Normal ChatPart messages
+    onMessage(cardId, (part: ChatPart) => {
+      appendPart(cardId, part);
+    });
 
-      // On error, mark query complete and set card to error state
-      if (msg.subtype === 'error') {
-        markQueryComplete(cardId);
-        cardsStore.updateCardState(cardId, 'error');
-      }
-
-      appendMessage(cardId, msg);
+    // Meta messages (init, result, streaming, tool_result)
+    onMeta(cardId, (msg: SidecarMessage) => {
+      handleMeta(cardId, msg);
     });
   }
 
@@ -175,11 +193,23 @@ export const useSessionsStore = defineStore('sessions', () => {
     const cardsStore = useCardsStore();
     const card = cardsStore.cards.find(c => c.id === cardId);
 
-    appendMessage(cardId, { type: 'user', content: message, timestamp: Date.now(), ...(images?.length ? { images } : {}) });
+    appendPart(cardId, {
+      id: `user-${Date.now()}`,
+      kind: 'user',
+      placement: 'inline',
+      timestamp: Date.now(),
+      data: { content: message, ...(images?.length ? { images } : {}) },
+    });
 
     // Block only if a query is actively running (not just sidecar alive)
     if (isQueryActive(cardId)) {
-      appendMessage(cardId, { type: 'system', content: 'Waiting for current response to finish...', timestamp: Date.now() });
+      appendPart(cardId, {
+        id: `system-${Date.now()}`,
+        kind: 'system',
+        placement: 'inline',
+        timestamp: Date.now(),
+        data: { content: 'Waiting for current response to finish...' },
+      });
       return;
     }
 
@@ -204,7 +234,13 @@ export const useSessionsStore = defineStore('sessions', () => {
       try {
         await sendStart(cardId, project.path, message, sessionId, config, images);
       } catch (err) {
-        appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
+        appendPart(cardId, {
+          id: `error-${Date.now()}`,
+          kind: 'error',
+          placement: 'inline',
+          timestamp: Date.now(),
+          data: { message: `Error: ${err}` },
+        });
         await cardsStore.updateCardState(cardId, 'idle');
       }
     } else {
@@ -213,9 +249,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       try {
         await spawnSession(cardId, project.path, message, sessionId, config, images);
       } catch (err) {
-        appendMessage(cardId, { type: 'system', content: `Error: ${err}`, timestamp: Date.now() });
+        appendPart(cardId, {
+          id: `error-${Date.now()}`,
+          kind: 'error',
+          placement: 'inline',
+          timestamp: Date.now(),
+          data: { message: `Error: ${err}` },
+        });
         await cardsStore.updateCardState(cardId, 'idle');
         offMessage(cardId);
+        offMeta(cardId);
       }
     }
   }
@@ -234,6 +277,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function stopSession(cardId: string): Promise<void> {
     offMessage(cardId);
+    offMeta(cardId);
     await killProcess(cardId);
     const cardsStore = useCardsStore();
     await cardsStore.updateCardState(cardId, 'idle');
@@ -286,15 +330,15 @@ export const useSessionsStore = defineStore('sessions', () => {
     delete messages[cardId];
     delete sessionConfigs[cardId];
     delete sessionMetrics[cardId];
-    delete progressEvents[cardId];
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
   }
 
   return {
-    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, progressEvents,
-    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getProgressEvents,
+    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands,
+    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
+    appendPart, resolveActionPart, handleMeta,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, purgeCard,
   };
