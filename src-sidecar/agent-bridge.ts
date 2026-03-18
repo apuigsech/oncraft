@@ -145,7 +145,8 @@ function translateMessage(
 
   if (msg.type === "system") {
     const sysMsg = msg as Record<string, unknown>;
-    if (sysMsg.subtype === "init") {
+    const subtype = sysMsg.subtype as string | undefined;
+    if (subtype === "init") {
       const worktree = sysMsg.worktree as { path?: string; branch?: string } | undefined;
       return {
         type: "system",
@@ -160,6 +161,96 @@ function translateMessage(
         worktreeBranch: worktree?.branch || undefined,
       };
     }
+    if (subtype === "hook_started") {
+      return {
+        type: "hook_started",
+        hookId: sysMsg.hook_id,
+        hookName: sysMsg.hook_name,
+        hookEvent: sysMsg.hook_event,
+      };
+    }
+    if (subtype === "hook_progress") {
+      return {
+        type: "hook_progress",
+        hookId: sysMsg.hook_id,
+        hookName: sysMsg.hook_name,
+        hookEvent: sysMsg.hook_event,
+        stdout: sysMsg.stdout || "",
+        stderr: sysMsg.stderr || "",
+        output: sysMsg.output || "",
+      };
+    }
+    if (subtype === "hook_response") {
+      return {
+        type: "hook_response",
+        hookId: sysMsg.hook_id,
+        hookName: sysMsg.hook_name,
+        hookEvent: sysMsg.hook_event,
+        output: sysMsg.output || "",
+        exitCode: sysMsg.exit_code,
+        outcome: sysMsg.outcome || "unknown",
+      };
+    }
+    if (subtype === "task_started") {
+      return {
+        type: "task_started",
+        taskId: sysMsg.task_id,
+        description: sysMsg.description || "",
+        taskType: sysMsg.task_type,
+        prompt: sysMsg.prompt,
+      };
+    }
+    if (subtype === "task_progress") {
+      return {
+        type: "task_progress",
+        taskId: sysMsg.task_id,
+        description: sysMsg.description || "",
+        usage: sysMsg.usage,
+        lastToolName: sysMsg.last_tool_name,
+        summary: sysMsg.summary,
+      };
+    }
+    if (subtype === "task_notification") {
+      return {
+        type: "task_notification",
+        taskId: sysMsg.task_id,
+        ...sysMsg,  // pass through remaining fields
+      };
+    }
+    if (subtype === "status") {
+      return {
+        type: "status",
+        status: sysMsg.status,
+        permissionMode: sysMsg.permissionMode,
+      };
+    }
+    if (subtype === "compact_boundary") {
+      return {
+        type: "compact_boundary",
+        compactMetadata: sysMsg.compact_metadata,
+      };
+    }
+    if (subtype === "local_command_output") {
+      return {
+        type: "local_command_output",
+        content: sysMsg.content || "",
+      };
+    }
+    if (subtype === "files_persisted") {
+      return {
+        type: "files_persisted",
+        files: sysMsg.files || [],
+        failed: sysMsg.failed || [],
+      };
+    }
+    if (subtype === "elicitation_complete") {
+      return {
+        type: "elicitation_complete",
+        mcpServerName: sysMsg.mcp_server_name,
+        elicitationId: sysMsg.elicitation_id,
+      };
+    }
+    // For any other system subtype, keep the existing generic handler:
     return {
       type: "system",
       subtype: sysMsg.subtype || "unknown",
@@ -184,11 +275,57 @@ function translateMessage(
     return null;
   }
 
-  // Pass through unknown types as system messages
+  if (msg.type === "tool_progress") {
+    const m = msg as Record<string, unknown>;
+    return {
+      type: "tool_progress",
+      toolUseId: m.tool_use_id,
+      toolName: m.tool_name,
+      elapsedSeconds: m.elapsed_time_seconds,
+      taskId: m.task_id,
+    };
+  }
+
+  if (msg.type === "auth_status") {
+    const m = msg as Record<string, unknown>;
+    return {
+      type: "auth_status",
+      isAuthenticating: m.isAuthenticating,
+      output: m.output || [],
+      error: m.error,
+    };
+  }
+
+  if (msg.type === "rate_limit_event") {
+    const m = msg as Record<string, unknown>;
+    return {
+      type: "rate_limit_event",
+      rateLimitInfo: m.rate_limit_info || m.rateLimitInfo || {},
+    };
+  }
+
+  if (msg.type === "tool_use_summary") {
+    const m = msg as Record<string, unknown>;
+    return {
+      type: "tool_use_summary",
+      summary: m.summary || "",
+      precedingToolUseIds: m.preceding_tool_use_ids || [],
+    };
+  }
+
+  if (msg.type === "prompt_suggestion") {
+    const m = msg as Record<string, unknown>;
+    return {
+      type: "prompt_suggestion",
+      suggestion: m.suggestion || "",
+    };
+  }
+
+  // Pass through unknown types with their raw data
   return {
-    type: "system",
-    subtype: (msg as Record<string, unknown>).type as string,
-    content: JSON.stringify(msg),
+    type: "unknown",
+    rawType: String((msg as Record<string, unknown>).type),
+    data: msg,
   };
 }
 
