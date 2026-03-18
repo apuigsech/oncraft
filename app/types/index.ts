@@ -1,3 +1,6 @@
+import type { VerbosityLevel } from './chat-part';
+export type { SidecarMessage, ChatPart, ChatPartDefinition, Placement, VerbosityLevel } from './chat-part';
+
 export interface Project {
   id: string;
   name: string;
@@ -22,6 +25,8 @@ export interface Card {
   archived: boolean;
   useWorktree?: boolean;
   worktreeName?: string;
+  linkedFiles?: Record<string, string>;    // { label: relativePath } e.g. { "plan": "docs/plan.md" }
+  linkedIssues?: CardLinkedIssue[];
 }
 
 export type CardState = 'active' | 'idle' | 'error' | 'completed';
@@ -37,9 +42,19 @@ export interface PipelineConfig {
   prompt: string;
 }
 
+export interface CardLinkedIssue {
+  number: number;
+  title?: string;       // cached title for display without fetching
+}
+
+export interface GitHubConfig {
+  repository?: string;   // "owner/repo"
+}
+
 export interface ProjectConfig {
   columns: ColumnConfig[];
   pipelines: PipelineConfig[];
+  github?: GitHubConfig;
 }
 
 export interface ImageAttachment {
@@ -94,6 +109,7 @@ export interface SessionConfig {
   model: ModelAlias;
   effort: EffortLevel;
   permissionMode: PermissionMode;
+  verbosity: VerbosityLevel;
   gitBranch?: string;
   worktreeName?: string;
   worktreePath?: string;
