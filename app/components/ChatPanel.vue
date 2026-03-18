@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { toUIMessages, toChatStatus } from '~/services/message-adapter';
-import type { ToolInvocationUIPart } from '~/services/message-adapter';
-import { renderMarkdown, useDebouncedMarkdown } from '~/services/markdown';
+import { registry } from '~/services/chat-part-registry';
+import type { ChatPart, ImageAttachment } from '~/types';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
-import type { ImageAttachment } from '~/types';
 
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
@@ -134,15 +132,10 @@ const card = computed(() => {
   return cardsStore.cards.find(c => c.id === sessionsStore.activeChatCardId) || null;
 });
 
-const rawMessages = computed(() => {
-  if (!sessionsStore.activeChatCardId) return [];
-  return sessionsStore.getMessages(sessionsStore.activeChatCardId);
-});
-
-const isActive = computed(() => {
-  if (!sessionsStore.activeChatCardId) return false;
-  return sessionsStore.isActive(sessionsStore.activeChatCardId);
-});
+const { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive } = useChatParts(
+  computed(() => sessionsStore.activeChatCardId)
+);
+const uiMessages = useUIMessages(computed(() => inlineParts.value));
 
 const metrics = computed(() => {
   if (!sessionsStore.activeChatCardId) return { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
@@ -154,22 +147,34 @@ const sessionConfig = computed(() => {
   return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
-const progressEvents = computed(() => {
-  if (!sessionsStore.activeChatCardId) return [];
-  return sessionsStore.getProgressEvents(sessionsStore.activeChatCardId);
-});
+// ─── Component resolution for dynamic zones ───
+const componentMap: Record<string, any> = {
+  MarkdownContent: resolveComponent('MarkdownContent'),
+  UserMessageBlock: resolveComponent('UserMessageBlock'),
+  ToolCallBlock: resolveComponent('ToolCallBlock'),
+  ToolApprovalBar: resolveComponent('ToolApprovalBar'),
+  UserQuestionBar: resolveComponent('UserQuestionBar'),
+  PromptSuggestionBar: resolveComponent('PromptSuggestionBar'),
+  HookActivityBlock: resolveComponent('HookActivityBlock'),
+  ErrorNotice: resolveComponent('ErrorNotice'),
+  RateLimitNotice: resolveComponent('RateLimitNotice'),
+  TaskListDisplay: resolveComponent('TaskListDisplay'),
+  GenericMessageBlock: resolveComponent('GenericMessageBlock'),
+};
 
-// Adapted messages for UChatMessages
-const uiMessages = computed(() => toUIMessages(rawMessages.value));
-const chatStatus = computed(() => toChatStatus(isActive.value, rawMessages.value));
+function getComponent(kind: string): any {
+  const def = registry[kind] || registry['_default'];
+  const name = def?.component || 'GenericMessageBlock';
+  return componentMap[name] || componentMap['GenericMessageBlock'];
+}
 
-// Find the original StreamMessage for a tool part (needed by ToolCallBlock)
-function findToolStreamMessage(part: ToolInvocationUIPart) {
-  return rawMessages.value.find(
-    m => (m.type === 'tool_use' || m.type === 'tool_confirmation') && m.toolUseId === part.toolCallId
-  ) || rawMessages.value.find(
-    m => (m.type === 'tool_use' || m.type === 'tool_confirmation') && m.toolName === part.toolName
+// Find a ChatPart by toolCallId for tool invocation rendering
+function findToolPart(uiPart: any): ChatPart {
+  const found = inlineParts.value.find(p =>
+    (p.kind === 'tool_use' || p.kind === 'tool_confirmation') &&
+    p.data.toolUseId === uiPart.toolCallId
   );
+  return found || { id: uiPart.toolCallId, kind: 'tool_use', placement: 'inline', timestamp: Date.now(), data: { toolName: uiPart.toolName, toolInput: uiPart.input, toolUseId: uiPart.toolCallId, toolResult: uiPart.output } };
 }
 
 function sendMessage() {
@@ -196,11 +201,11 @@ function selectSlashCommand(command: string) {
 }
 
 // Preserve scroll position when the task list collapses/expands
-const taskListEl = ref<InstanceType<typeof TaskListDisplay> | null>(null);
+const headerZoneEl = ref<HTMLElement | null>(null);
 
 function onTaskListToggle() {
   const wrapper = messagesWrapper.value;
-  const taskEl = (taskListEl.value as any)?.$el as HTMLElement | undefined;
+  const taskEl = headerZoneEl.value;
   if (!wrapper || !taskEl) return;
 
   // Capture current state before the DOM updates
@@ -232,7 +237,7 @@ watch(() => sessionsStore.activeChatCardId, () => {
 });
 
 // Also scroll when messages are loaded (e.g. history arrives async after chat opens)
-watch(() => rawMessages.value.length, (newLen, oldLen) => {
+watch(() => inlineParts.value.length, (newLen, oldLen) => {
   if (oldLen === 0 && newLen > 0) {
     nextTick(scrollToBottom);
   }
@@ -275,8 +280,17 @@ onMounted(() => {
       />
     </div>
 
-    <!-- Task list — sticky, always visible above the scrollable messages -->
-    <TaskListDisplay ref="taskListEl" :messages="rawMessages" class="task-list-sticky" @toggle="onTaskListToggle" />
+    <!-- Header Zone -->
+    <div v-if="headerParts.length" ref="headerZoneEl" class="task-list-sticky">
+      <template v-for="part in headerParts" :key="part.id">
+        <component
+          :is="getComponent(part.kind)"
+          :part="part"
+          :card-id="sessionsStore.activeChatCardId!"
+          @toggle="onTaskListToggle"
+        />
+      </template>
+    </div>
 
     <!-- Messages area — UChatMessages handles scroll + auto-scroll -->
     <div ref="messagesWrapper" class="chat-messages-wrapper">
@@ -313,11 +327,10 @@ onMounted(() => {
 
             <!-- Text parts: user = plain text, assistant = rendered markdown -->
             <template v-else-if="part.type === 'text'">
-              <!-- QW-5: MarkdownContent debounces parsing during streaming -->
               <MarkdownContent
                 v-if="role === 'assistant'"
                 :text="part.text"
-                :streaming="chatStatus === 'streaming'"
+                :streaming="part.state === 'streaming'"
               />
               <div v-else-if="role === 'user'" class="user-text">{{ part.text }}</div>
               <div v-else class="system-text">{{ part.text }}</div>
@@ -329,25 +342,18 @@ onMounted(() => {
               <div class="thinking-content">{{ part.reasoning }}</div>
             </div>
 
-            <!-- Tool invocations — delegate to our existing ToolCallBlock -->
+            <!-- Tool invocations — delegate to ToolCallBlock via ChatPart -->
             <template v-else-if="part.type === 'dynamic-tool'">
               <ToolCallBlock
-                v-if="findToolStreamMessage(part)"
-                :message="findToolStreamMessage(part)!"
+                :part="findToolPart(part)"
                 :card-id="sessionsStore.activeChatCardId!"
               />
-              <!-- Fallback if no original message found -->
-              <div v-else class="tool-fallback">
-                <UIcon name="i-lucide-terminal" class="tool-fallback-icon" />
-                <span>{{ part.toolName }}</span>
-                <span v-if="part.state === 'output-available'" class="tool-done">done</span>
-              </div>
             </template>
           </template>
         </template>
       </UChatMessages>
 
-      <div v-if="!rawMessages.length" class="empty-chat">
+      <div v-if="!inlineParts.length" class="empty-chat">
         Start chatting to begin the session
       </div>
     </div>
@@ -362,7 +368,16 @@ onMounted(() => {
       @paste="handlePaste"
     >
       <div class="progress-area">
-        <AgentProgressBar :events="progressEvents" :is-active="isActive" />
+        <AgentProgressBar :parts="progressParts" :is-active="isActive" />
+      </div>
+
+      <!-- Action Bar Zone — shows one pending action at a time -->
+      <div v-if="actionBarParts" class="action-bar-zone">
+        <component
+          :is="getComponent(actionBarParts.kind)"
+          :part="actionBarParts"
+          :card-id="sessionsStore.activeChatCardId!"
+        />
       </div>
 
       <!-- Image attachment previews -->
