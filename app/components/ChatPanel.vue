@@ -132,7 +132,7 @@ const card = computed(() => {
   return cardsStore.cards.find(c => c.id === sessionsStore.activeChatCardId) || null;
 });
 
-const { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive } = useChatParts(
+const { headerParts, inlineParts, resolvedActionParts, actionBarParts, progressParts, chatStatus, isActive } = useChatParts(
   computed(() => sessionsStore.activeChatCardId)
 );
 const uiMessages = useUIMessages(computed(() => inlineParts.value));
@@ -353,7 +353,18 @@ onMounted(() => {
         </template>
       </UChatMessages>
 
-      <div v-if="!inlineParts.length" class="empty-chat">
+      <!-- Resolved action-bar parts rendered inline (outside UChatMessages) -->
+      <div v-if="resolvedActionParts.length" class="resolved-actions px-3">
+        <template v-for="part in resolvedActionParts" :key="part.id">
+          <component
+            :is="getComponent(part.kind)"
+            :part="part"
+            :card-id="sessionsStore.activeChatCardId!"
+          />
+        </template>
+      </div>
+
+      <div v-if="!inlineParts.length && !resolvedActionParts.length" class="empty-chat">
         Start chatting to begin the session
       </div>
     </div>

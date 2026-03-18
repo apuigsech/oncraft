@@ -44,9 +44,7 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
     let currentAssistant: UIMessage | null = null;
 
     for (const part of inlineParts.value) {
-      const isAssistantRole = part.kind === 'assistant' || part.kind === 'tool_use' ||
-        (part.kind === 'tool_confirmation' && part.resolved) ||
-        (part.kind.startsWith('tool:') && part.resolved);
+      const isAssistantRole = part.kind === 'assistant' || part.kind === 'tool_use';
 
       if (part.kind === 'user') {
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
@@ -82,15 +80,6 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
             state: part.data.toolResult ? 'output-available' : 'input-available',
             input: part.data.toolInput || {},
             ...(part.data.toolResult ? { output: part.data.toolResult } : {}),
-          });
-        } else if (part.kind === 'tool_confirmation' || part.kind.startsWith('tool:')) {
-          // Resolved tool confirmations / tool overrides — show as completed tool
-          currentAssistant.parts.push({
-            type: 'dynamic-tool',
-            toolName: (part.data.toolName as string) || part.kind,
-            toolCallId: (part.data.toolUseId as string) || part.id,
-            state: 'output-available',
-            input: part.data.toolInput || {},
           });
         }
       } else {
