@@ -254,10 +254,10 @@ export async function sendStart(
   await proc.write(startCmd);
 }
 
-export async function sendReply(cardId: string, content: 'allow' | 'deny'): Promise<void> {
+export async function sendReply(cardId: string, content: 'allow' | 'deny', updatedInput?: Record<string, unknown>): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) return;
-  await proc.write(JSON.stringify({ cmd: 'reply', content }));
+  await proc.write(JSON.stringify({ cmd: 'reply', content, ...(updatedInput ? { updatedInput } : {}) }));
 }
 
 export async function interrupt(cardId: string): Promise<void> {

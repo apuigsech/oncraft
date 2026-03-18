@@ -38,7 +38,11 @@ function emitError(message: string, details?: Record<string, unknown>): void {
 }
 
 // ---- state ----
-let pendingApproval: ((answer: string) => void) | null = null;
+interface ReplyPayload {
+  content: string;
+  updatedInput?: Record<string, unknown>;
+}
+let pendingApproval: ((answer: ReplyPayload) => void) | null = null;
 let currentAbort: AbortController | null = null;
 
 // ---- message translation ----
@@ -343,7 +347,10 @@ rl.on("line", async (line: string) => {
 
   // Handle reply to pending tool approval
   if (cmd.cmd === "reply" && pendingApproval) {
-    pendingApproval(cmd.content as string);
+    pendingApproval({
+      content: cmd.content as string,
+      updatedInput: cmd.updatedInput as Record<string, unknown> | undefined,
+    });
     pendingApproval = null;
     return;
   }
@@ -436,12 +443,16 @@ rl.on("line", async (line: string) => {
               toolUseId: options.toolUseID,
             });
             // Wait for the reply command from stdin
-            const answer = await new Promise<string>((resolve) => {
+            const reply = await new Promise<ReplyPayload>((resolve) => {
               pendingApproval = resolve;
             });
-            return answer === "allow"
-              ? { behavior: "allow" as const }
-              : { behavior: "deny" as const, message: "User denied" };
+            if (reply.content === "allow") {
+              return {
+                behavior: "allow" as const,
+                ...(reply.updatedInput ? { updatedInput: reply.updatedInput } : {}),
+              };
+            }
+            return { behavior: "deny" as const, message: "User denied" };
           },
         },
       });

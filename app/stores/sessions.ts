@@ -266,8 +266,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
   }
 
-  async function approveToolUse(cardId: string): Promise<void> {
-    await sendReply(cardId, 'allow');
+  async function approveToolUse(cardId: string, updatedInput?: Record<string, unknown>): Promise<void> {
+    await sendReply(cardId, 'allow', updatedInput);
   }
 
   async function rejectToolUse(cardId: string): Promise<void> {
