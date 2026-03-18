@@ -2,9 +2,9 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
 import { writeFile, mkdir } from '@tauri-apps/plugin-fs';
 import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
-import type { StreamMessage, AgentProgressEvent, SessionConfig } from '~/types';
+import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
-import { parseStreamLine, isProgressEvent, parseProgressEvent } from './stream-parser';
+import { process as registryProcess } from './chat-part-registry';
 
 interface SidecarProcess {
   write: (data: string) => Promise<void>;
@@ -37,12 +37,16 @@ async function writeImagesToTempFiles(images: ImageAttachment[]): Promise<{ path
 
 // Track running sidecar processes by cardId
 const processes = new Map<string, SidecarProcess>();
-const messageCallbacks = new Map<string, (msg: StreamMessage) => void>();
-const progressCallbacks = new Map<string, (event: AgentProgressEvent) => void>();
+
+type PartCallback = (part: ChatPart) => void;
+type MetaCallback = (msg: SidecarMessage) => void;
+const messageCallbacks = new Map<string, PartCallback>();
+const metaCallbacks = new Map<string, MetaCallback>();
+
 // Track whether a query is actively running (vs sidecar idle between queries)
 const activeQueries = new Set<string>();
 
-export function onMessage(cardId: string, callback: (msg: StreamMessage) => void): void {
+export function onMessage(cardId: string, callback: PartCallback): void {
   messageCallbacks.set(cardId, callback);
 }
 
@@ -50,22 +54,22 @@ export function offMessage(cardId: string): void {
   messageCallbacks.delete(cardId);
 }
 
-export function onProgress(cardId: string, callback: (event: AgentProgressEvent) => void): void {
-  progressCallbacks.set(cardId, callback);
+export function onMeta(cardId: string, callback: MetaCallback): void {
+  metaCallbacks.set(cardId, callback);
 }
 
-export function offProgress(cardId: string): void {
-  progressCallbacks.delete(cardId);
+export function offMeta(cardId: string): void {
+  metaCallbacks.delete(cardId);
 }
 
-function dispatchMessage(cardId: string, msg: StreamMessage): void {
+function dispatchMessage(cardId: string, part: ChatPart): void {
   const cb = messageCallbacks.get(cardId);
-  if (cb) cb(msg);
+  if (cb) cb(part);
 }
 
-function dispatchProgress(cardId: string, event: AgentProgressEvent): void {
-  const cb = progressCallbacks.get(cardId);
-  if (cb) cb(event);
+function dispatchMeta(cardId: string, msg: SidecarMessage): void {
+  const cb = metaCallbacks.get(cardId);
+  if (cb) cb(msg);
 }
 
 export async function spawnSession(
@@ -94,17 +98,42 @@ export async function spawnSession(
 
     for (const line of lines) {
       if (!line.trim()) continue;
-      // Check if this is an internal progress event before full parse
       try {
-        const raw = JSON.parse(line) as Record<string, unknown>;
-        if (isProgressEvent(raw)) {
-          dispatchProgress(cardId, parseProgressEvent(raw));
+        const raw: SidecarMessage = JSON.parse(line);
+
+        // 1. Intercept result — extract metrics, mark query complete
+        if (raw.type === 'result') {
+          dispatchMeta(cardId, raw);
           continue;
         }
-      } catch { /* fall through to normal parse */ }
-      const msg = parseStreamLine(line);
-      if (msg) {
-        dispatchMessage(cardId, msg);
+
+        // 2. Intercept init — extract sessionId, gitBranch, etc.
+        if (raw.type === 'init') {
+          dispatchMeta(cardId, raw);
+          continue;
+        }
+
+        // 3. Intercept streaming deltas — buffer via store
+        if (raw.type === 'assistant' && raw.subtype === 'streaming') {
+          dispatchMeta(cardId, raw);
+          continue;
+        }
+
+        // 4. Process through registry
+        const part = registryProcess(raw);
+
+        // 5. tool_result returns null from registry but needs merge
+        if (!part && raw.type === 'tool_result') {
+          dispatchMeta(cardId, raw);
+          continue;
+        }
+
+        // 6. Normal ChatPart — dispatch to store
+        if (part) {
+          dispatchMessage(cardId, part);
+        }
+      } catch {
+        if (import.meta.dev) console.warn('[OnCraft] parse error:', line.substring(0, 200));
       }
     }
   });
@@ -116,25 +145,43 @@ export async function spawnSession(
   command.on('close', (payload) => {
     // Flush remaining buffer
     if (lineBuffer.trim()) {
-      const msg = parseStreamLine(lineBuffer);
-      if (msg) dispatchMessage(cardId, msg);
+      try {
+        const raw: SidecarMessage = JSON.parse(lineBuffer);
+
+        if (raw.type === 'result') {
+          dispatchMeta(cardId, raw);
+        } else if (raw.type === 'init') {
+          dispatchMeta(cardId, raw);
+        } else if (raw.type === 'assistant' && raw.subtype === 'streaming') {
+          dispatchMeta(cardId, raw);
+        } else {
+          const part = registryProcess(raw);
+          if (!part && raw.type === 'tool_result') {
+            dispatchMeta(cardId, raw);
+          } else if (part) {
+            dispatchMessage(cardId, part);
+          }
+        }
+      } catch {
+        if (import.meta.dev) console.warn('[OnCraft] parse error on close flush:', lineBuffer.substring(0, 200));
+      }
       lineBuffer = '';
     }
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
+    metaCallbacks.delete(cardId);
     activeQueries.delete(cardId);
     if (import.meta.dev) console.log('[OnCraft] sidecar closed, code:', payload.code);
   });
 
   command.on('error', (err: string) => {
     if (import.meta.dev) console.error('[OnCraft] sidecar error:', err);
-    dispatchMessage(cardId, {
-      type: 'system',
-      content: `Sidecar error: ${err}`,
-      timestamp: Date.now(),
-    });
+    const errorMsg: SidecarMessage = { type: 'error', message: `Sidecar error: ${err}` };
+    const part = registryProcess(errorMsg);
+    if (part) dispatchMessage(cardId, part);
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
+    metaCallbacks.delete(cardId);
   });
 
   const proc: SidecarProcess = {
@@ -230,6 +277,7 @@ export async function killProcess(cardId: string): Promise<void> {
   proc.kill();
   processes.delete(cardId);
   messageCallbacks.delete(cardId);
+  metaCallbacks.delete(cardId);
   activeQueries.delete(cardId);
 }
 
@@ -421,35 +469,16 @@ export async function listSessionsViaSidecar(projectPath: string): Promise<Sessi
 }
 
 // loadHistory — still requires the Claude Agent SDK via sidecar
-export async function loadHistoryViaSidecar(sessionId: string): Promise<StreamMessage[]> {
+export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart[]> {
   const result = await _utilRequest(
     { cmd: 'loadHistory', sessionId },
     'history',
   );
   const rawMessages = (result.messages as Record<string, unknown>[]) || [];
-  return rawMessages.map((m) => {
-    const msg: StreamMessage = {
-      type: m.type as StreamMessage['type'],
-      content: (m.content as string) || '',
-      toolName: m.toolName as string | undefined,
-      toolInput: m.toolInput as Record<string, unknown> | undefined,
-      toolResult: m.content as string | undefined,
-      toolUseId: m.toolUseId as string | undefined,
-      subtype: m.subtype as string | undefined,
-      sessionId: m.sessionId as string | undefined,
-      timestamp: Date.now(),
-    };
-    // Map images from history (sidecar extracts them from SDK image blocks)
-    const rawImages = m.images as { data: string; mediaType: string; name: string }[] | undefined;
-    if (rawImages?.length) {
-      msg.images = rawImages.map(img => ({
-        id: crypto.randomUUID(),
-        data: img.data,
-        mediaType: img.mediaType as import('~/types').ImageAttachment['mediaType'],
-        name: img.name || 'image',
-        size: 0, // Size not available from history
-      }));
-    }
-    return msg;
-  });
+  const parts: ChatPart[] = [];
+  for (const m of rawMessages) {
+    const part = registryProcess(m as SidecarMessage);
+    if (part) parts.push(part);
+  }
+  return parts;
 }
