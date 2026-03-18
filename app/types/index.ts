@@ -93,14 +93,6 @@ export interface StreamMessage {
   worktreeBranch?: string;
 }
 
-// Internal SDK progress events — not stored in the message list, tracked separately
-export interface AgentProgressEvent {
-  subtype: 'task_started' | 'task_progress' | 'task_notification' | 'status' | string;
-  content: string;
-  timestamp: number;
-  raw?: Record<string, unknown>;
-}
-
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 export type ModelAlias = 'opus' | 'sonnet' | 'haiku';
