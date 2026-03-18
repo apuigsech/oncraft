@@ -68,13 +68,21 @@ const registry: Record<string, ChatPartDefinition> = {
   },
 
   // ── Tool Overrides ─────────────────────────────────────────────────
-  'tool:AskUserQuestion': {
+  // tool_use of AskUserQuestion is hidden — the tool_confirmation is what we show
+  'tool_use:AskUserQuestion': {
+    placement: 'hidden',
+    component: null,
+    verbosity: 'quiet',
+    parse: (raw) => ({ toolUseId: raw.toolUseId ?? '' }),
+  },
+
+  // tool_confirmation of AskUserQuestion shows the interactive question widget
+  'tool_confirmation:AskUserQuestion': {
     placement: 'action-bar',
     component: 'UserQuestionBar',
     verbosity: 'quiet',
     parse: (raw) => {
       const toolInput = (raw.toolInput ?? {}) as Record<string, unknown>;
-      // SDK sends questions: Array<{ question, header, options: Array<{ label, description }>, multiSelect? }>
       const questions = (toolInput.questions ?? []) as Array<{
         question: string;
         header?: string;
@@ -320,8 +328,12 @@ const registry: Record<string, ChatPartDefinition> = {
  */
 function resolve(msg: SidecarMessage): ChatPartDefinition {
   if ((msg.type === 'tool_use' || msg.type === 'tool_confirmation') && msg.toolName) {
-    const override = registry[`tool:${msg.toolName}`];
-    if (override) return override;
+    // First try type-specific override (e.g. tool_confirmation:AskUserQuestion)
+    const typeSpecific = registry[`${msg.type}:${msg.toolName}`];
+    if (typeSpecific) return typeSpecific;
+    // Then try generic tool override (e.g. tool:TodoWrite)
+    const generic = registry[`tool:${msg.toolName}`];
+    if (generic) return generic;
   }
   return registry[msg.type] || registry['_default'];
 }
@@ -332,8 +344,10 @@ function resolve(msg: SidecarMessage): ChatPartDefinition {
  */
 function resolveKind(msg: SidecarMessage): string {
   if ((msg.type === 'tool_use' || msg.type === 'tool_confirmation') && msg.toolName) {
-    const overrideKey = `tool:${msg.toolName}`;
-    if (registry[overrideKey]) return overrideKey;
+    const typeSpecific = `${msg.type}:${msg.toolName}`;
+    if (registry[typeSpecific]) return typeSpecific;
+    const generic = `tool:${msg.toolName}`;
+    if (registry[generic]) return generic;
   }
   return msg.type;
 }
