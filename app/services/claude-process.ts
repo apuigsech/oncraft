@@ -475,10 +475,51 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
     'history',
   );
   const rawMessages = (result.messages as Record<string, unknown>[]) || [];
+
+  // First pass: collect tool_use_ids that have a corresponding tool_result
+  const answeredToolIds = new Set<string>();
+  for (const m of rawMessages) {
+    if (m.type === 'tool_result' && m.toolUseId) {
+      answeredToolIds.add(m.toolUseId as string);
+    }
+  }
+
+  // Second pass: process through registry, merge tool_results, mark resolved
   const parts: ChatPart[] = [];
   for (const m of rawMessages) {
-    const part = registryProcess(m as SidecarMessage);
-    if (part) parts.push(part);
+    const msg = m as SidecarMessage;
+
+    // tool_result: merge into matching tool_use part (don't create separate part)
+    if (msg.type === 'tool_result' && msg.toolUseId) {
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (parts[i].kind === 'tool_use' && parts[i].data.toolUseId === msg.toolUseId) {
+          parts[i].data.toolResult = msg.content || (msg as any).toolResult || '';
+          break;
+        }
+      }
+      continue;
+    }
+
+    const part = registryProcess(msg);
+    if (!part) continue;
+
+    // Mark action-bar parts as resolved if they have a tool_result in history
+    // (meaning the user already responded in a previous session)
+    if (part.placement === 'action-bar') {
+      const toolUseId = part.data.toolUseId as string | undefined;
+      if (toolUseId && answeredToolIds.has(toolUseId)) {
+        part.resolved = true;
+      }
+    }
+
+    // All tool_confirmation parts from history are already resolved
+    // (the session progressed past them)
+    if (msg.type === 'tool_confirmation') {
+      part.resolved = true;
+    }
+
+    parts.push(part);
   }
+
   return parts;
 }
