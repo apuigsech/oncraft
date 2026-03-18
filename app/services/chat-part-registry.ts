@@ -74,9 +74,15 @@ const registry: Record<string, ChatPartDefinition> = {
     verbosity: 'quiet',
     parse: (raw) => {
       const toolInput = (raw.toolInput ?? {}) as Record<string, unknown>;
+      // SDK sends questions: Array<{ question, header, options: Array<{ label, description }>, multiSelect? }>
+      const questions = (toolInput.questions ?? []) as Array<{
+        question: string;
+        header?: string;
+        options?: Array<{ label: string; description?: string }>;
+        multiSelect?: boolean;
+      }>;
       return {
-        question: toolInput.question ?? '',
-        options: toolInput.options ?? [],
+        questions,
         toolUseId: raw.toolUseId ?? '',
       };
     },
@@ -311,7 +317,7 @@ const registry: Record<string, ChatPartDefinition> = {
  * Two-level resolution: tool overrides first, then message type, then fallback.
  */
 function resolve(msg: SidecarMessage): ChatPartDefinition {
-  if (msg.type === 'tool_use' && msg.toolName) {
+  if ((msg.type === 'tool_use' || msg.type === 'tool_confirmation') && msg.toolName) {
     const override = registry[`tool:${msg.toolName}`];
     if (override) return override;
   }
@@ -323,7 +329,7 @@ function resolve(msg: SidecarMessage): ChatPartDefinition {
  * Returns the tool override key if matched, otherwise the message type.
  */
 function resolveKind(msg: SidecarMessage): string {
-  if (msg.type === 'tool_use' && msg.toolName) {
+  if ((msg.type === 'tool_use' || msg.type === 'tool_confirmation') && msg.toolName) {
     const overrideKey = `tool:${msg.toolName}`;
     if (registry[overrideKey]) return overrideKey;
   }
