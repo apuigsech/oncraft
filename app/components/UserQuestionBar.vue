@@ -17,20 +17,19 @@ const props = defineProps<{ part: ChatPart; cardId: string }>();
 const sessionsStore = useSessionsStore();
 
 const questions = computed(() => (props.part.data.questions as Question[]) || []);
+const answer = computed(() => props.part.data.answer as string | undefined);
+const isResolved = computed(() => !!props.part.resolved);
 
 // Track selected options per question (for multiSelect)
 const selected = ref<Record<number, Set<string>>>({});
-
 const freeformInput = ref('');
 
-function toggleOption(qIndex: number, label: string, multiSelect: boolean) {
-  if (!multiSelect) {
-    // Single select — send immediately
-    sessionsStore.send(props.cardId, label);
-    sessionsStore.resolveActionPart(props.cardId, props.part.id);
-    return;
-  }
-  // Multi-select — toggle in set
+function selectOption(label: string) {
+  sessionsStore.send(props.cardId, label);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, label);
+}
+
+function toggleOption(qIndex: number, label: string) {
   if (!selected.value[qIndex]) selected.value[qIndex] = new Set();
   const set = selected.value[qIndex];
   if (set.has(label)) set.delete(label);
@@ -40,8 +39,9 @@ function toggleOption(qIndex: number, label: string, multiSelect: boolean) {
 function submitMultiSelect(qIndex: number) {
   const set = selected.value[qIndex];
   if (!set || set.size === 0) return;
-  sessionsStore.send(props.cardId, Array.from(set).join(', '));
-  sessionsStore.resolveActionPart(props.cardId, props.part.id);
+  const answer = Array.from(set).join(', ');
+  sessionsStore.send(props.cardId, answer);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, answer);
 }
 
 function isSelected(qIndex: number, label: string): boolean {
@@ -52,13 +52,22 @@ function submitFreeform() {
   const text = freeformInput.value.trim();
   if (!text) return;
   sessionsStore.send(props.cardId, text);
-  sessionsStore.resolveActionPart(props.cardId, props.part.id);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, text);
   freeformInput.value = '';
 }
 </script>
 
 <template>
-  <div class="user-question-bar">
+  <!-- Resolved: compact inline display -->
+  <div v-if="isResolved" class="question-resolved">
+    <span class="resolved-icon">&#x2753;</span>
+    <span class="resolved-question">{{ questions[0]?.question || 'Question' }}</span>
+    <span class="resolved-arrow">&rarr;</span>
+    <span class="resolved-answer">{{ answer }}</span>
+  </div>
+
+  <!-- Active: full interactive display -->
+  <div v-else class="user-question-bar">
     <template v-for="(q, qIndex) in questions" :key="qIndex">
       <div class="question-block">
         <div class="question-text">{{ q.question }}</div>
@@ -70,7 +79,7 @@ function submitFreeform() {
             :key="opt.label"
             class="option-btn"
             :class="{ selected: isSelected(qIndex, opt.label) }"
-            @click="toggleOption(qIndex, opt.label, !!q.multiSelect)"
+            @click="q.multiSelect ? toggleOption(qIndex, opt.label) : selectOption(opt.label)"
           >
             <span class="option-label">{{ opt.label }}</span>
             <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
@@ -102,7 +111,7 @@ function submitFreeform() {
       </div>
     </template>
 
-    <!-- Fallback if questions array is empty (shouldn't happen but just in case) -->
+    <!-- Fallback if questions array is empty -->
     <div v-if="questions.length === 0" class="question-freeform">
       <UInput
         v-model="freeformInput"
@@ -117,6 +126,23 @@ function submitFreeform() {
 </template>
 
 <style scoped>
+/* ── Resolved (compact inline) ── */
+.question-resolved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.resolved-icon { font-size: 13px; flex-shrink: 0; }
+.resolved-question { color: var(--text-muted); flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resolved-arrow { color: var(--text-muted); flex-shrink: 0; }
+.resolved-answer { color: var(--accent); font-weight: 600; }
+
+/* ── Active (interactive) ── */
 .user-question-bar {
   border: 1px solid var(--accent);
   background: var(--bg-secondary);
@@ -124,12 +150,8 @@ function submitFreeform() {
   padding: 12px 14px;
 }
 
-.question-block {
-  margin-bottom: 10px;
-}
-.question-block:last-child {
-  margin-bottom: 0;
-}
+.question-block { margin-bottom: 10px; }
+.question-block:last-child { margin-bottom: 0; }
 
 .question-text {
   font-size: 13px;
@@ -179,10 +201,7 @@ function submitFreeform() {
   line-height: 1.4;
 }
 
-.submit-multi {
-  align-self: flex-end;
-  margin-top: 4px;
-}
+.submit-multi { align-self: flex-end; margin-top: 4px; }
 
 .question-freeform {
   display: flex;
@@ -190,7 +209,5 @@ function submitFreeform() {
   gap: 8px;
 }
 
-.freeform-input {
-  flex: 1;
-}
+.freeform-input { flex: 1; }
 </style>

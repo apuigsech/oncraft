@@ -170,11 +170,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
   }
 
-  function resolveActionPart(cardId: string, partId: string): void {
+  function resolveActionPart(cardId: string, partId: string, answer?: string): void {
     const parts = messages[cardId];
     if (!parts) return;
     const part = parts.find(p => p.id === partId);
-    if (part) part.resolved = true;
+    if (part) {
+      part.resolved = true;
+      if (answer !== undefined) part.data.answer = answer;
+    }
   }
 
   function setupMessageListener(cardId: string): void {

@@ -23,19 +23,32 @@ const summary = computed(() => {
   }
 });
 
+const isResolved = computed(() => !!props.part.resolved);
+const answer = computed(() => (props.part.data.answer as string) || '');
+
 async function approve() {
   await sessionsStore.approveToolUse(props.cardId);
-  sessionsStore.resolveActionPart(props.cardId, props.part.id);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, 'Allowed');
 }
 
 async function deny() {
   await sessionsStore.rejectToolUse(props.cardId);
-  sessionsStore.resolveActionPart(props.cardId, props.part.id);
+  sessionsStore.resolveActionPart(props.cardId, props.part.id, 'Denied');
 }
 </script>
 
 <template>
-  <div class="tool-approval-bar">
+  <!-- Resolved: compact inline record -->
+  <div v-if="isResolved" class="approval-resolved">
+    <span class="resolved-icon">&#x1F6E1;</span>
+    <span class="resolved-tool">{{ toolName }}</span>
+    <span class="resolved-summary">{{ summary }}</span>
+    <span class="resolved-arrow">&rarr;</span>
+    <span class="resolved-answer" :class="{ denied: answer === 'Denied' }">{{ answer }}</span>
+  </div>
+
+  <!-- Active: approval prompt -->
+  <div v-else class="tool-approval-bar">
     <div class="approval-info">
       <span class="approval-tool-name">{{ toolName }}</span>
       <span class="approval-summary">{{ summary }}</span>
@@ -87,4 +100,27 @@ async function deny() {
   gap: 8px;
   flex-shrink: 0;
 }
+
+/* ── Resolved (compact inline) ── */
+.approval-resolved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.resolved-icon { font-size: 13px; flex-shrink: 0; }
+.resolved-tool { font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
+.resolved-summary {
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.resolved-arrow { color: var(--text-muted); flex-shrink: 0; }
+.resolved-answer { color: var(--success); font-weight: 600; }
+.resolved-answer.denied { color: var(--error); }
 </style>
