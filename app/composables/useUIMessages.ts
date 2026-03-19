@@ -30,7 +30,13 @@ export interface ImageUIPart {
   name: string;
 }
 
-export type UIMessagePart = TextUIPart | ReasoningUIPart | ToolInvocationUIPart | ImageUIPart;
+// For resolved action-bar parts and other ChatParts rendered via registry component
+export interface ChatPartUIPart {
+  type: 'chat-part';
+  chatPart: ChatPart;
+}
+
+export type UIMessagePart = TextUIPart | ReasoningUIPart | ToolInvocationUIPart | ImageUIPart | ChatPartUIPart;
 
 export interface UIMessage {
   id: string;
@@ -83,11 +89,17 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
           });
         }
       } else {
-        // Non-conversation parts (hooks, errors, etc.) -> system UIMessage
+        // Non-conversation parts (hooks, errors, resolved actions, etc.)
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
-        const text = (part.data.content as string) || (part.data.message as string) ||
-                     (part.data.summary as string) || (part.data.hookName as string) || part.kind;
-        result.push({ id: part.id, role: 'system', parts: [{ type: 'text', text }] });
+
+        // Resolved action-bar parts and other non-text parts: render via registry component
+        if (part.placement === 'action-bar' && part.resolved) {
+          result.push({ id: part.id, role: 'assistant', parts: [{ type: 'chat-part', chatPart: part }] });
+        } else {
+          const text = (part.data.content as string) || (part.data.message as string) ||
+                       (part.data.summary as string) || (part.data.hookName as string) || part.kind;
+          result.push({ id: part.id, role: 'system', parts: [{ type: 'text', text }] });
+        }
       }
     }
 

@@ -33,17 +33,11 @@ export function useChatParts(cardId: Ref<string | null>) {
     return Array.from(byKind.values());
   });
 
-  // Parts that go through UChatMessages (conversation flow)
+  // Parts for the inline zone: normal inline parts + resolved action-bar parts in chronological order
   const inlineParts = computed(() => {
     return allParts.value.filter(p =>
-      p.placement === 'inline' && isVisible(p),
-    );
-  });
-
-  // Resolved action-bar parts rendered directly in ChatPanel (not through UChatMessages)
-  const resolvedActionParts = computed(() => {
-    return allParts.value.filter(p =>
-      p.placement === 'action-bar' && p.resolved,
+      (p.placement === 'inline' && isVisible(p)) ||
+      (p.placement === 'action-bar' && p.resolved),
     );
   });
 
@@ -70,5 +64,5 @@ export function useChatParts(cardId: Ref<string | null>) {
     return 'submitted' as const;
   });
 
-  return { headerParts, inlineParts, resolvedActionParts, actionBarParts, progressParts, chatStatus, isActive, allParts };
+  return { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive, allParts };
 }
