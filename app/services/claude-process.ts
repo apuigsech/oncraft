@@ -512,10 +512,18 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
       }
     }
 
-    // All tool_confirmation parts from history are already resolved
-    // (the session progressed past them)
+    // tool_confirmation parts from history: mark resolved based on context
     if (msg.type === 'tool_confirmation') {
-      part.resolved = true;
+      if ((msg as any).toolName === 'AskUserQuestion') {
+        // AskUserQuestion: only resolved if there's a matching tool_result
+        const toolUseId = part.data.toolUseId as string | undefined;
+        if (!part.resolved) {
+          part.resolved = !!(toolUseId && answeredToolIds.has(toolUseId));
+        }
+      } else {
+        // Normal tools: always resolved in history (session progressed past them)
+        part.resolved = true;
+      }
     }
 
     parts.push(part);
