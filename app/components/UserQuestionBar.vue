@@ -24,19 +24,20 @@ const isResolved = computed(() => !!props.part.resolved);
 const selected = ref<Record<number, Set<string>>>({});
 const freeformInput = ref('');
 
-// Build updatedInput for the SDK: replicate the original toolInput with selected answers
+// Build updatedInput for the SDK: include answers map at root level
 function buildUpdatedInput(selectedLabels: string[]): Record<string, unknown> {
   const toolInput = (props.part.data.toolInput ?? {}) as Record<string, unknown>;
   const qs = questions.value;
-  // Add the selected answer(s) to each question
-  const updatedQuestions = qs.map((q, i) => ({
-    ...q,
-    // For single-select, use the first selected label; for multi, join them
-    selectedOption: selectedLabels[i] ?? selectedLabels[0] ?? '',
-  }));
+
+  // SDK expects answers as { "question text": "selected label" } at root level
+  const answers: Record<string, string> = {};
+  qs.forEach((q, i) => {
+    answers[q.question] = selectedLabels[i] ?? selectedLabels[0] ?? '';
+  });
+
   return {
     ...toolInput,
-    questions: updatedQuestions,
+    answers,
   };
 }
 
