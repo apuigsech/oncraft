@@ -187,6 +187,9 @@ function sendMessage() {
   const images = hasImages ? [...pendingAttachments.value] : undefined;
   input.value = '';
   pendingAttachments.value = [];
+  // Sending a message always resets sticky-scroll to bottom
+  isAtBottom.value = true;
+  nextTick(scrollToBottom);
   sessionsStore.send(cardId, msg, images);
 }
 
@@ -224,27 +227,60 @@ function onTaskListToggle() {
   });
 }
 
-// Scroll to bottom when the chat opens or the active card changes
+// ─── Sticky-scroll ───
+// We own all scroll logic. UChatMessages' internal auto-scroll is disabled
+// (:should-auto-scroll="false") and --last-message-height is neutralized via CSS.
+// A MutationObserver on the wrapper catches every DOM change in the subtree
+// (streaming tokens, new messages, tool blocks) — not just message-count changes.
 const messagesWrapper = ref<HTMLElement | null>(null);
+
+const SCROLL_THRESHOLD = 80; // px from bottom considered "at bottom"
+const isAtBottom = ref(true);
+
+function checkIfAtBottom() {
+  const el = messagesWrapper.value;
+  if (!el) return;
+  isAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+}
 
 function scrollToBottom() {
   const el = messagesWrapper.value;
-  if (el) el.scrollTop = el.scrollHeight;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  isAtBottom.value = true;
 }
 
+// MutationObserver on the wrapper: fires on ANY DOM change in the subtree
+// (new message nodes, streaming text tokens, tool block expansion, etc.)
+let mutationObserver: MutationObserver | null = null;
+
+function setupMutationObserver() {
+  mutationObserver?.disconnect();
+  const wrapper = messagesWrapper.value;
+  if (!wrapper) return;
+  mutationObserver = new MutationObserver(() => {
+    if (isAtBottom.value) scrollToBottom();
+  });
+  mutationObserver.observe(wrapper, { childList: true, subtree: true, characterData: true });
+}
+
+// Card switch → always go to bottom
 watch(() => sessionsStore.activeChatCardId, () => {
-  nextTick(scrollToBottom);
+  isAtBottom.value = true;
+  nextTick(() => { scrollToBottom(); setupMutationObserver(); });
 });
 
-// Also scroll when messages are loaded (e.g. history arrives async after chat opens)
+// Initial history load → always go to bottom
 watch(() => inlineParts.value.length, (newLen, oldLen) => {
-  if (oldLen === 0 && newLen > 0) {
-    nextTick(scrollToBottom);
-  }
+  if (oldLen === 0 && newLen > 0) nextTick(scrollToBottom);
 });
 
 onMounted(() => {
-  nextTick(scrollToBottom);
+  nextTick(() => { scrollToBottom(); setupMutationObserver(); });
+});
+
+onUnmounted(() => {
+  mutationObserver?.disconnect();
 });
 </script>
 
@@ -292,12 +328,13 @@ onMounted(() => {
       </template>
     </div>
 
-    <!-- Messages area — UChatMessages handles scroll + auto-scroll -->
-    <div ref="messagesWrapper" class="chat-messages-wrapper">
+    <!-- Messages area — sticky-scroll managed by MutationObserver above -->
+    <div ref="messagesWrapper" class="chat-messages-wrapper" @scroll.passive="checkIfAtBottom">
       <UChatMessages
         :messages="uiMessages"
         :status="chatStatus"
-        :should-auto-scroll="true"
+        :should-auto-scroll="false"
+        :should-scroll-to-bottom="false"
         class="chat-messages-inner"
         :ui="{ root: 'gap-4 px-3' }"
         :user="{
@@ -475,8 +512,9 @@ onMounted(() => {
 .header-metrics { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 10px; }
 
 .task-list-sticky { flex-shrink: 0; border-bottom: 1px solid var(--border); }
-.chat-messages-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-.chat-messages-inner { flex: 1; padding: 12px; }
+.chat-messages-wrapper { flex: 1; overflow-y: auto; }
+/* Neutralize UChatMessages' --last-message-height spacer (we own scroll) */
+.chat-messages-inner { padding: 12px; --last-message-height: 0px !important; }
 .empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
 
 .chat-input-area { position: relative; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
