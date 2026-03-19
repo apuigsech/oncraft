@@ -108,8 +108,9 @@ export async function spawnSession(
         }
 
         // 2. Intercept init — extract sessionId, gitBranch, etc.
-        if (raw.type === 'init') {
-          dispatchMeta(cardId, raw);
+        // The sidecar emits init as { type: "system", subtype: "init", sessionId: "..." }
+        if (raw.type === 'system' && raw.subtype === 'init') {
+          dispatchMeta(cardId, { ...raw, type: 'init' });
           continue;
         }
 
@@ -507,15 +508,33 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
                 if (firstAnswer) p.data.answer = firstAnswer;
               }
             } catch {
-              // Not JSON — use the text directly, cleaning up SDK prefix if present
-              const cleaned = resultContent.replace(/^User has answered your questions?:\s*/i, '').trim();
-              if (cleaned) p.data.answer = cleaned;
+              // Not JSON — extract the answer value from SDK format:
+              // e.g. "Question text"="Answer". You can now continue...
+              const match = resultContent.match(/=\s*"([^"]+)"/);
+              if (match?.[1]) {
+                p.data.answer = match[1];
+              } else {
+                // Fallback: strip SDK prefix and suffix
+                const cleaned = resultContent
+                  .replace(/^User has answered your questions?:\s*/i, '')
+                  .replace(/\.\s*You can now continue.*$/i, '')
+                  .trim();
+                if (cleaned) p.data.answer = cleaned;
+              }
             }
           }
           break;
         }
       }
       continue;
+    }
+
+    // Rewrite AskUserQuestion tool_use as tool_confirmation for history rendering.
+    // In live mode, canUseTool() emits tool_confirmation directly (never persisted to JSONL).
+    // In history, the SDK only stores tool_use. Rewrite so the registry resolves to
+    // tool_confirmation:AskUserQuestion → UserQuestionBar component.
+    if (msg.type === 'tool_use' && (msg as any).toolName === 'AskUserQuestion') {
+      (msg as any).type = 'tool_confirmation';
     }
 
     const part = registryProcess(msg);

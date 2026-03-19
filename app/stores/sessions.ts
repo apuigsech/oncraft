@@ -107,8 +107,11 @@ export const useSessionsStore = defineStore('sessions', () => {
   function handleMeta(cardId: string, msg: SidecarMessage): void {
     const cardsStore = useCardsStore();
 
-    // result: extract metrics, mark query complete, update card state
+    // result: extract metrics, capture sessionId, mark query complete, update card state
     if (msg.type === 'result') {
+      if (msg.sessionId) {
+        cardsStore.updateCardSessionId(cardId, msg.sessionId as string);
+      }
       const m = getSessionMetrics(cardId);
       if (msg.costUsd) m.costUsd += msg.costUsd as number;
       if (msg.durationMs) m.durationMs += msg.durationMs as number;
