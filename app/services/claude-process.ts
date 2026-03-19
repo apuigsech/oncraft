@@ -538,10 +538,8 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
         if (!part.resolved) {
           part.resolved = !!(toolUseId && answeredToolIds.has(toolUseId));
         }
-        // Move resolved AskUserQuestion to inline so it shows in the chat flow
-        if (part.resolved) {
-          part.placement = 'inline';
-        }
+        // Keep placement as 'action-bar' — useChatParts includes resolved action-bar
+        // parts in inlineParts, and useUIMessages renders them via chat-part type
       } else {
         // Normal tools: always resolved in history (session progressed past them)
         part.resolved = true;
