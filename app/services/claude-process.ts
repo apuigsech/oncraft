@@ -489,11 +489,29 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
   for (const m of rawMessages) {
     const msg = m as SidecarMessage;
 
-    // tool_result: merge into matching tool_use part (don't create separate part)
+    // tool_result: merge into matching tool_use or tool_confirmation part
     if (msg.type === 'tool_result' && msg.toolUseId) {
       for (let i = parts.length - 1; i >= 0; i--) {
-        if (parts[i].kind === 'tool_use' && parts[i].data.toolUseId === msg.toolUseId) {
-          parts[i].data.toolResult = msg.content || (msg as any).toolResult || '';
+        const p = parts[i];
+        if (p.data.toolUseId === msg.toolUseId && (p.kind === 'tool_use' || p.kind.startsWith('tool_confirmation:'))) {
+          const resultContent = (msg.content || (msg as any).toolResult || '') as string;
+          p.data.toolResult = resultContent;
+          // For AskUserQuestion: extract the answer from the tool_result content
+          if (p.kind === 'tool_confirmation:AskUserQuestion' && resultContent) {
+            // The SDK returns something like "User has answered: X" — extract the answer
+            // Try to parse as JSON first (in case it's structured), otherwise use raw text
+            try {
+              const parsed = JSON.parse(resultContent);
+              if (parsed.answers) {
+                const firstAnswer = Object.values(parsed.answers)[0];
+                if (firstAnswer) p.data.answer = firstAnswer;
+              }
+            } catch {
+              // Not JSON — use the text directly, cleaning up SDK prefix if present
+              const cleaned = resultContent.replace(/^User has answered your questions?:\s*/i, '').trim();
+              if (cleaned) p.data.answer = cleaned;
+            }
+          }
           break;
         }
       }
