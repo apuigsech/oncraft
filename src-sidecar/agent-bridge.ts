@@ -45,6 +45,49 @@ interface ReplyPayload {
 let pendingApproval: ((answer: ReplyPayload) => void) | null = null;
 let currentAbort: AbortController | null = null;
 
+// ---- async message queue for persistent sessions ----
+// Single-consumer queue: the SDK's streamInput loop is the only consumer.
+// Messages are enqueued from stdin commands and pulled by the SDK at its own pace.
+class MessageStream {
+  private queue: SDKUserMessage[] = [];
+  private waitResolve: ((result: IteratorResult<SDKUserMessage>) => void) | null = null;
+  private isDone: boolean = false;
+
+  enqueue(msg: SDKUserMessage): void {
+    if (this.isDone) return;
+    if (this.waitResolve) {
+      const r = this.waitResolve;
+      this.waitResolve = null;
+      r({ done: false, value: msg });
+    } else {
+      this.queue.push(msg);
+    }
+  }
+
+  finish(): void {
+    this.isDone = true;
+    if (this.waitResolve) {
+      const r = this.waitResolve;
+      this.waitResolve = null;
+      r({ done: true, value: undefined });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    return this;
+  }
+
+  next(): Promise<IteratorResult<SDKUserMessage>> {
+    if (this.queue.length > 0) {
+      return Promise.resolve({ done: false, value: this.queue.shift()! });
+    }
+    if (this.isDone) {
+      return Promise.resolve({ done: true, value: undefined });
+    }
+    return new Promise((resolve) => { this.waitResolve = resolve; });
+  }
+}
+
 // ---- message translation ----
 function translateMessage(
   msg: SDKMessage,
