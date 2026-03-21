@@ -140,7 +140,11 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   const project = projectsStore.activeProject;
   if (!project) return;
   const config = sessionsStore.getSessionConfig(props.card.id);
-  const basePath = config.worktreePath || project.path;
+  // Worktrees live at <project>/.claude/worktrees/<worktreeName>/
+  const basePath = config.worktreePath
+    || (props.card.useWorktree && props.card.worktreeName
+      ? `${project.path}/.claude/worktrees/${props.card.worktreeName}`
+      : project.path);
   openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${basePath}/${filePath}`);
 }
 </script>
