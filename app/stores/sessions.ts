@@ -233,8 +233,18 @@ export const useSessionsStore = defineStore('sessions', () => {
     await cardsStore.updateCardState(cardId, 'active');
 
     // Determine session ID for resume
-    const sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
+    let sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')
       ? card.sessionId : undefined;
+
+    // Fork detection: first message on a forked card with no own session yet
+    let forkSession = false;
+    if (!sessionId && card?.forkedFromId) {
+      const parentCard = cardsStore.cards.find(c => c.id === card.forkedFromId);
+      if (parentCard?.sessionId && !parentCard.sessionId.startsWith('pending-')) {
+        sessionId = parentCard.sessionId;
+        forkSession = true;
+      }
+    }
 
     const config = getSessionConfig(cardId);
 
@@ -265,7 +275,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // If sidecar is already alive (previous query completed), reuse it
     if (isProcessActive(cardId)) {
       try {
-        await sendStart(cardId, project.path, message, sessionId, config, images, columnPrompt);
+        await sendStart(cardId, project.path, message, sessionId, config, images, columnPrompt, forkSession);
       } catch (err) {
         appendPart(cardId, {
           id: `error-${Date.now()}`,
@@ -280,7 +290,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       // No sidecar running — spawn a new one
       setupMessageListener(cardId);
       try {
-        await spawnSession(cardId, project.path, message, sessionId, config, images, columnPrompt);
+        await spawnSession(cardId, project.path, message, sessionId, config, images, columnPrompt, forkSession);
       } catch (err) {
         appendPart(cardId, {
           id: `error-${Date.now()}`,
