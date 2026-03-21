@@ -9,6 +9,7 @@ void props; // used in template
 
 const emit = defineEmits<{
   edit: [cardId: string];
+  fork: [cardId: string];
   archive: [cardId: string];
   unarchive: [cardId: string];
   delete: [cardId: string];
@@ -23,6 +24,10 @@ const emit = defineEmits<{
       <button class="ctx-item" @click="emit('edit', cardId)">
         <UIcon name="i-lucide-pencil" class="ctx-icon" />
         Edit
+      </button>
+      <button class="ctx-item" @click="emit('fork', cardId)">
+        <UIcon name="i-lucide-git-branch" class="ctx-icon" />
+        Fork
       </button>
       <div class="ctx-divider" />
       <button v-if="archived" class="ctx-item" @click="emit('unarchive', cardId)">
