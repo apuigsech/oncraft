@@ -420,7 +420,11 @@ export async function saveGitHubConfig(projectPath: string, config: GitHubConfig
     }
   } catch { /* start fresh */ }
 
-  raw.github = { repository: config.repository || undefined };
+  if (config.repository) {
+    raw.github = { repository: config.repository };
+  } else {
+    delete raw.github;
+  }
   await mkdir(`${projectPath}/${ONCRAFT_DIR}`, { recursive: true });
   await writeTextFile(configYaml, yaml.dump(raw, { lineWidth: 80 }));
 }

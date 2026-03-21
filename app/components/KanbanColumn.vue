@@ -3,6 +3,8 @@ import { VueDraggable } from 'vue-draggable-plus';
 import type { Card, FlowState, CardLinkedIssue } from '~/types';
 import { closeIssue } from '~/services/github';
 
+const toast = useToast();
+
 const props = defineProps<{ flowState: FlowState }>();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
@@ -91,8 +93,9 @@ async function confirmCloseIssues() {
   for (const issue of toClose) {
     try {
       await closeIssue(repo, issue.number, 'Completed via OnCraft');
-    } catch (err) {
+    } catch (err: any) {
       console.warn(`[OnCraft] Failed to close issue #${issue.number}:`, err);
+      toast.add({ title: `Failed to close #${issue.number}`, description: err?.message || 'Unknown error', color: 'error' });
     }
   }
   closingIssues.value = false;

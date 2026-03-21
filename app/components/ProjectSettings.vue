@@ -8,9 +8,14 @@ const flowStore = useFlowStore();
 const project = computed(() => projectsStore.activeProject);
 
 // GitHub config
-const ghOverride = ref(flowStore.githubConfigRepo || '');
+const ghOverride = ref('');
 const ghStatus = ref<{ installed: boolean; authenticated: boolean }>({ installed: true, authenticated: true });
 const ghStatusLoading = ref(true);
+
+// Sync ghOverride when the store value loads (async auto-detect may resolve later)
+watch(() => flowStore.githubConfigRepo, (val) => {
+  if (val && !ghOverride.value) ghOverride.value = val;
+}, { immediate: true });
 
 onMounted(async () => {
   try {
