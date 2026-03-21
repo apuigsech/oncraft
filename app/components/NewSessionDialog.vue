@@ -1,8 +1,13 @@
 <script setup lang="ts">
 
+const props = defineProps<{
+  initialName?: string;
+  initialDescription?: string;
+}>();
+
 const emit = defineEmits<{ create: [name: string, description: string, useWorktree: boolean]; cancel: [] }>();
-const name = ref('');
-const description = ref('');
+const name = ref(props.initialName || '');
+const description = ref(props.initialDescription || '');
 const useWorktree = ref(false);
 
 function submit() {
