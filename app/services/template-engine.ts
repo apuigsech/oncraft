@@ -1,13 +1,24 @@
 import type { TemplateContext } from '~/types';
 
-export function resolveTemplate(
-  template: string, context: TemplateContext
-): string {
-  return template.replace(/\{\{(\w+)\.(\w+)\}\}/g, (_match, group, key) => {
-    const obj = context[group as keyof TemplateContext];
-    if (obj && typeof obj === 'object' && key in obj) {
-      return String((obj as Record<string, unknown>)[key]);
+function getNestedValue(obj: unknown, path: string): string | undefined {
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
     }
-    return _match;
+    current = (current as Record<string, unknown>)[part];
+  }
+  if (current === null || current === undefined) return undefined;
+  return String(current);
+}
+
+export function resolveTemplate(
+  template: string,
+  context: TemplateContext,
+): string {
+  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path) => {
+    const value = getNestedValue(context, path);
+    return value !== undefined ? value : _match;
   });
 }
