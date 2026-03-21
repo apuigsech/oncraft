@@ -73,6 +73,10 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute('ALTER TABLE cards ADD COLUMN duration_ms INTEGER DEFAULT 0');
   } catch { /* column already exists */ }
+  // Migration: add forked_from_id for session forking
+  try {
+    await db.execute("ALTER TABLE cards ADD COLUMN forked_from_id TEXT DEFAULT ''");
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -118,6 +122,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     archived: number; use_worktree: number; worktree_name: string;
     linked_files: string; linked_issues: string;
     cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
+    forked_from_id: string;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => {
     const linkedFiles = r.linked_files ? JSON.parse(r.linked_files) : {};
@@ -137,6 +142,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
       inputTokens: r.input_tokens || 0,
       outputTokens: r.output_tokens || 0,
       durationMs: r.duration_ms || 0,
+      forkedFromId: r.forked_from_id || undefined,
     };
   });
 }
@@ -144,11 +150,12 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
 export async function insertCard(card: Card): Promise<void> {
   const d = await getDb();
   await d.execute(
-    `INSERT INTO cards (id, project_id, name, description, column_name, column_order, session_id, state, tags, created_at, last_activity_at, use_worktree, worktree_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO cards (id, project_id, name, description, column_name, column_order, session_id, state, tags, created_at, last_activity_at, use_worktree, worktree_name, forked_from_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [card.id, card.projectId, card.name, card.description, card.columnName,
      card.columnOrder, card.sessionId, card.state, JSON.stringify(card.tags),
-     card.createdAt, card.lastActivityAt, card.useWorktree ? 1 : 0, card.worktreeName || '']
+     card.createdAt, card.lastActivityAt, card.useWorktree ? 1 : 0, card.worktreeName || '',
+     card.forkedFromId || '']
   );
 }
 
@@ -159,7 +166,8 @@ export async function updateCard(card: Card): Promise<void> {
      session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
      use_worktree=$10, worktree_name=$11, console_session_id=$12,
      linked_files=$13, linked_issues=$14,
-     cost_usd=$15, input_tokens=$16, output_tokens=$17, duration_ms=$18 WHERE id=$19`,
+     cost_usd=$15, input_tokens=$16, output_tokens=$17, duration_ms=$18,
+     forked_from_id=$19 WHERE id=$20`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
      card.lastActivityAt, card.archived ? 1 : 0,
@@ -168,6 +176,7 @@ export async function updateCard(card: Card): Promise<void> {
      JSON.stringify(card.linkedFiles || {}),
      JSON.stringify(card.linkedIssues || []),
      card.costUsd || 0, card.inputTokens || 0, card.outputTokens || 0, card.durationMs || 0,
+     card.forkedFromId || '',
      card.id]
   );
 }
