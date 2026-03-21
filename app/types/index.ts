@@ -25,6 +25,10 @@ export interface Card {
   archived: boolean;
   useWorktree?: boolean;
   worktreeName?: string;
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  durationMs?: number;
   linkedFiles?: Record<string, string>;    // { label: relativePath } e.g. { "plan": "docs/plan.md" }
   linkedIssues?: CardLinkedIssue[];
 }
