@@ -322,7 +322,7 @@ interface TemplateContext {
 
 **Trigger guard:** Trigger prompts fire only on user-initiated card moves (drag-and-drop or explicit UI action). If a future extension adds programmatic/automated card moves, a recursion guard must prevent trigger chains (trigger on state A moves card to state B, which triggers again, etc.). For V1, this is not a concern since all moves are manual.
 
-Note: the current `column: { from: string; to: string }` context variable from the pipeline system is removed. The new Flow model uses per-state triggers instead of directional transitions, so `column.from`/`column.to` no longer apply. Existing pipeline prompt templates that use these variables will need manual updating during migration.
+Note: the current `column: { name: string }` context variable is removed in the new model (master already migrated from the old `column: { from, to }` to `column: { name }`). The new Flow model uses per-state triggers, so a column reference in the template context is no longer meaningful. Existing templates using `{{ column.name }}` will need updating during migration.
 
 ## Required Files (Preconditions)
 
@@ -332,14 +332,11 @@ The UI should:
 1. Show which slots are missing when the move is blocked.
 2. Allow the user to assign the files inline before completing the move.
 
-### Prerequisite: linkedFiles persistence
+### linkedFiles persistence status
 
-The `Card.linkedFiles` field exists in the TypeScript interface but is **not currently persisted to SQLite**. Implementation requires:
-1. A database migration adding a `linked_files TEXT` column to the `cards` table (JSON-serialized `Record<string, string>`).
-2. Updates to `database.ts` (`insertCard`, `updateCard`, `getCardsByProject`) to serialize/deserialize this field.
-3. UI for managing linked files on cards (assigning file paths to named slots).
+`Card.linkedFiles` is already fully persisted to SQLite (`linked_files TEXT` column, JSON-serialized). The `database.ts` service already handles serialization/deserialization, and `cards.ts` already exposes `updateCardLinkedFiles()`. The `requiredFiles` validation and `session.files.*` template resolution can rely on this without additional DB work.
 
-This is a prerequisite for both `requiredFiles` validation and `session.files.*` template resolution.
+The remaining prerequisite is the **UI for managing linked files** (assigning file paths to named slots on a card).
 
 ## Runtime Store
 
@@ -588,13 +585,15 @@ const options = {
 |---------|-----|
 | `ProjectConfig.columns: ColumnConfig[]` | `Flow.stateOrder` + `FlowState[]` from filesystem |
 | `ProjectConfig.pipelines: PipelineConfig[]` | `FlowState.triggerPrompt` (trigger.md per state) |
-| `ColumnConfig { name, color }` | `FlowState { name, color, icon, agent, tools, ... }` |
+| `ColumnConfig { name, color, prompt?, inputs?, outputs? }` | `FlowState { name, color, icon, agent, tools, ... }` |
 | `.oncraft/config.yaml` (single file) | `.oncraft/flow.yaml` + `states/*/state.yaml` + `*.md` |
 | Config loaded via `config-loader.ts` | New `flow-loader.ts` service |
+| `usePipelinesStore` | New `useFlowStore` |
+| `sessions.ts` columnPrompt via `getColumnConfig()` | System prompt composed from `flow.md` + `states/X/prompt.md` |
 
 ### What stays the same
 
-- Card data model (add: nothing changes in DB schema for cards)
+- Card DB schema — `linked_files` and `linked_issues` columns already exist
 - Session management (sessions store, claude-process service)
 - Chat modes (integrated + console)
 - Card linked files (used by `requiredFiles` and template system)
