@@ -19,9 +19,22 @@ The Claude Agent SDK supports all of these options per `query()` call. The Flow 
 2. **`.oncraft/` = contextual layer** — OnCraft injects additional configuration based on the card's position in the Flow.
 3. **Reference, don't redefine** — agents/skills are referenced by name from `.oncraft/` configuration. They live in the Claude Code ecosystem (`.claude/agents/`, `.claude/skills/`, plugins). OnCraft orchestrates which activate when.
 4. **Permissive with warnings** — broken references (missing agents, MCPs that won't start, unknown tools) never block the user. Warnings appear contextually in the UI. The only hard precondition is `requiredFiles`.
-5. **Layered inheritance** — configuration merges through 4 layers: Flow defaults, FlowState overrides, Card overrides (user adjustments via chat UI).
+5. **Layered inheritance** — configuration merges through up to 5 layers: `.claude/` (always active) + Preset base (if referenced) + Project Flow overrides + FlowState overrides + Card overrides (user adjustments via chat UI). Without presets, it reduces to 4 layers.
 
 ## Data Model
+
+### McpServerConfig
+
+Configuration for an MCP server. Matches the SDK's `McpServerConfig` type.
+
+```typescript
+interface McpServerConfig {
+  command: string;              // e.g. "npx", "node"
+  args?: string[];              // e.g. ["-y", "@sonarqube/mcp-server"]
+  env?: Record<string, string>; // additional environment variables
+  // Transport type is inferred: stdio (default for command-based)
+}
+```
 
 ### AgentConfig
 
@@ -32,6 +45,7 @@ interface AgentConfig {
   model?: ModelAlias;           // 'sonnet' | 'opus' | 'haiku'
   effort?: EffortLevel;         // 'low' | 'medium' | 'high' | 'max'
   permissionMode?: PermissionMode; // 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+  verbosity?: VerbosityLevel;   // from existing SessionConfig
 }
 ```
 
@@ -75,7 +89,7 @@ interface FlowState {
   slug: string;                          // directory name, internal identifier
   name: string;                          // display name: "Review"
   color: string;                         // "#f472b6"
-  icon?: string;                         // "magnifying-glass"
+  icon?: string;                         // Iconify name, e.g. "heroicons:magnifying-glass"
 
   // Override agent config (inherits from Flow if not specified)
   agent?: Partial<AgentConfig>;
@@ -105,12 +119,16 @@ interface FlowState {
 ```
 .claude/ (always active — native Claude Code)
     + complemented by
-Flow defaults (.oncraft/flow.yaml → agent, agents, skills, mcpServers, tools)
+Preset base (~/.oncraft/presets/<name>/ — if referenced)
+    + overridden/extended by
+Project Flow (.oncraft/flow.yaml → agent, agents, skills, mcpServers, tools)
     + overridden by
 FlowState (.oncraft/states/X/state.yaml → agent, agents, skills, mcpServers, tools)
     + overridden by
 Card (user adjustments in chat UI: model, effort, permissionMode)
 ```
+
+Without presets, the Preset layer is absent and the chain starts at Project Flow.
 
 #### Merge rules by field type
 
@@ -121,6 +139,8 @@ Card (user adjustments in chat UI: model, effort, permissionMode)
 | `mcpServers` | Additive — each layer adds servers (same name = override) |
 | `tools.allowed` | Additive — each layer adds rules |
 | `tools.disallowed` | Additive — each layer adds restrictions |
+
+**Conflict resolution:** If the same tool appears in both `allowed` and `disallowed` after merging all layers, `disallowed` wins. This matches the Claude Agent SDK behavior where deny rules are checked first and override allow rules.
 
 ## Filesystem Structure
 
@@ -233,6 +253,7 @@ When a project references a preset, the configuration resolves as:
 | `mcpServers` | Additive — project adds servers |
 | `tools.allowed/disallowed` | Additive — project adds rules |
 | `stateOrder` | **Replacement** — if project defines it, replaces preset's |
+| `flow.md` | **Replacement** — if project has `flow.md`, replaces preset's |
 | `states/X/state.yaml` | Deep merge — project overrides individual state fields |
 | `states/X/prompt.md` | **Replacement** — project file replaces preset file |
 | `states/X/trigger.md` | **Replacement** — project file replaces preset file |
@@ -271,7 +292,7 @@ systemPrompt: {
 
 ## Trigger Prompts
 
-When a card moves to a FlowState that has a `trigger.md`, that prompt is sent as an automatic user message, initiating a new `query()`. Trigger prompts support the existing template system:
+When a card moves to a FlowState that has a `trigger.md`, that prompt is sent as an automatic user message, initiating a new `query()`. Trigger prompts support the template system with the following variables:
 
 - `{{ session.name }}` — card name
 - `{{ session.id }}` — card ID
@@ -281,6 +302,28 @@ When a card moves to a FlowState that has a `trigger.md`, that prompt is sent as
 - `{{ project.path }}` — project directory path
 - `{{ project.name }}` — project name
 
+### Template engine changes required
+
+The current template engine (`template-engine.ts`) uses a regex that only supports two-level access (`{{ group.key }}`). The `session.files.*` pattern requires three-level access. The template engine must be extended to support nested property access (e.g. `{{ session.files.plan }}` resolves via dot-path traversal).
+
+The `TemplateContext` type must be updated to include `files`:
+
+```typescript
+interface TemplateContext {
+  session: {
+    name: string;
+    id: string;
+    files: Record<string, string>;  // label → file path
+  };
+  project: { path: string; name: string };
+  card: { description: string };
+}
+```
+
+**Trigger guard:** Trigger prompts fire only on user-initiated card moves (drag-and-drop or explicit UI action). If a future extension adds programmatic/automated card moves, a recursion guard must prevent trigger chains (trigger on state A moves card to state B, which triggers again, etc.). For V1, this is not a concern since all moves are manual.
+
+Note: the current `column: { from: string; to: string }` context variable from the pipeline system is removed. The new Flow model uses per-state triggers instead of directional transitions, so `column.from`/`column.to` no longer apply. Existing pipeline prompt templates that use these variables will need manual updating during migration.
+
 ## Required Files (Preconditions)
 
 If a FlowState defines `requiredFiles: [spec, plan]`, moving a card to that state requires those linked file slots to be assigned on the card. This is the **only hard precondition** — it blocks the card move.
@@ -288,6 +331,29 @@ If a FlowState defines `requiredFiles: [spec, plan]`, moving a card to that stat
 The UI should:
 1. Show which slots are missing when the move is blocked.
 2. Allow the user to assign the files inline before completing the move.
+
+### Prerequisite: linkedFiles persistence
+
+The `Card.linkedFiles` field exists in the TypeScript interface but is **not currently persisted to SQLite**. Implementation requires:
+1. A database migration adding a `linked_files TEXT` column to the `cards` table (JSON-serialized `Record<string, string>`).
+2. Updates to `database.ts` (`insertCard`, `updateCard`, `getCardsByProject`) to serialize/deserialize this field.
+3. UI for managing linked files on cards (assigning file paths to named slots).
+
+This is a prerequisite for both `requiredFiles` validation and `session.files.*` template resolution.
+
+## Runtime Store
+
+The resolved `Flow` object is held in a new Pinia store (`useFlowStore`) that replaces the current `usePipelinesStore`. Key responsibilities:
+
+- **Load the Flow** on project open (from filesystem via `flow-loader.ts`).
+- **Resolve presets** — merge preset base with project overrides.
+- **Expose getters**: `getFlowState(slug)`, `stateOrder`, `resolvedConfigForCard(cardId)` (merges Flow + FlowState + Card overrides).
+- **Track validation warnings** — per-Flow and per-FlowState warning arrays.
+- **Reactivity** — components bind to the store; `KanbanColumn` gets its `FlowState` via `getFlowState(column.slug)`.
+
+### Card `columnName` maps to FlowState `slug`
+
+The `Card.columnName` field in the database stores the **FlowState slug** (directory name), not the display name. This is the stable internal identifier. If a user renames a FlowState's display `name` in `state.yaml`, no card migration is needed. If a state directory is renamed (slug change), cards referencing the old slug become orphaned — this is treated as a **warning** (cards shown in an "Unknown" column with a prompt to reassign).
 
 ## Validation and Warnings
 
@@ -302,6 +368,7 @@ The UI should:
 | FlowState | `prompt.md` or `trigger.md` missing but referenced | Next to state name |
 | Card → State | `requiredFiles` not satisfied | **Blocks move** (hard precondition) |
 | Session start | Agent/MCP/tool doesn't resolve at runtime | Warning in chat, session starts without it |
+| Card | Card's `columnName` slug not in `stateOrder` | Card shown in "Unknown" column with reassign prompt |
 
 ### Validation timing
 
@@ -412,6 +479,61 @@ Work through the plan systematically, implementing one section at a time.
 
 ## SDK Integration
 
+### Agent and skill resolution
+
+When the Flow or FlowState references an agent by name (e.g. `code-reviewer`), OnCraft must resolve it to an `AgentDefinition` object for the SDK. Resolution order:
+
+1. **`.claude/agents/<name>.md`** — project-level agent definition (`.md` with YAML frontmatter: `name`, `description`, `model`, and prompt body).
+2. **`~/.claude/agents/<name>.md`** — user-level agent definition.
+3. **Plugin cache** — `~/.claude/plugins/cache/*/agents/<name>.md`.
+
+The `.md` file is parsed: frontmatter provides `description` and `model`, the body provides the `prompt`. The `tools`, `disallowedTools`, `mcpServers`, and `skills` fields from `AgentDefinition` are not part of the `.md` format — they remain empty unless the Flow YAML provides them inline (future extension).
+
+For **skills**, the reference is passed as a string to the SDK's `skills` option on the `AgentDefinition` or top-level `query()` options. The SDK resolves skill names internally from the Claude Code filesystem (`.claude/skills/`, plugins). OnCraft does not need to resolve skill contents itself.
+
+If an agent name cannot be resolved, a **warning** is generated and the agent is omitted from the `query()` options. The session starts without it.
+
+### Sidecar protocol changes
+
+The frontend composes the resolved Flow configuration and sends it to the sidecar as part of the `start` command over JSON-over-stdin. Currently the `start` command includes `model`, `effort`, `permissionMode`, and `worktreeName`. The following new fields are added:
+
+```typescript
+// New fields in the "start" command payload (frontend → sidecar)
+interface StartCommand {
+  cmd: "start";
+  prompt: string;
+  projectPath: string;
+  sessionId?: string;
+  // Existing fields
+  model?: string;
+  effort?: string;
+  permissionMode?: string;
+  worktreeName?: string;
+  imagePaths?: { path: string; mediaType: string }[];
+  // New Flow fields
+  systemPromptAppend?: string;          // composed flow.md + state prompt.md
+  allowedTools?: string[];              // merged from all layers
+  disallowedTools?: string[];           // merged from all layers
+  agents?: Record<string, {             // resolved AgentDefinition objects
+    description: string;
+    prompt: string;
+    tools?: string[];
+    disallowedTools?: string[];
+    model?: string;
+    mcpServers?: string[];
+    skills?: string[];
+    maxTurns?: number;
+  }>;
+  mcpServers?: Record<string, {         // merged MCP server configs
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }>;
+}
+```
+
+The sidecar maps these fields directly to the SDK's `query()` options. The composition and merge logic happens **in the frontend** (in `flow-loader.ts` and `claude-process.ts`), not in the sidecar. The sidecar remains a thin pass-through.
+
 ### Composing `query()` options
 
 When starting or resuming a session for a card, the sidecar receives the composed configuration and passes it to the SDK:
@@ -479,9 +601,20 @@ const options = {
 
 ### Migration path
 
-1. New projects get the new `.oncraft/` structure.
-2. Existing projects with `.oncraft/config.yaml` are auto-migrated: columns become state directories, pipelines become trigger.md files.
+1. New projects get the new `.oncraft/` structure (generated from a built-in default preset or user-selected preset).
+2. Existing projects with `.oncraft/config.yaml` are auto-migrated on project load:
+   - **Timing**: migration runs in `flow-loader.ts` when it detects `config.yaml` exists but no `flow.yaml`.
+   - **Columns → States**: each `ColumnConfig { name, color }` becomes a `states/<slug>/state.yaml` with the slug derived from the name (lowercased, spaces to hyphens).
+   - **Pipelines → Triggers**: each `PipelineConfig { from, to, prompt }` becomes a `states/<to-slug>/trigger.md` containing the prompt. If multiple pipelines target the same state (e.g. A→C and B→C), only the first pipeline's prompt is used (with a warning logged).
+   - **Backup**: the original `config.yaml` is renamed to `config.yaml.bak` (not deleted).
+   - **Card columnName update**: existing cards' `columnName` values are remapped to the new slug format. This is a DB migration that runs alongside the filesystem migration.
 3. The `config-loader.ts` service is replaced by a new `flow-loader.ts` that reads the directory structure.
+4. The `usePipelinesStore` is replaced by `useFlowStore`.
+5. `GlobalSettings.defaultColumns` is superseded by the preset system. The field is kept for backward compatibility but ignored when a Flow is present.
+
+## GitHub Config
+
+The current `ProjectConfig.github` field (`GitHubConfig { repository?: string }`) is not part of the Flow model — it is project-level metadata independent of the Flow. It moves to a separate `project.yaml` in `.oncraft/` or remains in the database as project-level settings. This is an orthogonal concern and does not block the Flow implementation.
 
 ## Future Extensions (Out of Scope for V1)
 
@@ -490,3 +623,6 @@ const options = {
 - **Conditional transitions** — rules for which states a card can move to from a given state.
 - **Auto-generated linked files** — FlowState trigger creates linked files automatically if slots are empty.
 - **Flow analytics** — tracking time spent per state, throughput metrics.
+- **File watching** — auto-revalidate Flow on `.oncraft/` file changes (currently requires project reload).
+- **Eject UI** — dedicated UI button to eject a preset into a standalone Flow, with merge of existing project overrides.
+- **Inline agent definitions** — allow `AgentDefinition` fields (`tools`, `disallowedTools`, `mcpServers`) in Flow YAML for agents that don't exist as `.md` files.
