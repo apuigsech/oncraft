@@ -31,6 +31,8 @@
 | `app/components/TabBar.vue` | Modify | Update `usePipelinesStore` usage to `useFlowStore` |
 | `app/components/ProjectSettings.vue` | Modify | Replace pipeline/column editors with Flow info + open-in-editor action |
 | `app/services/database.ts` | Modify | Add `migrateColumnName(oldName, newSlug)` helper for legacy migration |
+| `presets/swe-basic/**` | **Create** | Bundled default preset files (committed to repo) |
+| `src-tauri/tauri.conf.json` | Modify | Add `presets/` to bundle resources |
 
 ---
 
@@ -1595,21 +1597,39 @@ git commit -m "feat(flow): complete Flow system implementation — sidecar build
 
 ---
 
-## Task 11: Create Built-in Default Preset
+## Task 11: Bundle `swe-basic` Preset in the Tauri App
 
 **Files:**
-- Create: `~/.oncraft/presets/swe-basic/flow.yaml` and `states/`
+- Create: `presets/swe-basic/flow.yaml` (repo root — bundled resource)
+- Create: `presets/swe-basic/flow.md`
+- Create: `presets/swe-basic/states/{brainstorm,specify,plan,implement,review,done}/state.yaml`
+- Create: `presets/swe-basic/states/implement/trigger.md`
+- Modify: `src-tauri/tauri.conf.json` — add `presets/` to bundle resources
+- Modify: `app/services/flow-loader.ts` — add `installBundledPresets()` called on first launch
+- Modify: `app/app.vue` (or startup hook) — call `installBundledPresets()` before loading any project
 
-This is data, not code. Create the default preset so new projects can use it.
+The `swe-basic` preset is bundled inside the Tauri app as a static resource. On first launch (or when `~/.oncraft/presets/swe-basic/` does not exist), the app extracts it to the user's home directory. The preset then behaves like any other user preset.
 
-- [ ] **Step 1: Create the `swe-basic` preset directory structure**
+- [ ] **Step 1: Create the preset files in the repo**
 
-```bash
-mkdir -p ~/.oncraft/presets/swe-basic/states/{brainstorm,specify,plan,implement,review,done}
+Create the directory tree at the repo root:
+
+```
+presets/
+  swe-basic/
+    flow.yaml
+    flow.md
+    states/
+      brainstorm/state.yaml
+      specify/state.yaml
+      plan/state.yaml
+      implement/state.yaml
+      implement/trigger.md
+      review/state.yaml
+      done/state.yaml
 ```
 
-- [ ] **Step 2: Write `~/.oncraft/presets/swe-basic/flow.yaml`**
-
+`presets/swe-basic/flow.yaml`:
 ```yaml
 name: "SWE Basic"
 agent:
@@ -1625,72 +1645,168 @@ stateOrder:
   - done
 ```
 
-- [ ] **Step 3: Write `state.yaml` for each state**
+`presets/swe-basic/flow.md`:
+```markdown
+You are working within OnCraft, a Kanban-driven development workflow. Each card represents a task or feature moving through the development lifecycle. Follow the workflow for the current state as described in your instructions.
+```
 
-```bash
-# brainstorm
-cat > ~/.oncraft/presets/swe-basic/states/brainstorm/state.yaml << 'EOF'
+`presets/swe-basic/states/brainstorm/state.yaml`:
+```yaml
 name: Brainstorm
 color: "#a78bfa"
-EOF
+```
 
-# specify
-cat > ~/.oncraft/presets/swe-basic/states/specify/state.yaml << 'EOF'
+`presets/swe-basic/states/specify/state.yaml`:
+```yaml
 name: Specify
 color: "#60a5fa"
-EOF
+```
 
-# plan
-cat > ~/.oncraft/presets/swe-basic/states/plan/state.yaml << 'EOF'
+`presets/swe-basic/states/plan/state.yaml`:
+```yaml
 name: Plan
 color: "#34d399"
-EOF
+```
 
-# implement
-cat > ~/.oncraft/presets/swe-basic/states/implement/state.yaml << 'EOF'
+`presets/swe-basic/states/implement/state.yaml`:
+```yaml
 name: Implement
 color: "#fbbf24"
-EOF
-
-# review
-cat > ~/.oncraft/presets/swe-basic/states/review/state.yaml << 'EOF'
-name: Review
-color: "#f472b6"
-requiredFiles:
-  - spec
-  - plan
-EOF
-
-# done
-cat > ~/.oncraft/presets/swe-basic/states/done/state.yaml << 'EOF'
-name: Done
-color: "#22c55e"
-EOF
 ```
 
-- [ ] **Step 4: Write `flow.md` (global system prompt)**
-
-```bash
-cat > ~/.oncraft/presets/swe-basic/flow.md << 'EOF'
-You are working within OnCraft, a Kanban-driven development workflow. Each card represents a task or feature moving through the development lifecycle. Follow the workflow for the current state as described in your instructions.
-EOF
-```
-
-- [ ] **Step 5: Write `implement/trigger.md`**
-
-```bash
-cat > ~/.oncraft/presets/swe-basic/states/implement/trigger.md << 'EOF'
+`presets/swe-basic/states/implement/trigger.md`:
+```markdown
 The card "{{ session.name }}" has moved to the Implementation phase.
 
 {{ card.description }}
 
 Work through the implementation systematically. If a plan exists at {{ session.files.plan }}, follow it. Commit progress frequently.
-EOF
 ```
 
-- [ ] **Step 6: Smoke test the preset**
+`presets/swe-basic/states/review/state.yaml`:
+```yaml
+name: Review
+color: "#f472b6"
+requiredFiles:
+  - spec
+  - plan
+```
 
-In OnCraft, create a new project and edit its `.oncraft/flow.yaml` to add `preset: swe-basic`. Reload the project. Verify the board shows the 6 default columns.
+`presets/swe-basic/states/done/state.yaml`:
+```yaml
+name: Done
+color: "#22c55e"
+```
+
+- [ ] **Step 2: Add `presets/` to Tauri bundle resources**
+
+In `src-tauri/tauri.conf.json`, add the `presets/` directory as a bundle resource so it is included in the app package:
+
+```json
+{
+  "bundle": {
+    "resources": {
+      "presets/*": "presets/"
+    }
+  }
+}
+```
+
+Check the existing `tauri.conf.json` structure first — if `bundle.resources` is already an array rather than a map, use the array form:
+```json
+{
+  "bundle": {
+    "resources": ["presets/**/*"]
+  }
+}
+```
+
+Verify the correct format by checking how existing resources (e.g. the sidecar binary) are declared in the config.
+
+- [ ] **Step 3: Add `installBundledPresets()` to `flow-loader.ts`**
+
+This function runs on app startup, checks if the preset directory already exists in `~/.oncraft/presets/`, and if not copies the bundled files there using Tauri's `resourceDir` API:
+
+```typescript
+// In flow-loader.ts — add these imports at the top:
+import { resourceDir, join as pathJoin } from '@tauri-apps/api/path';
+import { copyFile, readDir, DirEntry } from '@tauri-apps/plugin-fs';
+
+const BUNDLED_PRESETS = ['swe-basic'];
+
+export async function installBundledPresets(): Promise<void> {
+  try {
+    const home     = await homeDir();
+    const resDir   = await resourceDir();
+
+    for (const presetName of BUNDLED_PRESETS) {
+      const destDir = `${home}/.oncraft/presets/${presetName}`;
+      const destExists = await exists(destDir);
+      if (destExists) continue; // already installed — never overwrite user customizations
+
+      const srcDir = await pathJoin(resDir, 'presets', presetName);
+      await copyDirRecursive(srcDir, destDir);
+      if (import.meta.dev) console.log('[OnCraft] installed bundled preset:', presetName);
+    }
+  } catch (err) {
+    // Non-fatal: app works without presets, user just won't have swe-basic available
+    if (import.meta.dev) console.warn('[OnCraft] installBundledPresets failed:', err);
+  }
+}
+
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await mkdir(dest, { recursive: true });
+  const entries: DirEntry[] = await readDir(src);
+  for (const entry of entries) {
+    const srcPath  = `${src}/${entry.name}`;
+    const destPath = `${dest}/${entry.name}`;
+    if (entry.isDirectory) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await copyFile(srcPath, destPath);
+    }
+  }
+}
+```
+
+- [ ] **Step 4: Call `installBundledPresets()` on startup**
+
+In `app/app.vue` (or wherever the app initializes on first load), call `installBundledPresets()` before loading any project config. It is safe to call on every launch — it is a no-op if the preset already exists:
+
+```typescript
+// In app/app.vue onMounted or the project loading composable:
+import { installBundledPresets } from '~/services/flow-loader';
+
+onMounted(async () => {
+  await installBundledPresets(); // idempotent — skips if already installed
+  // ... rest of startup (load project, etc.)
+});
+```
+
+- [ ] **Step 5: Verify TypeScript compiles**
+
+```bash
+pnpm nuxt typecheck 2>&1 | grep "error TS" | head -20
+```
+
+- [ ] **Step 6: Smoke test**
+
+```bash
+pnpm tauri dev
+```
+
+On first launch:
+- Verify `~/.oncraft/presets/swe-basic/` is created with the correct files
+- On subsequent launches, verify the directory is NOT overwritten
+
+Then create a new project with `.oncraft/flow.yaml` containing `preset: swe-basic`. Reload. Verify the board shows the 6 default columns (Brainstorm → Specify → Plan → Implement → Review → Done).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add presets/ src-tauri/tauri.conf.json app/services/flow-loader.ts app/app.vue
+git commit -m "feat(flow): bundle swe-basic preset; install to ~/.oncraft/presets/ on first launch"
+```
 
 ---
 
