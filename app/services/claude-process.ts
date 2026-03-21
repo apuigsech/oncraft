@@ -374,9 +374,8 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
   const proc = processes.get(cardId);
   if (!proc) return;
 
-  const cardsStore = useCardsStore();
+  const cardsStore    = useCardsStore();
   const projectsStore = useProjectsStore();
-  const pipelinesStore = usePipelinesStore();
 
   let responseData: Record<string, unknown> = {};
 
@@ -403,15 +402,17 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
 
     } else if (req.action === 'get_project') {
       const project = projectsStore.activeProject;
-      const projectPath = project?.path;
-      const config = projectPath ? pipelinesStore.getConfig(projectPath) : undefined;
-      const columns = (config?.columns ?? []).map(c => ({
-        name: c.name,
-        color: c.color,
-        inputs: c.inputs || [],
-        outputs: c.outputs || [],
-        hasPrompt: !!c.prompt,
-      }));
+      const flowStore = useFlowStore();
+      // Build columns from FlowStore (slug + display name + color)
+      const columns = flowStore.stateOrder.map(slug => {
+        const s = flowStore.getFlowState(slug);
+        return s ? {
+          name:      s.name,
+          slug:      s.slug,
+          color:     s.color,
+          hasPrompt: !!s.prompt,
+        } : null;
+      }).filter(Boolean);
       responseData = {
         project: project ? { id: project.id, name: project.name, path: project.path } : null,
         columns,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { preloadUtilSidecar } from '~/services/claude-process'
+import { installBundledPresets } from '~/services/flow-loader'
 
 // ME-5: Lazy-load heavy components that are not needed at startup.
 // ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
@@ -45,6 +46,9 @@ function startResize(e: MouseEvent) {
 }
 
 onMounted(async () => {
+  // Install bundled presets to ~/.oncraft/presets/ on first launch (idempotent)
+  installBundledPresets()
+
   // QW-1: Parallel store loads — settings and projects are independent
   const [settingsResult, projectsResult] = await Promise.allSettled([
     settingsStore.load(),
