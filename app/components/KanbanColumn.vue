@@ -60,7 +60,7 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
     if (fromSlug !== toSlug) {
       await cardsStore.moveCard(card.id, toSlug, newIndex);
       // Fire trigger prompt if the target state has one
-      await sessionsStore.fireTriggerPrompt(card.id, toSlug);
+      await sessionsStore.fireTriggerPrompt(card.id, fromSlug, toSlug);
     } else {
       await cardsStore.applyColumnOrder(props.flowState.slug, dragCards.value);
     }

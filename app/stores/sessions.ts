@@ -395,7 +395,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   // Fire the trigger prompt when a card moves to a new FlowState
   // Called by KanbanColumn.onDragEnd after a successful card move.
-  async function fireTriggerPrompt(cardId: string, toSlug: string): Promise<void> {
+  async function fireTriggerPrompt(cardId: string, fromSlug: string, toSlug: string): Promise<void> {
     const flowStore  = useFlowStore();
     const raw        = flowStore.getTriggerPrompt(toSlug);
     if (!raw) return;
@@ -405,15 +405,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     const project    = useProjectsStore().activeProject;
     if (!card || !project) return;
 
+    const linkedFiles = card.linkedFiles || {};
     const prompt = resolveTemplate(raw, {
-      session: {
-        name:  card.name,
-        id:    card.sessionId || '',
-        files: card.linkedFiles || {},
-      },
+      session: { name: card.name, id: card.sessionId || '' },
       project: { path: project.path, name: project.name },
-      card:    { description: card.description, linkedFiles: card.linkedFiles || {} },
-      column:  { from: card.columnName, to: toSlug },
+      card:    { description: card.description, linkedFiles },
+      column:  { from: fromSlug, to: toSlug },
     });
 
     await send(cardId, prompt);

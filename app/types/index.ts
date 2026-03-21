@@ -163,12 +163,8 @@ export interface SessionConfig {
 }
 
 export interface TemplateContext {
-  session: {
-    name: string;
-    id: string;
-    files: Record<string, string>;  // label → file path e.g. { plan: "docs/plan.md" }
-  };
+  session: { name: string; id: string };
   project: { path: string; name: string };
-  card: { description: string; linkedFiles?: Record<string, string> };
+  card: { description: string; linkedFiles: Record<string, string> };
   column: { from: string; to: string };
 }
