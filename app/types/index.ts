@@ -39,6 +39,7 @@ export type CardState = 'active' | 'idle' | 'error' | 'completed';
 export interface ColumnConfig {
   name: string;
   color: string;
+  icon?: string;
   inputs?: string[];
   outputs?: string[];
   prompt?: string;
@@ -168,5 +169,6 @@ export interface TemplateContext {
     files: Record<string, string>;  // label → file path e.g. { plan: "docs/plan.md" }
   };
   project: { path: string; name: string };
-  card: { description: string };
+  card: { description: string; linkedFiles?: Record<string, string> };
+  column: { from: string; to: string };
 }
