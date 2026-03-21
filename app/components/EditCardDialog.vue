@@ -33,19 +33,6 @@ function removeFileEntry(index: number) {
 const issueEntries = ref<CardLinkedIssue[]>(
   (props.linkedIssues || []).map(i => ({ ...i }))
 );
-const newIssueNumber = ref('');
-
-function addIssue() {
-  const num = parseInt(newIssueNumber.value, 10);
-  if (!num || num <= 0) return;
-  if (issueEntries.value.some(i => i.number === num)) return;
-  issueEntries.value.push({ number: num });
-  newIssueNumber.value = '';
-}
-
-function removeIssue(index: number) {
-  issueEntries.value.splice(index, 1);
-}
 
 function save() {
   if (!editName.value.trim()) return;
@@ -105,24 +92,7 @@ function save() {
             <span class="section-label">GitHub Issues</span>
             <span class="section-repo">{{ githubRepo }}</span>
           </div>
-          <div class="issue-add-row">
-            <span class="issue-hash">#</span>
-            <input
-              v-model="newIssueNumber"
-              type="number"
-              min="1"
-              class="issue-number-input"
-              placeholder="issue number"
-              @keydown.enter="addIssue"
-            />
-            <button class="add-btn" :disabled="!newIssueNumber" @click="addIssue">Add</button>
-          </div>
-          <div v-for="(issue, i) in issueEntries" :key="issue.number" class="issue-row">
-            <span class="issue-tag">#{{ issue.number }}</span>
-            <span v-if="issue.title" class="issue-title">{{ issue.title }}</span>
-            <button class="remove-btn" @click="removeIssue(i)">&times;</button>
-          </div>
-          <span v-if="issueEntries.length === 0" class="empty-hint">No issues linked</span>
+          <IssueSelector :repo="githubRepo" v-model="issueEntries" />
         </div>
       </div>
       <div class="dialog-footer">
@@ -155,16 +125,6 @@ textarea { resize: vertical; }
 .file-label-input { width: 90px; flex-shrink: 0; font-size: 12px; padding: 5px 7px; font-family: 'SF Mono', 'Fira Code', monospace; }
 .file-path-input { flex: 1; font-size: 12px; padding: 5px 7px; font-family: 'SF Mono', 'Fira Code', monospace; }
 
-.issue-add-row { display: flex; gap: 6px; align-items: center; }
-.issue-hash { color: var(--text-muted); font-size: 13px; font-weight: 600; }
-.issue-number-input { width: 100px; font-size: 12px; padding: 5px 7px; }
-.issue-number-input::-webkit-inner-spin-button,
-.issue-number-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.issue-number-input[type=number] { -moz-appearance: textfield; }
-
-.issue-row { display: flex; gap: 6px; align-items: center; }
-.issue-tag { font-size: 12px; font-weight: 600; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; }
-.issue-title { font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .add-btn { font-size: 12px; color: var(--accent); padding: 3px 8px; border-radius: 4px; }
 .add-btn:hover:not(:disabled) { background: var(--bg-tertiary); }

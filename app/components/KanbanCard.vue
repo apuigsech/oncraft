@@ -10,15 +10,11 @@ const emit = defineEmits<{
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
-const pipelinesStore = usePipelinesStore();
+const flowStore = useFlowStore();
 const { openFile, activeFile } = useFileViewer();
 
-// GitHub repo from project config (for issue linking)
-const githubRepo = computed(() => {
-  const project = projectsStore.activeProject;
-  if (!project) return undefined;
-  return pipelinesStore.getConfig(project.path)?.github?.repository;
-});
+// GitHub repo from flow store (manual override > auto-detected)
+const githubRepo = computed(() => flowStore.githubRepository);
 
 // Counts for indicators
 const linkedFilesCount = computed(() => Object.keys(props.card.linkedFiles || {}).length);
@@ -75,6 +71,12 @@ function formatTokens(n: number): string {
 }
 
 function openChat() { sessionsStore.openChat(props.card.id); }
+
+async function openIssue(number: number) {
+  if (!githubRepo.value) return;
+  const { openUrl } = await import('@tauri-apps/plugin-opener');
+  openUrl(`https://github.com/${githubRepo.value}/issues/${number}`);
+}
 
 function onContextMenu(e: MouseEvent) {
   e.preventDefault();
@@ -195,10 +197,15 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
         <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
         <div class="card-footer-right">
           <span
-            v-if="linkedIssuesCount > 0"
+            v-for="issue in (card.linkedIssues || [])"
+            :key="issue.number"
             class="card-indicator card-indicator--issue"
-            :title="(card.linkedIssues || []).map(i => `#${i.number}${i.title ? ' ' + i.title : ''}`).join('\n')"
-          >#{{ (card.linkedIssues || []).map(i => i.number).join(' #') }}</span>
+            :title="`#${issue.number}${issue.title ? ' ' + issue.title : ''}`"
+            @click.stop="openIssue(issue.number)"
+          >
+            <svg class="gh-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            #{{ issue.number }}
+          </span>
           <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
             <span v-if="branchStatus.ahead > 0" class="commits-ahead">↑{{ branchStatus.ahead }}</span>
             <span v-if="branchStatus.behind > 0" class="commits-behind">↓{{ branchStatus.behind }}</span>
@@ -297,7 +304,9 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 .card-meta { font-size: 11px; color: var(--text-muted); }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .card-indicator { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.card-indicator--issue { color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; }
+.card-indicator--issue { color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+.card-indicator--issue:hover { opacity: 0.8; }
+.gh-icon { width: 12px; height: 12px; flex-shrink: 0; }
 .branch-status { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
 .commits-ahead  { color: #4ade80; font-weight: 600; }
 .commits-behind { color: #f87171; font-weight: 600; }

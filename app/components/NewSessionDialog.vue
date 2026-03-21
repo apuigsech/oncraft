@@ -1,21 +1,37 @@
 <script setup lang="ts">
+import type { CardLinkedIssue, GitHubIssue } from '~/types';
 
 const props = defineProps<{
   initialName?: string;
   initialDescription?: string;
+  githubRepo?: string;
 }>();
 
-const emit = defineEmits<{ create: [name: string, description: string, useWorktree: boolean]; cancel: [] }>();
+const emit = defineEmits<{
+  create: [name: string, description: string, useWorktree: boolean, linkedIssues?: CardLinkedIssue[]];
+  cancel: [];
+}>();
 const name = ref(props.initialName || '');
 const description = ref(props.initialDescription || '');
 const useWorktree = ref(false);
+const mode = ref<'blank' | 'issue'>('blank');
+const linkedIssue = ref<CardLinkedIssue | undefined>(undefined);
+
+function onIssueSelect(issue: GitHubIssue) {
+  name.value = issue.title;
+  description.value = (issue.body || '').slice(0, 500);
+  linkedIssue.value = { number: issue.number, title: issue.title };
+}
 
 function submit() {
   if (!name.value.trim()) return;
-  emit('create', name.value.trim(), description.value.trim(), useWorktree.value);
+  const issues = linkedIssue.value ? [linkedIssue.value] : undefined;
+  emit('create', name.value.trim(), description.value.trim(), useWorktree.value, issues);
   name.value = '';
   description.value = '';
   useWorktree.value = false;
+  linkedIssue.value = undefined;
+  mode.value = 'blank';
 }
 </script>
 
@@ -27,6 +43,29 @@ function submit() {
         <button class="close-btn" @click="emit('cancel')">&times;</button>
       </div>
       <div class="dialog-body">
+        <!-- Mode toggle (only when GitHub is configured) -->
+        <div v-if="githubRepo" class="mode-toggle">
+          <button
+            class="mode-btn"
+            :class="{ active: mode === 'blank' }"
+            @click="mode = 'blank'"
+          >Blank</button>
+          <button
+            class="mode-btn"
+            :class="{ active: mode === 'issue' }"
+            @click="mode = 'issue'"
+          >From Issue</button>
+        </div>
+
+        <!-- Issue selector (From Issue mode) -->
+        <div v-if="mode === 'issue' && githubRepo" class="issue-section">
+          <IssueSelector :repo="githubRepo" single @select="onIssueSelect" />
+          <div v-if="linkedIssue" class="issue-selected">
+            <span class="issue-selected-tag">#{{ linkedIssue.number }}</span>
+            <span class="issue-selected-title">{{ linkedIssue.title }}</span>
+          </div>
+        </div>
+
         <label>
           Name
           <input v-model="name" placeholder="e.g. Auth Feature" autofocus @keydown.enter="submit" />
@@ -66,4 +105,15 @@ input:focus { outline: none; border-color: var(--accent); }
 .btn-secondary:hover { background: var(--bg-tertiary); }
 .worktree-option { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--text-secondary); }
 .worktree-option input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); }
+
+.mode-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.mode-btn { flex: 1; padding: 6px 12px; font-size: 12px; background: var(--bg-primary); color: var(--text-muted); border: none; cursor: pointer; transition: all 0.15s; }
+.mode-btn:not(:last-child) { border-right: 1px solid var(--border); }
+.mode-btn.active { background: var(--accent); color: white; }
+.mode-btn:hover:not(.active) { background: var(--bg-tertiary); }
+
+.issue-section { display: flex; flex-direction: column; gap: 8px; }
+.issue-selected { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: rgba(99, 102, 241, 0.08); border: 1px solid var(--accent); border-radius: 4px; }
+.issue-selected-tag { font-size: 12px; font-weight: 600; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; }
+.issue-selected-title { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

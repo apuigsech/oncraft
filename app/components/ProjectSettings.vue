@@ -1,9 +1,30 @@
 <script setup lang="ts">
+import { checkGhStatus } from '~/services/github';
+
 const emit = defineEmits<{ close: [] }>();
 const projectsStore = useProjectsStore();
 const flowStore = useFlowStore();
 
 const project = computed(() => projectsStore.activeProject);
+
+// GitHub config
+const ghOverride = ref(flowStore.githubConfigRepo || '');
+const ghStatus = ref<{ installed: boolean; authenticated: boolean }>({ installed: true, authenticated: true });
+const ghStatusLoading = ref(true);
+
+onMounted(async () => {
+  try {
+    ghStatus.value = await checkGhStatus();
+  } finally {
+    ghStatusLoading.value = false;
+  }
+});
+
+async function saveGhOverride() {
+  if (!project.value) return;
+  const repo = ghOverride.value.trim() || undefined;
+  await flowStore.setGitHubRepository(project.value.path, repo);
+}
 
 async function openFlowConfig() {
   if (!project.value) return;
@@ -74,6 +95,50 @@ async function openFlowConfig() {
               Edit Flow Config (.oncraft/)
             </button>
           </div>
+
+          <!-- GitHub Integration -->
+          <div class="settings-section">
+            <h4>GitHub</h4>
+            <div class="gh-section">
+              <div class="field">
+                <span class="field-label">Status</span>
+                <span v-if="ghStatusLoading" class="field-value muted">Checking...</span>
+                <span v-else-if="!ghStatus.installed" class="field-value gh-warning">
+                  <UIcon name="i-lucide-alert-triangle" /> gh CLI not found. Install from cli.github.com
+                </span>
+                <span v-else-if="!ghStatus.authenticated" class="field-value gh-warning">
+                  <UIcon name="i-lucide-alert-triangle" /> Not authenticated. Run: gh auth login
+                </span>
+                <span v-else class="field-value gh-ok">
+                  <UIcon name="i-lucide-check-circle" /> Connected
+                </span>
+              </div>
+
+              <div v-if="flowStore.githubDetectedRepo" class="field">
+                <span class="field-label">Auto-detected</span>
+                <span class="field-value mono">{{ flowStore.githubDetectedRepo }}</span>
+              </div>
+
+              <div class="field">
+                <span class="field-label">Repository override</span>
+                <div class="gh-override-row">
+                  <input
+                    v-model="ghOverride"
+                    class="gh-override-input"
+                    placeholder="owner/repo"
+                    @blur="saveGhOverride"
+                    @keydown.enter="saveGhOverride"
+                  />
+                </div>
+                <span class="field-hint">Leave empty to use auto-detected repository</span>
+              </div>
+
+              <div v-if="flowStore.githubRepository" class="field">
+                <span class="field-label">Active</span>
+                <span class="field-value mono">{{ flowStore.githubRepository }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="dialog-footer">
@@ -121,4 +186,12 @@ async function openFlowConfig() {
 .footer-actions { display: flex; gap: 8px; }
 .btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
 .btn-secondary:hover { background: var(--bg-tertiary); }
+
+.gh-section { display: flex; flex-direction: column; gap: 10px; }
+.gh-warning { display: flex; align-items: center; gap: 4px; color: #fbbf24; font-size: 12px; }
+.gh-ok { display: flex; align-items: center; gap: 4px; color: var(--success); font-size: 12px; }
+.gh-override-row { display: flex; gap: 6px; }
+.gh-override-input { flex: 1; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text-primary); }
+.gh-override-input:focus { outline: none; border-color: var(--accent); }
+.field-hint { font-size: 10px; color: var(--text-muted); }
 </style>

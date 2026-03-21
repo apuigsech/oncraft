@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus';
-import type { Card, FlowState } from '~/types';
+import type { Card, FlowState, CardLinkedIssue } from '~/types';
+import { closeIssue } from '~/services/github';
 
 const props = defineProps<{ flowState: FlowState }>();
 const cardsStore = useCardsStore();
@@ -13,6 +14,11 @@ const showImportDialog = ref(false);
 const forkParent = ref<Card | null>(null);
 const missingFiles = ref<string[]>([]);
 const showRequiredFilesDialog = ref(false);
+
+// Close-on-Done dialog
+const showCloseIssuesDialog = ref(false);
+const closeIssuesCandidates = ref<(CardLinkedIssue & { checked: boolean })[]>([]);
+const closingIssues = ref(false);
 
 // Warnings for this state's configuration
 const warnings = computed(() => flowStore.stateWarnings(props.flowState.slug));
@@ -61,6 +67,13 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
       await cardsStore.moveCard(card.id, toSlug, newIndex);
       // Fire trigger prompt if the target state has one
       await sessionsStore.fireTriggerPrompt(card.id, fromSlug, toSlug);
+
+      // Close-on-Done: if moved to last column and card has linked issues
+      const lastSlug = flowStore.stateOrder[flowStore.stateOrder.length - 1];
+      if (toSlug === lastSlug && card.linkedIssues?.length && flowStore.githubRepository) {
+        closeIssuesCandidates.value = card.linkedIssues.map(i => ({ ...i, checked: true }));
+        showCloseIssuesDialog.value = true;
+      }
     } else {
       await cardsStore.applyColumnOrder(props.flowState.slug, dragCards.value);
     }
@@ -70,13 +83,29 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   }
 }
 
-async function createSession(name: string, description: string, useWorktree: boolean) {
+async function confirmCloseIssues() {
+  const repo = flowStore.githubRepository;
+  if (!repo) return;
+  closingIssues.value = true;
+  const toClose = closeIssuesCandidates.value.filter(i => i.checked);
+  for (const issue of toClose) {
+    try {
+      await closeIssue(repo, issue.number, 'Completed via OnCraft');
+    } catch (err) {
+      console.warn(`[OnCraft] Failed to close issue #${issue.number}:`, err);
+    }
+  }
+  closingIssues.value = false;
+  showCloseIssuesDialog.value = false;
+}
+
+async function createSession(name: string, description: string, useWorktree: boolean, linkedIssues?: import('~/types').CardLinkedIssue[]) {
   showNewDialog.value = false;
   forkParent.value = null;
   const project = projectsStore.activeProject;
   if (!project) return;
   // Use slug (stable identifier) as columnName stored in DB
-  const card = await cardsStore.addCard(project.id, props.flowState.slug, name, description, useWorktree);
+  const card = await cardsStore.addCard(project.id, props.flowState.slug, name, description, useWorktree, undefined, linkedIssues);
   if (useWorktree && card.worktreeName) {
     sessionsStore.updateSessionConfig(card.id, { worktreeName: card.worktreeName });
   }
@@ -167,11 +196,41 @@ async function createForkedSession(name: string, description: string, useWorktre
       </div>
     </div>
 
+    <!-- Close Issues on Done dialog -->
+    <div v-if="showCloseIssuesDialog" class="dialog-overlay" @click.self="showCloseIssuesDialog = false">
+      <div class="dialog dialog-close-issues">
+        <div class="dialog-header">
+          <h3>Close issues on GitHub?</h3>
+          <button class="close-btn" @click="showCloseIssuesDialog = false">&times;</button>
+        </div>
+        <div class="dialog-body">
+          <label
+            v-for="issue in closeIssuesCandidates"
+            :key="issue.number"
+            class="close-issue-row"
+          >
+            <input type="checkbox" v-model="issue.checked" />
+            <span class="close-issue-number">#{{ issue.number }}</span>
+            <span v-if="issue.title" class="close-issue-title">{{ issue.title }}</span>
+          </label>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn-secondary" @click="showCloseIssuesDialog = false">Skip</button>
+          <button
+            class="btn-primary"
+            :disabled="closingIssues || !closeIssuesCandidates.some(i => i.checked)"
+            @click="confirmCloseIssues"
+          >{{ closingIssues ? 'Closing...' : 'Close selected' }}</button>
+        </div>
+      </div>
+    </div>
+
     <NewSessionDialog
       v-if="showNewDialog"
       :initial-name="forkParent?.name ? forkParent.name + ' (fork)' : undefined"
       :initial-description="forkParent?.description"
-      @create="(n: string, d: string, w: boolean) => (forkParent ? createForkedSession : createSession)(n, d, w)"
+      :github-repo="flowStore.githubRepository"
+      @create="(n: string, d: string, w: boolean, issues?: import('~/types').CardLinkedIssue[]) => (forkParent ? createForkedSession(n, d, w) : createSession(n, d, w, issues))"
       @cancel="showNewDialog = false; forkParent = null"
     />
     <ImportSessionsDialog
@@ -248,4 +307,21 @@ async function createForkedSession(name: string, description: string, useWorktre
 .required-files-list li { margin-bottom: 4px; }
 .required-files-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
 .btn-close { padding: 6px 16px; border-radius: 4px; font-size: 13px; background: var(--bg-tertiary); color: var(--text-primary); }
+
+/* Close issues dialog */
+.dialog-close-issues { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 380px; display: flex; flex-direction: column; gap: 12px; }
+.dialog-header { display: flex; justify-content: space-between; align-items: center; }
+.dialog-header h3 { font-size: 15px; }
+.close-btn { font-size: 18px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
+.close-btn:hover { background: var(--bg-tertiary); }
+.dialog-body { display: flex; flex-direction: column; gap: 8px; }
+.dialog-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.btn-primary { background: var(--accent); color: white; padding: 6px 16px; border-radius: 4px; font-size: 13px; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
+.btn-secondary:hover { background: var(--bg-tertiary); }
+.close-issue-row { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; font-size: 13px; color: var(--text-primary); }
+.close-issue-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); }
+.close-issue-number { font-weight: 600; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; }
+.close-issue-title { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
