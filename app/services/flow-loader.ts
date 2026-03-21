@@ -242,7 +242,10 @@ function mergeState(base: FlowState, override: Partial<FlowState>): FlowState {
     skills:     [...new Set([...(base.skills || []),     ...(override.skills     || [])])],
     mcpServers: mergeMcpServers(base.mcpServers || {}, override.mcpServers || {}),
     tools:      override.tools
-      ? mergeTools(base.tools || { allowed: [], disallowed: [] }, override.tools)
+      ? mergeTools(
+          { allowed: base.tools?.allowed ?? [], disallowed: base.tools?.disallowed ?? [] },
+          { allowed: override.tools.allowed ?? [], disallowed: override.tools.disallowed ?? [] },
+        )
       : base.tools,
     prompt:        override.prompt        ?? base.prompt,
     triggerPrompt: override.triggerPrompt ?? base.triggerPrompt,

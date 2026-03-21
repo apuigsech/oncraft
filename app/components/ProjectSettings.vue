@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { open as openPath } from '@tauri-apps/plugin-opener';
+import { openPath } from '@tauri-apps/plugin-opener';
 
 const emit = defineEmits<{ close: [] }>();
 const projectsStore = useProjectsStore();

@@ -23,8 +23,8 @@ async function tryReadAgentMd(path: string): Promise<ResolvedAgent | null> {
     const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     if (!match) return null;
 
-    const frontmatter = (yaml.load(match[1]) as Record<string, unknown>) || {};
-    const body = match[2].trim();
+    const frontmatter = (yaml.load(match[1]!) as Record<string, unknown>) || {};
+    const body = (match[2] ?? '').trim();
 
     return {
       name:            (frontmatter.name        as string) || '',
