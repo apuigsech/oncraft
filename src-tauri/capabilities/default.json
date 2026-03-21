@@ -54,6 +54,18 @@
       ]
     },
     {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "/Users/**" },
+        { "path": "/tmp/**" },
+        { "path": "/private/**" },
+        { "path": "$RESOURCE/**" }
+      ]
+    },
+    {
       "identifier": "fs:allow-read-text-file",
       "allow": [
         { "path": "$HOME/**" },
