@@ -11,6 +11,7 @@ const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
 const pipelinesStore = usePipelinesStore();
+const { openFile, activeFile } = useFileViewer();
 
 // GitHub repo from project config (for issue linking)
 const githubRepo = computed(() => {
@@ -126,6 +127,20 @@ async function handleDelete(cardId: string) {
     deleteSessionNative(sessionId);
   }
 }
+
+// File viewer integration
+const linkedFilesEntries = computed(() => Object.entries(props.card.linkedFiles || {}));
+
+function isFileActive(label: string): boolean {
+  return activeFile.value?.cardId === props.card.id && activeFile.value?.label === label;
+}
+
+function onFileClick(e: MouseEvent, label: string, filePath: string) {
+  e.stopPropagation();
+  const project = projectsStore.activeProject;
+  if (!project) return;
+  openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${project.path}/${filePath}`);
+}
 </script>
 
 <template>
@@ -157,14 +172,22 @@ async function handleDelete(cardId: string) {
         <StatusIndicator :state="card.state" />
       </div>
       <p v-if="card.description" class="card-desc">{{ card.description }}</p>
+      <!-- Linked file tags -->
+      <div v-if="linkedFilesEntries.length > 0" class="card-files">
+        <template v-for="([label, filePath], idx) in linkedFilesEntries" :key="label">
+          <button
+            class="file-tag"
+            :class="{ 'file-tag--active': isFileActive(label) }"
+            :title="String(filePath)"
+            @click="onFileClick($event, label, String(filePath))"
+          >{{ label }}</button>
+          <span v-if="idx < linkedFilesEntries.length - 1" class="file-sep">|</span>
+        </template>
+      </div>
+
       <div class="card-footer">
         <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
         <div class="card-footer-right">
-          <span
-            v-if="linkedFilesCount > 0"
-            class="card-indicator"
-            :title="Object.entries(card.linkedFiles || {}).map(([k, v]) => `${k}: ${v}`).join('\n')"
-          >📄{{ linkedFilesCount }}</span>
           <span
             v-if="linkedIssuesCount > 0"
             class="card-indicator card-indicator--issue"
@@ -232,6 +255,36 @@ async function handleDelete(cardId: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.card-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 6px;
+}
+.file-tag {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.12s;
+}
+.file-tag:hover {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+.file-tag--active {
+  color: var(--accent, #7c8aff);
+  font-weight: 600;
+}
+.file-sep {
+  color: var(--border, #3a3a4e);
+  margin: 0 5px;
+  font-weight: 300;
 }
 .card-footer { display: flex; justify-content: space-between; align-items: center; }
 .card-footer-right { display: flex; align-items: center; gap: 6px; }

@@ -15,6 +15,7 @@ const settingsStore = useSettingsStore()
 const cardsStore = useCardsStore()
 const pipelinesStore = usePipelinesStore()
 const sessionsStore = useSessionsStore()
+const { activeFile, closeFile } = useFileViewer()
 
 const showSettings = ref(false)
 const showGlobalSettings = ref(false)
@@ -83,7 +84,14 @@ onMounted(async () => {
       <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
-          <KanbanBoard v-if="projectsStore.activeProject" />
+          <FileViewer
+            v-if="activeFile && projectsStore.activeProject"
+            :label="activeFile.label"
+            :file-path="activeFile.path"
+            :project-path="projectsStore.activeProject.path"
+            @close="closeFile()"
+          />
+          <KanbanBoard v-else-if="projectsStore.activeProject" />
           <div v-else class="empty-state">
             <p>Add a project to get started</p>
           </div>
