@@ -53,6 +53,13 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute("ALTER TABLE cards ADD COLUMN console_session_id TEXT DEFAULT ''");
   } catch { /* column already exists */ }
+  // Migration: add linked_files and linked_issues JSON columns
+  try {
+    await db.execute("ALTER TABLE cards ADD COLUMN linked_files TEXT DEFAULT '{}'");
+  } catch { /* column already exists */ }
+  try {
+    await db.execute("ALTER TABLE cards ADD COLUMN linked_issues TEXT DEFAULT '[]'");
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -96,17 +103,24 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     console_session_id: string;
     state: string; tags: string; created_at: string; last_activity_at: string;
     archived: number; use_worktree: number; worktree_name: string;
+    linked_files: string; linked_issues: string;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
-  return rows.map(r => ({
-    id: r.id, projectId: r.project_id, name: r.name, description: r.description,
-    columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
-    consoleSessionId: r.console_session_id || undefined,
-    state: r.state as Card['state'], tags: JSON.parse(r.tags),
-    createdAt: r.created_at, lastActivityAt: r.last_activity_at,
-    archived: r.archived === 1,
-    useWorktree: r.use_worktree === 1,
-    worktreeName: r.worktree_name || undefined,
-  }));
+  return rows.map(r => {
+    const linkedFiles = r.linked_files ? JSON.parse(r.linked_files) : {};
+    const linkedIssues = r.linked_issues ? JSON.parse(r.linked_issues) : [];
+    return {
+      id: r.id, projectId: r.project_id, name: r.name, description: r.description,
+      columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
+      consoleSessionId: r.console_session_id || undefined,
+      state: r.state as Card['state'], tags: JSON.parse(r.tags),
+      createdAt: r.created_at, lastActivityAt: r.last_activity_at,
+      archived: r.archived === 1,
+      useWorktree: r.use_worktree === 1,
+      worktreeName: r.worktree_name || undefined,
+      linkedFiles: Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined,
+      linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
+    };
+  });
 }
 
 export async function insertCard(card: Card): Promise<void> {
@@ -125,12 +139,16 @@ export async function updateCard(card: Card): Promise<void> {
   await d.execute(
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
      session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
-     use_worktree=$10, worktree_name=$11, console_session_id=$12 WHERE id=$13`,
+     use_worktree=$10, worktree_name=$11, console_session_id=$12,
+     linked_files=$13, linked_issues=$14 WHERE id=$15`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
      card.lastActivityAt, card.archived ? 1 : 0,
      card.useWorktree ? 1 : 0, card.worktreeName || '',
-     card.consoleSessionId || '', card.id]
+     card.consoleSessionId || '',
+     JSON.stringify(card.linkedFiles || {}),
+     JSON.stringify(card.linkedIssues || []),
+     card.id]
   );
 }
 

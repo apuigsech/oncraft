@@ -5,6 +5,7 @@ import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
 import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
 import { process as registryProcess } from './chat-part-registry';
+import * as db from '~/services/database';
 
 interface SidecarProcess {
   write: (data: string) => Promise<void>;
@@ -79,6 +80,7 @@ export async function spawnSession(
   sessionId?: string,
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
+  columnPrompt?: string,
 ): Promise<void> {
   // Kill existing process for this card if any
   if (processes.has(cardId)) {
@@ -99,33 +101,41 @@ export async function spawnSession(
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
-        const raw: SidecarMessage = JSON.parse(line);
+        const raw = JSON.parse(line) as Record<string, unknown>;
+
+        // 0. Intercept session_request from MCP tools
+        if (raw.type === 'session_request') {
+          handleSessionRequest(cardId, raw as SessionRequest);
+          continue;
+        }
+
+        const sidecarMsg = raw as SidecarMessage;
 
         // 1. Intercept result — extract metrics, mark query complete
-        if (raw.type === 'result') {
-          dispatchMeta(cardId, raw);
+        if (sidecarMsg.type === 'result') {
+          dispatchMeta(cardId, sidecarMsg);
           continue;
         }
 
         // 2. Intercept init — extract sessionId, gitBranch, etc.
         // The sidecar emits init as { type: "system", subtype: "init", sessionId: "..." }
-        if (raw.type === 'system' && raw.subtype === 'init') {
-          dispatchMeta(cardId, { ...raw, type: 'init' });
+        if (sidecarMsg.type === 'system' && sidecarMsg.subtype === 'init') {
+          dispatchMeta(cardId, { ...sidecarMsg, type: 'init' });
           continue;
         }
 
         // 3. Intercept streaming deltas — buffer via store
-        if (raw.type === 'assistant' && raw.subtype === 'streaming') {
-          dispatchMeta(cardId, raw);
+        if (sidecarMsg.type === 'assistant' && sidecarMsg.subtype === 'streaming') {
+          dispatchMeta(cardId, sidecarMsg);
           continue;
         }
 
         // 4. Process through registry
-        const part = registryProcess(raw);
+        const part = registryProcess(sidecarMsg);
 
         // 5. tool_result returns null from registry but needs merge
-        if (!part && raw.type === 'tool_result') {
-          dispatchMeta(cardId, raw);
+        if (!part && sidecarMsg.type === 'tool_result') {
+          dispatchMeta(cardId, sidecarMsg);
           continue;
         }
 
@@ -208,6 +218,7 @@ export async function spawnSession(
 
   const startCmd = JSON.stringify({
     cmd: 'start',
+    cardId,
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
@@ -216,6 +227,7 @@ export async function spawnSession(
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
     ...(imagePaths?.length ? { imagePaths } : {}),
+    ...(columnPrompt ? { columnPrompt } : {}),
   });
   if (import.meta.dev) {
     console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}`);
@@ -230,6 +242,7 @@ export async function sendStart(
   sessionId?: string,
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
+  columnPrompt?: string,
 ): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
@@ -243,6 +256,7 @@ export async function sendStart(
 
   const startCmd = JSON.stringify({
     cmd: 'start',
+    cardId,
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
@@ -251,6 +265,7 @@ export async function sendStart(
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
     ...(imagePaths?.length ? { imagePaths } : {}),
+    ...(columnPrompt ? { columnPrompt } : {}),
   });
   await proc.write(startCmd);
 }
@@ -306,6 +321,78 @@ export interface SlashCommand {
   name: string;
   desc: string;
   source: string;
+}
+
+// ---------------------------------------------------------------------------
+// MCP session_request handler — bridges sidecar MCP tools to Pinia stores
+// ---------------------------------------------------------------------------
+
+interface SessionRequest {
+  type: 'session_request';
+  requestId: string;
+  action: string;
+  [key: string]: unknown;
+}
+
+async function handleSessionRequest(cardId: string, req: SessionRequest): Promise<void> {
+  const proc = processes.get(cardId);
+  if (!proc) return;
+
+  const cardsStore = useCardsStore();
+  const projectsStore = useProjectsStore();
+  const pipelinesStore = usePipelinesStore();
+
+  let responseData: Record<string, unknown> = {};
+
+  try {
+    if (req.action === 'get_current_card') {
+      const card = cardsStore.cards.find(c => c.id === cardId);
+      responseData = { card: card ? { ...card } : null };
+
+    } else if (req.action === 'update_current_card') {
+      const card = cardsStore.cards.find(c => c.id === cardId);
+      if (card) {
+        const allowed = ['name', 'description', 'columnName', 'state', 'tags', 'archived', 'linkedFiles', 'linkedIssues'] as const;
+        for (const field of allowed) {
+          if (req[field] !== undefined) {
+            (card as any)[field] = req[field];
+          }
+        }
+        card.lastActivityAt = new Date().toISOString();
+        await db.updateCard(card);
+        responseData = { success: true, card: { ...card } };
+      } else {
+        responseData = { success: false, error: 'Card not found' };
+      }
+
+    } else if (req.action === 'get_project') {
+      const project = projectsStore.activeProject;
+      const projectPath = project?.path;
+      const config = projectPath ? pipelinesStore.getConfig(projectPath) : undefined;
+      const columns = (config?.columns ?? []).map(c => ({
+        name: c.name,
+        color: c.color,
+        inputs: c.inputs || [],
+        outputs: c.outputs || [],
+        hasPrompt: !!c.prompt,
+      }));
+      responseData = {
+        project: project ? { id: project.id, name: project.name, path: project.path } : null,
+        columns,
+      };
+
+    } else {
+      responseData = { error: `Unknown action: ${req.action}` };
+    }
+  } catch (err) {
+    responseData = { error: String(err) };
+  }
+
+  await proc.write(JSON.stringify({
+    cmd: 'session_response',
+    requestId: req.requestId,
+    data: responseData,
+  }));
 }
 
 // ---------------------------------------------------------------------------

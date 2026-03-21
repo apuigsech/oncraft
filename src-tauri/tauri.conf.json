@@ -9,6 +9,11 @@
     "beforeBuildCommand": "pnpm build:sidecar && pnpm build",
     "frontendDist": "../.output/public"
   },
+  "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    }
+  },
   "app": {
     "windows": [
       {

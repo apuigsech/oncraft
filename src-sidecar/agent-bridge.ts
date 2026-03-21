@@ -1,9 +1,11 @@
-import { query, getSessionMessages, listSessions, type SDKMessage, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, getSessionMessages, listSessions, tool, createSdkMcpServer, type SDKMessage, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
+import { z } from "zod/v4";
 import { createInterface } from "readline";
 import { readFileSync, readdirSync, existsSync, statSync, unlinkSync } from "fs";
 import { join, basename, relative } from "path";
 import { homedir } from "os";
+import { randomUUID } from "crypto";
 
 // ---- load env vars from ~/.claude/settings.json ----
 function loadClaudeEnv(): Record<string, string | undefined> {
@@ -50,6 +52,7 @@ let activeAbort: AbortController | null = null;
 let activeSessionConfig: { projectPath: string; sessionId?: string } | null = null;
 let sessionAlive: boolean = false;
 let knownSessionId: string | null = null;
+let currentCardId: string | null = null;
 
 // ---- async message queue for persistent sessions ----
 // Single-consumer queue: the SDK's streamInput loop is the only consumer.
@@ -126,6 +129,66 @@ function buildUserMessage(
     session_id: sessionId || "",
   } as unknown as SDKUserMessage;
 }
+
+// ---- pending session requests (MCP tools → frontend) ----
+const pendingSessionRequests = new Map<string, (data: Record<string, unknown>) => void>();
+
+function requestFromFrontend(
+  action: string,
+  payload: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const requestId = randomUUID();
+  emit({ type: "session_request", requestId, action, ...payload });
+  return new Promise((resolve) => {
+    pendingSessionRequests.set(requestId, resolve);
+  });
+}
+
+// ---- OnCraft MCP tools ----
+const oncraftTools = [
+  tool(
+    "get_current_card",
+    "Get all fields of the current OnCraft card/session. Use this to know the card's current name, description, column, state, tags, and linked files.",
+    {},
+    async (_args) => {
+      const data = await requestFromFrontend("get_current_card");
+      return { content: [{ type: "text" as const, text: JSON.stringify(data.card) }] };
+    },
+  ),
+  tool(
+    "update_current_card",
+    "Update fields of the current OnCraft card. Only provide the fields you want to change. Protected fields (id, sessionId, projectId, etc.) are ignored.",
+    {
+      name: z.string().optional().describe("Card title"),
+      description: z.string().optional().describe("Card description"),
+      columnName: z.string().optional().describe("Target column name to move the card to"),
+      state: z.enum(["active", "idle", "error", "completed"]).optional().describe("Card state"),
+      tags: z.array(z.string()).optional().describe("Tag list"),
+      archived: z.boolean().optional().describe("Archive or unarchive the card"),
+      linkedFiles: z.record(z.string(), z.string()).optional().describe('Files linked to this card as { label: relativePath }, e.g. { "plan": "docs/plan.md" }'),
+      linkedIssues: z.array(z.object({ number: z.number(), title: z.string().optional() })).optional().describe("GitHub issues linked to this card"),
+    },
+    async (args) => {
+      const data = await requestFromFrontend("update_current_card", args as Record<string, unknown>);
+      return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+    },
+  ),
+  tool(
+    "get_project",
+    "Get info about the current OnCraft project: name, path, and available columns. Useful to know which columns exist before moving a card.",
+    {},
+    async (_args) => {
+      const data = await requestFromFrontend("get_project");
+      return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+    },
+  ),
+];
+
+const oncraftMcpServer = createSdkMcpServer({
+  name: "oncraft",
+  version: "1.0.0",
+  tools: oncraftTools,
+});
 
 // ---- message translation ----
 function translateMessage(
@@ -478,6 +541,16 @@ rl.on("line", async (line: string) => {
     return;
   }
 
+  // Handle session_response from frontend (MCP tool replies)
+  if (cmd.cmd === "session_response") {
+    const resolver = pendingSessionRequests.get(cmd.requestId as string);
+    if (resolver) {
+      resolver(cmd.data as Record<string, unknown>);
+      pendingSessionRequests.delete(cmd.requestId as string);
+    }
+    return;
+  }
+
   // Handle reply to pending tool approval
   if (cmd.cmd === "reply" && pendingApproval) {
     pendingApproval({
@@ -523,6 +596,7 @@ rl.on("line", async (line: string) => {
   if (cmd.cmd === "start") {
     const projectPath = cmd.projectPath as string;
     const imagePaths = cmd.imagePaths as { path: string; mediaType: string }[] | undefined;
+    currentCardId = (cmd.cardId as string) || null;
 
     if (sessionAlive && activeStream && activeSessionConfig) {
       // Active session exists — enqueue a new user message
@@ -542,7 +616,7 @@ rl.on("line", async (line: string) => {
     }
 
     // No active session — create a new persistent session
-    process.stderr.write(`[agent-bridge] starting persistent session, cwd=${projectPath}\n`);
+    process.stderr.write(`[agent-bridge] starting persistent session, cwd=${projectPath}, cardId=${currentCardId}\n`);
 
     const stream = new MessageStream();
     const abort = new AbortController();
@@ -561,6 +635,8 @@ rl.on("line", async (line: string) => {
     );
     stream.enqueue(userMsg);
 
+    const columnPrompt = cmd.columnPrompt as string | undefined;
+
     // Build query options (same as before, but bound once per session)
     const queryOptions = {
       pathToClaudeCodeExecutable: cliPath,
@@ -574,6 +650,16 @@ rl.on("line", async (line: string) => {
       permissionMode: (cmd.permissionMode as string) || "default",
       settingSources: ["user", "project"],
       includePartialMessages: true,
+      mcpServers: {
+        oncraft: oncraftMcpServer,
+      },
+      ...(columnPrompt ? {
+        systemPrompt: {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+          append: columnPrompt,
+        },
+      } : {}),
       ...(cmd.worktreeName ? {
         extraArgs: { worktree: cmd.worktreeName as string },
       } : {}),

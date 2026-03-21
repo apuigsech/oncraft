@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Card } from '~/types';
+import type { Card, CardLinkedIssue } from '~/types';
 import * as db from '~/services/database';
 
 export const useCardsStore = defineStore('cards', () => {
@@ -131,6 +131,20 @@ export const useCardsStore = defineStore('cards', () => {
     await db.updateCard(card);
   }
 
+  async function updateCardLinkedFiles(cardId: string, linkedFiles: Record<string, string>): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.linkedFiles = Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined;
+    await db.updateCard(card);
+  }
+
+  async function updateCardLinkedIssues(cardId: string, linkedIssues: CardLinkedIssue[]): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.linkedIssues = linkedIssues.length > 0 ? linkedIssues : undefined;
+    await db.updateCard(card);
+  }
+
   async function archiveCard(cardId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
@@ -159,6 +173,7 @@ export const useCardsStore = defineStore('cards', () => {
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
     addCard, moveCard, updateCardState, updateCardSessionId, updateCardConsoleSessionId, updateCardInfo,
+    updateCardLinkedFiles, updateCardLinkedIssues,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,
   };
 });

@@ -1,4 +1,4 @@
-import type { ProjectConfig } from '~/types';
+import type { ProjectConfig, ColumnConfig } from '~/types';
 import { loadProjectConfig, saveProjectConfig } from '~/services/config-loader';
 
 export const usePipelinesStore = defineStore('pipelines', () => {
@@ -13,7 +13,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
       { name: 'Review', color: '#f472b6' },
       { name: 'Done', color: '#22c55e' },
     ],
-    pipelines: [],
   };
 
   async function loadForProject(projectPath: string): Promise<ProjectConfig> {
@@ -33,16 +32,21 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     return configs[projectPath];
   }
 
-  function findPipeline(projectPath: string, from: string, to: string) {
+  function getColumnConfig(projectPath: string, columnName: string): ColumnConfig | undefined {
     const config = configs[projectPath];
     if (!config) return undefined;
-    return config.pipelines.find(p => p.from === from && p.to === to);
+    return config.columns.find(c => c.name === columnName);
   }
 
   async function saveConfig(projectPath: string, config: ProjectConfig): Promise<void> {
     configs[projectPath] = config;
-    await saveProjectConfig(projectPath, config);
+    try {
+      await saveProjectConfig(projectPath, config);
+    } catch (err) {
+      console.error('[OnCraft] Failed to persist project config to disk:', err);
+      throw err; // Re-throw so UI layer can show feedback
+    }
   }
 
-  return { configs, loadForProject, getConfig, findPipeline, saveConfig };
+  return { configs, loadForProject, getConfig, getColumnConfig, saveConfig };
 });

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus';
 import type { Card, ColumnConfig } from '~/types';
-import { resolveTemplate } from '~/services/template-engine';
 
 const props = defineProps<{ column: ColumnConfig }>();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
 const sessionsStore = useSessionsStore();
-const pipelinesStore = usePipelinesStore();
 
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
@@ -42,22 +40,6 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   try {
     if (fromColumnName !== toColumnName) {
       await cardsStore.moveCard(card.id, toColumnName, newIndex);
-
-      // Pipeline trigger
-      const project = projectsStore.activeProject;
-      if (project) {
-        const pipeline = pipelinesStore.findPipeline(project.path, fromColumnName, toColumnName);
-        if (pipeline) {
-          const prompt = resolveTemplate(pipeline.prompt, {
-            session: { name: card.name, id: card.sessionId },
-            project: { path: project.path, name: project.name },
-            card: { description: card.description },
-            column: { from: fromColumnName, to: toColumnName },
-          });
-          sessionsStore.send(card.id, prompt);
-          sessionsStore.openChat(card.id);
-        }
-      }
     } else {
       await cardsStore.applyColumnOrder(props.column.name, dragCards.value);
     }

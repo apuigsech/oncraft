@@ -35,7 +35,6 @@
       "identifier": "fs:allow-exists",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },
@@ -47,7 +46,6 @@
       "identifier": "fs:allow-read",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },
@@ -59,7 +57,6 @@
       "identifier": "fs:allow-read-text-file",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },
@@ -71,7 +68,6 @@
       "identifier": "fs:allow-write-text-file",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },
@@ -83,7 +79,6 @@
       "identifier": "fs:allow-mkdir",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },
@@ -95,7 +90,6 @@
       "identifier": "fs:allow-write",
       "allow": [
         { "path": "$HOME/**" },
-        { "path": "$HOME/.**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "/Users/**" },

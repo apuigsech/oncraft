@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Card } from '~/types';
+import type { Card, CardLinkedIssue } from '~/types';
 import { deleteSessionNative, gitBranchStatus } from '~/services/claude-process';
 import type { BranchStatus } from '~/services/claude-process';
 
@@ -7,6 +7,18 @@ const props = defineProps<{ card: Card; columnColor: string }>();
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
+const pipelinesStore = usePipelinesStore();
+
+// GitHub repo from project config (for issue linking)
+const githubRepo = computed(() => {
+  const project = projectsStore.activeProject;
+  if (!project) return undefined;
+  return pipelinesStore.getConfig(project.path)?.github?.repository;
+});
+
+// Counts for indicators
+const linkedFilesCount = computed(() => Object.keys(props.card.linkedFiles || {}).length);
+const linkedIssuesCount = computed(() => (props.card.linkedIssues || []).length);
 
 // Branch ahead/behind status
 const branchStatus = ref<BranchStatus | null>(null);
@@ -67,9 +79,11 @@ function handleEdit() {
   showEdit.value = true;
 }
 
-async function saveEdit(name: string, description: string) {
+async function saveEdit(name: string, description: string, linkedFiles: Record<string, string>, linkedIssues: CardLinkedIssue[]) {
   showEdit.value = false;
   await cardsStore.updateCardInfo(props.card.id, name, description);
+  await cardsStore.updateCardLinkedFiles(props.card.id, linkedFiles);
+  await cardsStore.updateCardLinkedIssues(props.card.id, linkedIssues);
 }
 
 async function handleArchive(cardId: string) {
@@ -119,6 +133,16 @@ async function handleDelete(cardId: string) {
       <div class="card-footer">
         <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
         <div class="card-footer-right">
+          <span
+            v-if="linkedFilesCount > 0"
+            class="card-indicator"
+            :title="Object.entries(card.linkedFiles || {}).map(([k, v]) => `${k}: ${v}`).join('\n')"
+          >📄{{ linkedFilesCount }}</span>
+          <span
+            v-if="linkedIssuesCount > 0"
+            class="card-indicator card-indicator--issue"
+            :title="(card.linkedIssues || []).map(i => `#${i.number}${i.title ? ' ' + i.title : ''}`).join('\n')"
+          >#{{ (card.linkedIssues || []).map(i => i.number).join(' #') }}</span>
           <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
             <span v-if="branchStatus.ahead > 0" class="commits-ahead">↑{{ branchStatus.ahead }}</span>
             <span v-if="branchStatus.behind > 0" class="commits-behind">↓{{ branchStatus.behind }}</span>
@@ -145,8 +169,13 @@ async function handleDelete(cardId: string) {
     />
     <EditCardDialog
       v-if="showEdit"
-      :name="card.name" :description="card.description"
-      @save="saveEdit" @cancel="showEdit = false"
+      :name="card.name"
+      :description="card.description"
+      :linked-files="card.linkedFiles"
+      :linked-issues="card.linkedIssues"
+      :github-repo="githubRepo"
+      @save="saveEdit"
+      @cancel="showEdit = false"
     />
   </div>
 </template>
@@ -176,6 +205,8 @@ async function handleDelete(cardId: string) {
 .card-footer-right { display: flex; align-items: center; gap: 6px; }
 .card-meta { font-size: 11px; color: var(--text-muted); }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.card-indicator { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.card-indicator--issue { color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; }
 .branch-status { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
 .commits-ahead  { color: #4ade80; font-weight: 600; }
 .commits-behind { color: #f87171; font-weight: 600; }

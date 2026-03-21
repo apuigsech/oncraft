@@ -6,6 +6,7 @@
       "name": "claudban-agent-bridge",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+        "zod": "^4.0.0",
       },
       "devDependencies": {
         "@types/bun": "latest",

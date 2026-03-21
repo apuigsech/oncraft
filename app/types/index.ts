@@ -34,12 +34,9 @@ export type CardState = 'active' | 'idle' | 'error' | 'completed';
 export interface ColumnConfig {
   name: string;
   color: string;
-}
-
-export interface PipelineConfig {
-  from: string;
-  to: string;
-  prompt: string;
+  inputs?: string[];
+  outputs?: string[];
+  prompt?: string;
 }
 
 export interface CardLinkedIssue {
@@ -53,7 +50,6 @@ export interface GitHubConfig {
 
 export interface ProjectConfig {
   columns: ColumnConfig[];
-  pipelines: PipelineConfig[];
   github?: GitHubConfig;
 }
 
@@ -112,5 +108,5 @@ export interface TemplateContext {
   session: { name: string; id: string };
   project: { path: string; name: string };
   card: { description: string };
-  column: { from: string; to: string };
+  column: { name: string };
 }
