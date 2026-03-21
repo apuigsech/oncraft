@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile, exists, mkdir, rename, copyFile, readDir } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, exists, mkdir, copyFile, readDir } from '@tauri-apps/plugin-fs';
 import { homeDir, resourceDir, join as pathJoin } from '@tauri-apps/api/path';
 import * as yaml from 'js-yaml';
 import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning } from '~/types';
@@ -8,8 +8,6 @@ import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning } from 
 const ONCRAFT_DIR   = '.oncraft';
 const STATES_DIR    = `${ONCRAFT_DIR}/states`;   // .oncraft/states
 const FLOW_FILE     = `${ONCRAFT_DIR}/flow.yaml`;
-const LEGACY_CONFIG = `${ONCRAFT_DIR}/config.yaml`;
-const LEGACY_BACKUP = `${ONCRAFT_DIR}/config.yaml.bak`;
 
 // Bundled presets installed to ~/.oncraft/presets/ on first launch
 const BUNDLED_PRESETS = ['swe-basic'];
@@ -37,10 +35,6 @@ function makeDefaultFlow(): Flow {
 }
 
 // ─── YAML Parsing Helpers ─────────────────────────────────────────────────────
-
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
 
 function parseAgentConfig(raw: Record<string, unknown>): Partial<AgentConfig> {
   const cfg: Partial<AgentConfig> = {};
@@ -300,88 +294,6 @@ async function mergeWithPreset(project: FlowWithMd, presetName: string): Promise
   };
 }
 
-// ─── Legacy config.yaml migration ────────────────────────────────────────────
-
-async function migrateLegacyConfig(projectPath: string): Promise<void> {
-  const legacyPath = `${projectPath}/${LEGACY_CONFIG}`;
-  const backupPath = `${projectPath}/${LEGACY_BACKUP}`;
-  const flowYaml   = `${projectPath}/${FLOW_FILE}`;
-
-  if (import.meta.dev) console.log('[OnCraft] migrating legacy config.yaml → flow structure');
-
-  try {
-    const content = await readTextFile(legacyPath);
-    const raw = (yaml.load(content) as Record<string, unknown>) || {};
-    const columns  = (raw.columns  as Array<Record<string, unknown>>) || [];
-    const pipelines = (raw.pipelines as Array<Record<string, unknown>>) || [];
-
-    // Build stateOrder and state directories
-    const stateOrder: string[] = [];
-    for (const col of columns) {
-      const slug = slugify(col.name as string);
-      stateOrder.push(slug);
-
-      const stateDir = `${projectPath}/${STATES_DIR}/${slug}`;
-      try { await mkdir(stateDir, { recursive: true }); } catch { /* exists */ }
-
-      const stateYaml: Record<string, unknown> = {
-        name:  col.name,
-        color: col.color || '#6b7280',
-        ...(col.inputs  ? { inputs:  col.inputs  } : {}),
-        ...(col.outputs ? { outputs: col.outputs } : {}),
-      };
-      await writeTextFile(`${stateDir}/state.yaml`, yaml.dump(stateYaml));
-
-      if (col.prompt && typeof col.prompt === 'string') {
-        await writeTextFile(`${stateDir}/prompt.md`, col.prompt);
-      }
-    }
-
-    // Build trigger.md for each target state from pipelines (first match wins)
-    const usedTargets = new Set<string>();
-    for (const pipe of pipelines) {
-      const toSlug = slugify(pipe.to as string);
-      if (!usedTargets.has(toSlug) && pipe.prompt) {
-        usedTargets.add(toSlug);
-        const stateDir = `${projectPath}/${STATES_DIR}/${toSlug}`;
-        try { await mkdir(stateDir, { recursive: true }); } catch { /* exists */ }
-        await writeTextFile(`${stateDir}/trigger.md`, pipe.prompt as string);
-      }
-    }
-
-    // Write flow.yaml
-    const onCraftDir = `${projectPath}/${ONCRAFT_DIR}`;
-    try { await mkdir(onCraftDir, { recursive: true }); } catch { /* exists */ }
-    await writeTextFile(flowYaml, yaml.dump({
-      name: 'Migrated Flow',
-      stateOrder,
-      agent: { model: 'sonnet', effort: 'high', permissionMode: 'default' },
-    }));
-
-    // Migrate card.columnName values in SQLite: display names → slugs
-    try {
-      const db = await import('~/services/database');
-      for (const col of columns) {
-        const displayName = col.name as string;
-        const slug = slugify(displayName);
-        if (displayName !== slug) {
-          await db.migrateColumnName(displayName, slug);
-        }
-      }
-      if (import.meta.dev) console.log('[OnCraft] card columnName slugs migrated');
-    } catch (err) {
-      if (import.meta.dev) console.warn('[OnCraft] card columnName migration failed:', err);
-    }
-
-    // Backup original config
-    await rename(legacyPath, backupPath);
-    if (import.meta.dev) console.log('[OnCraft] migration complete, backup at', LEGACY_BACKUP);
-
-  } catch (err) {
-    if (import.meta.dev) console.warn('[OnCraft] migration failed:', err);
-  }
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface LoadFlowResult {
@@ -392,20 +304,6 @@ export interface LoadFlowResult {
 
 export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
   const warnings: FlowWarning[] = [];
-
-  // Auto-migrate legacy config.yaml if needed (no flow.yaml, has config.yaml, no backup yet)
-  const flowYamlPath = `${projectPath}/${FLOW_FILE}`;
-  const legacyPath   = `${projectPath}/${LEGACY_CONFIG}`;
-  const backupPath   = `${projectPath}/${LEGACY_BACKUP}`;
-
-  try {
-    const hasFlowYaml = await exists(flowYamlPath);
-    const hasLegacy   = await exists(legacyPath);
-    const hasBackup   = await exists(backupPath);
-    if (!hasFlowYaml && hasLegacy && !hasBackup) {
-      await migrateLegacyConfig(projectPath);
-    }
-  } catch { /* non-fatal */ }
 
   // Read project flow
   let project = await readFlowFromDir(projectPath);

@@ -209,12 +209,3 @@ export async function updateCardsColumn(
     );
   }
 }
-
-// Used by flow-loader legacy migration: rename column_name values from display names to slugs
-export async function migrateColumnName(oldName: string, newSlug: string): Promise<void> {
-  const d = await getDb();
-  await d.execute(
-    'UPDATE cards SET column_name = $1 WHERE column_name = $2',
-    [newSlug, oldName],
-  );
-}
