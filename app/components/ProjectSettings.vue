@@ -1,106 +1,19 @@
 <script setup lang="ts">
-import type { ColumnConfig, GitHubConfig } from '~/types';
+import { open as openPath } from '@tauri-apps/plugin-opener';
 
 const emit = defineEmits<{ close: [] }>();
 const projectsStore = useProjectsStore();
-const pipelinesStore = usePipelinesStore();
-const cardsStore = useCardsStore();
-
-const saveError = ref<string | null>(null);
-const saveSuccess = ref(false);
-const dirty = ref(false);
-const saving = ref(false);
+const flowStore = useFlowStore();
 
 const project = computed(() => projectsStore.activeProject);
-const config = computed(() => {
-  if (!project.value) return null;
-  return pipelinesStore.getConfig(project.value.path) || null;
-});
 
-// Local draft state — changes accumulate here until Save is pressed
-const draftColumns = ref<ColumnConfig[]>([]);
-const draftGithubRepo = ref('');
-
-// Track columns that were removed/renamed so we can apply card migrations on save
-const pendingRemovals = ref<string[]>([]);
-const pendingRenames = ref<{ oldName: string; newName: string }[]>([]);
-
-// Initialize drafts from loaded config
-watch(config, (cfg) => {
-  if (cfg) {
-    draftColumns.value = cfg.columns.map(c => ({ ...c }));
-    draftGithubRepo.value = cfg.github?.repository || '';
-    dirty.value = false;
-    pendingRemovals.value = [];
-    pendingRenames.value = [];
-  }
-}, { immediate: true });
-
-function onColumnsUpdate(columns: ColumnConfig[]) {
-  draftColumns.value = columns;
-  dirty.value = true;
-}
-
-function onColumnRemoved(removedName: string) {
-  pendingRemovals.value.push(removedName);
-  dirty.value = true;
-}
-
-function onColumnRenamed(oldName: string, newName: string) {
-  pendingRenames.value.push({ oldName, newName });
-  dirty.value = true;
-}
-
-function onGithubRepoInput() {
-  dirty.value = true;
-}
-
-async function save() {
-  if (!project.value || !config.value) return;
-  saving.value = true;
-  saveError.value = null;
-
+async function openFlowConfig() {
+  if (!project.value) return;
   try {
-    // Build the new config
-    const github: GitHubConfig = {};
-    const trimmedRepo = draftGithubRepo.value.trim();
-    if (trimmedRepo) github.repository = trimmedRepo;
-
-    const newConfig = {
-      columns: draftColumns.value,
-      ...(trimmedRepo ? { github } : {}),
-    };
-
-    await pipelinesStore.saveConfig(project.value.path, newConfig);
-
-    // Apply card migrations for removed columns
-    for (const removedName of pendingRemovals.value) {
-      const targetColumn = draftColumns.value[0]?.name;
-      if (targetColumn) {
-        const affectedCards = cardsStore.cards.filter(c => c.columnName === removedName);
-        for (const card of affectedCards) {
-          await cardsStore.moveCard(card.id, targetColumn, 0);
-        }
-      }
-    }
-
-    // Apply card migrations for renamed columns
-    for (const { oldName, newName } of pendingRenames.value) {
-      const affectedCards = cardsStore.cards.filter(c => c.columnName === oldName);
-      for (const card of affectedCards) {
-        await cardsStore.moveCard(card.id, newName, card.columnOrder);
-      }
-    }
-
-    pendingRemovals.value = [];
-    pendingRenames.value = [];
-    dirty.value = false;
-    saveSuccess.value = true;
-    setTimeout(() => { saveSuccess.value = false; }, 2000);
-  } catch (err) {
-    saveError.value = `Failed to save: ${err instanceof Error ? err.message : String(err)}`;
-  } finally {
-    saving.value = false;
+    await openPath(`${project.value.path}/.oncraft`);
+  } catch {
+    // Fallback: open the project directory itself
+    await openPath(project.value.path);
   }
 }
 </script>
@@ -114,51 +27,57 @@ async function save() {
       </div>
       <div class="dialog-body">
         <div v-if="project" class="settings-content">
-          <!-- Status feedback -->
-          <div v-if="saveError" class="save-feedback error">{{ saveError }}</div>
-          <div v-if="saveSuccess" class="save-feedback success">Settings saved to .oncraft/config.yaml</div>
-
           <div class="field">
             <span class="field-label">Project Path</span>
             <span class="field-value mono">{{ project.path }}</span>
           </div>
 
-          <!-- GitHub settings -->
+          <!-- Flow summary -->
           <div class="settings-section">
-            <h4>GitHub</h4>
-            <div class="field">
-              <label class="field-label" for="github-repo">Repository</label>
-              <input
-                id="github-repo"
-                v-model="draftGithubRepo"
-                type="text"
-                class="field-input"
-                placeholder="owner/repo"
-                @input="onGithubRepoInput"
-              />
-              <span class="field-hint">e.g. apuigsech/oncraft</span>
+            <h4>Flow</h4>
+            <div v-if="flowStore.flow" class="flow-summary">
+              <div class="field">
+                <span class="field-label">Name</span>
+                <span class="field-value">{{ flowStore.flow.name }}</span>
+              </div>
+              <div v-if="flowStore.flow.preset" class="field">
+                <span class="field-label">Preset</span>
+                <span class="field-value mono">{{ flowStore.flow.preset }}</span>
+              </div>
+              <div class="field">
+                <span class="field-label">States</span>
+                <div class="states-list">
+                  <span
+                    v-for="slug in flowStore.stateOrder"
+                    :key="slug"
+                    class="state-chip"
+                    :style="{ borderColor: flowStore.getFlowState(slug)?.color }"
+                  >
+                    {{ flowStore.getFlowState(slug)?.name ?? slug }}
+                  </span>
+                </div>
+              </div>
+              <div v-if="flowStore.flowWarnings.length" class="field">
+                <span class="field-label warnings-label">
+                  <UIcon name="i-lucide-alert-triangle" /> Warnings
+                </span>
+                <ul class="warnings-list">
+                  <li v-for="w in flowStore.flowWarnings" :key="w.message">{{ w.message }}</li>
+                </ul>
+              </div>
             </div>
-          </div>
+            <div v-else class="field-value muted">Loading flow…</div>
 
-          <ColumnEditor
-            v-if="config"
-            :columns="draftColumns"
-            @update="onColumnsUpdate"
-            @column-removed="onColumnRemoved"
-            @column-renamed="onColumnRenamed"
-          />
+            <button class="btn-secondary flow-edit-btn" @click="openFlowConfig">
+              <UIcon name="i-lucide-folder-open" />
+              Edit Flow Config (.oncraft/)
+            </button>
+          </div>
         </div>
       </div>
       <div class="dialog-footer">
         <div class="footer-actions">
           <button class="btn-secondary" @click="emit('close')">Close</button>
-          <button
-            class="btn-primary"
-            :disabled="!dirty || saving"
-            @click="save"
-          >
-            {{ saving ? 'Saving...' : 'Save' }}
-          </button>
         </div>
       </div>
     </div>
@@ -175,29 +94,30 @@ async function save() {
 .dialog-body { flex: 1; overflow-y: auto; padding: 18px; }
 .settings-content { display: flex; flex-direction: column; gap: 16px; }
 .settings-section { display: flex; flex-direction: column; gap: 8px; }
-.settings-section h4 { font-size: 14px; color: var(--text-primary); margin: 0; }
+.settings-section h4 { font-size: 14px; color: var(--text-primary); margin: 0 0 4px 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .field-value { font-size: 13px; color: var(--text-secondary); }
-.field-input {
-  background: var(--bg-primary); border: 1px solid var(--border);
-  border-radius: 4px; padding: 6px 8px; font-size: 13px;
-  color: var(--text-primary);
-}
-.field-input:focus { outline: none; border-color: var(--accent); }
-.field-hint { font-size: 11px; color: var(--text-muted); }
+.field-value.muted { color: var(--text-muted); }
 .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; background: var(--bg-primary); padding: 4px 8px; border-radius: 4px; }
-.dialog-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 1px solid var(--border); }
-.footer-actions { display: flex; gap: 8px; margin-left: auto; }
+.flow-summary { display: flex; flex-direction: column; gap: 10px; }
+.states-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.state-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 12px;
+  border: 1px solid; background: var(--bg-primary); color: var(--text-secondary);
+}
+.warnings-label { display: flex; align-items: center; gap: 4px; color: #fbbf24; }
+.warnings-list { margin: 0; padding-left: 16px; font-size: 12px; color: #fbbf24; }
+.warnings-list li { margin-bottom: 2px; }
+.flow-edit-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font-size: 13px; margin-top: 4px;
+  border-radius: 4px; border: 1px solid var(--border);
+  color: var(--text-secondary); background: var(--bg-primary);
+}
+.flow-edit-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.dialog-footer { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
+.footer-actions { display: flex; gap: 8px; }
 .btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
 .btn-secondary:hover { background: var(--bg-tertiary); }
-.btn-primary {
-  padding: 6px 16px; border-radius: 4px; font-size: 13px;
-  background: var(--accent); color: white; font-weight: 500;
-}
-.btn-primary:hover:not(:disabled) { opacity: 0.9; }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-.save-feedback { padding: 6px 10px; border-radius: 4px; font-size: 12px; }
-.save-feedback.error { background: rgba(239, 68, 68, 0.1); color: var(--error); border: 1px solid rgba(239, 68, 68, 0.3); }
-.save-feedback.success { background: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); }
 </style>
