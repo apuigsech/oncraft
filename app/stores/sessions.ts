@@ -409,7 +409,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const prompt = resolveTemplate(raw, {
       session: { name: card.name, id: card.sessionId || '' },
       project: { path: project.path, name: project.name },
-      card:    { description: card.description, linkedFiles },
+      card:    { description: card.description, linkedFiles, linkedIssues: card.linkedIssues },
       column:  { from: fromSlug, to: toSlug },
     });
 

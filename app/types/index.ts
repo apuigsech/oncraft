@@ -106,6 +106,14 @@ export interface GitHubConfig {
   repository?: string;   // "owner/repo"
 }
 
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body?: string;
+  labels: string[];
+  state: string;
+}
+
 export interface ProjectConfig {
   columns: ColumnConfig[];
   github?: GitHubConfig;
@@ -165,6 +173,6 @@ export interface SessionConfig {
 export interface TemplateContext {
   session: { name: string; id: string };
   project: { path: string; name: string };
-  card: { description: string; linkedFiles: Record<string, string> };
+  card: { description: string; linkedFiles: Record<string, string>; linkedIssues?: CardLinkedIssue[] };
   column: { from: string; to: string };
 }

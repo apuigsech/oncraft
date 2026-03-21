@@ -12,6 +12,11 @@
         {
           "name": "binaries/agent-bridge",
           "sidecar": true
+        },
+        {
+          "name": "gh",
+          "cmd": "gh",
+          "args": true
         }
       ]
     },
@@ -21,6 +26,11 @@
         {
           "name": "binaries/agent-bridge",
           "sidecar": true
+        },
+        {
+          "name": "gh",
+          "cmd": "gh",
+          "args": true
         }
       ]
     },

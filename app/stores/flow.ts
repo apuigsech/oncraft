@@ -1,5 +1,5 @@
 import type { Flow, FlowState, FlowWarning } from '~/types';
-import { loadFlow, resolveConfigForState, type LoadFlowResult } from '~/services/flow-loader';
+import { loadFlow, resolveConfigForState, loadGitHubConfig, saveGitHubConfig, type LoadFlowResult } from '~/services/flow-loader';
 import { resolveAgents, type ResolvedAgent } from '~/services/agent-resolver';
 import type { McpServerConfig, AgentConfig } from '~/types';
 
@@ -20,6 +20,11 @@ export const useFlowStore = defineStore('flow', () => {
   const warnings = ref<FlowWarning[]>([]);
   const loaded   = ref<string | null>(null); // projectPath currently loaded
 
+  // GitHub config
+  const githubConfigRepo = ref<string | undefined>(undefined);   // from .oncraft/config.yaml
+  const githubDetectedRepo = ref<string | undefined>(undefined); // from `gh repo view`
+  const githubRepository = computed(() => githubConfigRepo.value || githubDetectedRepo.value);
+
   async function loadForProject(projectPath: string): Promise<void> {
     try {
       const result: LoadFlowResult = await loadFlow(projectPath);
@@ -35,6 +40,31 @@ export const useFlowStore = defineStore('flow', () => {
       if (import.meta.dev) console.error('[OnCraft] Failed to load flow:', err);
       warnings.value = [{ scope: 'flow', message: `Failed to load flow: ${err}` }];
     }
+
+    // Load GitHub config from .oncraft/config.yaml
+    try {
+      const ghConfig = await loadGitHubConfig(projectPath);
+      githubConfigRepo.value = ghConfig?.repository;
+    } catch {
+      githubConfigRepo.value = undefined;
+    }
+
+    // Auto-detect from `gh repo view` (non-blocking)
+    detectGitHubRepo(projectPath);
+  }
+
+  async function detectGitHubRepo(projectPath: string): Promise<void> {
+    try {
+      const { detectRepo } = await import('~/services/github');
+      githubDetectedRepo.value = await detectRepo(projectPath) ?? undefined;
+    } catch {
+      githubDetectedRepo.value = undefined;
+    }
+  }
+
+  async function setGitHubRepository(projectPath: string, repo: string | undefined): Promise<void> {
+    githubConfigRepo.value = repo;
+    await saveGitHubConfig(projectPath, { repository: repo });
   }
 
   function getFlowState(slug: string): FlowState | undefined {
@@ -112,11 +142,15 @@ export const useFlowStore = defineStore('flow', () => {
     flowMd.value   = '';
     warnings.value = [];
     loaded.value   = null;
+    githubConfigRepo.value   = undefined;
+    githubDetectedRepo.value = undefined;
   }
 
   return {
     flow, flowMd, warnings, loaded, stateOrder, flowWarnings,
+    githubRepository, githubConfigRepo, githubDetectedRepo,
     loadForProject, getFlowState, stateWarnings,
-    getResolvedConfig, getTriggerPrompt, checkRequiredFiles, reset,
+    getResolvedConfig, getTriggerPrompt, checkRequiredFiles,
+    setGitHubRepository, reset,
   };
 });

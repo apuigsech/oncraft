@@ -1,7 +1,7 @@
 import { readTextFile, writeTextFile, exists, mkdir, readDir } from '@tauri-apps/plugin-fs';
 import { homeDir, resourceDir, join as pathJoin } from '@tauri-apps/api/path';
 import * as yaml from 'js-yaml';
-import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning } from '~/types';
+import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning, GitHubConfig } from '~/types';
 
 // ─── Path constants (all resolved relative to projectPath — repo root) ────────
 
@@ -386,6 +386,43 @@ export function resolveConfigForState(
   const systemPromptAppend = parts.join('\n\n---\n\n');
 
   return { agent, agents, skills, mcpServers, allowedTools, disallowedTools, systemPromptAppend };
+}
+
+// ─── GitHub config from .oncraft/config.yaml ─────────────────────────────────
+
+const CONFIG_FILE = `${ONCRAFT_DIR}/config.yaml`;
+
+export async function loadGitHubConfig(projectPath: string): Promise<GitHubConfig | null> {
+  const configYaml = `${projectPath}/${CONFIG_FILE}`;
+  try {
+    const e = await exists(configYaml);
+    if (!e) return null;
+    const content = await readTextFile(configYaml);
+    const raw = (yaml.load(content) as Record<string, unknown>) || {};
+    const github = raw.github as Record<string, unknown> | undefined;
+    if (!github) return null;
+    return {
+      repository: github.repository as string | undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveGitHubConfig(projectPath: string, config: GitHubConfig): Promise<void> {
+  const configYaml = `${projectPath}/${CONFIG_FILE}`;
+  let raw: Record<string, unknown> = {};
+  try {
+    const e = await exists(configYaml);
+    if (e) {
+      const content = await readTextFile(configYaml);
+      raw = (yaml.load(content) as Record<string, unknown>) || {};
+    }
+  } catch { /* start fresh */ }
+
+  raw.github = { repository: config.repository || undefined };
+  await mkdir(`${projectPath}/${ONCRAFT_DIR}`, { recursive: true });
+  await writeTextFile(configYaml, yaml.dump(raw, { lineWidth: 80 }));
 }
 
 // ─── Bundled preset installation ──────────────────────────────────────────────
