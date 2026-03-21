@@ -65,6 +65,11 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+function formatTokens(n: number): string {
+  if (!n || n < 1000) return String(n || 0);
+  return `${(n / 1000).toFixed(1)}k`;
+}
+
 function openChat() { sessionsStore.openChat(props.card.id); }
 
 function onContextMenu(e: MouseEvent) {
@@ -159,6 +164,10 @@ async function handleDelete(cardId: string) {
           </div>
         </div>
       </div>
+      <div v-if="card.costUsd && card.costUsd > 0" class="card-cost-footer">
+        <span class="cost-amount">${{ card.costUsd.toFixed(4) }}</span>
+        <span class="cost-tokens">↑{{ formatTokens(card.inputTokens) }} ↓{{ formatTokens(card.outputTokens) }}</span>
+      </div>
     </div>
 
     <CardContextMenu
@@ -211,4 +220,16 @@ async function handleDelete(cardId: string) {
 .commits-ahead  { color: #4ade80; font-weight: 600; }
 .commits-behind { color: #f87171; font-weight: 600; }
 .commits-synced { color: var(--text-muted); }
+.card-cost-footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+  margin-top: 6px;
+  border-top: 1px solid var(--bg-tertiary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.cost-amount { white-space: nowrap; }
+.cost-tokens { white-space: nowrap; }
 </style>

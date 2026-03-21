@@ -60,6 +60,19 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute("ALTER TABLE cards ADD COLUMN linked_issues TEXT DEFAULT '[]'");
   } catch { /* column already exists */ }
+  // Migration: add cost tracking columns if missing (for existing DBs)
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN cost_usd REAL DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN input_tokens INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN output_tokens INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN duration_ms INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -104,6 +117,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     state: string; tags: string; created_at: string; last_activity_at: string;
     archived: number; use_worktree: number; worktree_name: string;
     linked_files: string; linked_issues: string;
+    cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => {
     const linkedFiles = r.linked_files ? JSON.parse(r.linked_files) : {};
@@ -119,6 +133,10 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
       worktreeName: r.worktree_name || undefined,
       linkedFiles: Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined,
       linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
+      costUsd: r.cost_usd || 0,
+      inputTokens: r.input_tokens || 0,
+      outputTokens: r.output_tokens || 0,
+      durationMs: r.duration_ms || 0,
     };
   });
 }
@@ -140,7 +158,8 @@ export async function updateCard(card: Card): Promise<void> {
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
      session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
      use_worktree=$10, worktree_name=$11, console_session_id=$12,
-     linked_files=$13, linked_issues=$14 WHERE id=$15`,
+     linked_files=$13, linked_issues=$14,
+     cost_usd=$15, input_tokens=$16, output_tokens=$17, duration_ms=$18 WHERE id=$19`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
      card.lastActivityAt, card.archived ? 1 : 0,
@@ -148,6 +167,7 @@ export async function updateCard(card: Card): Promise<void> {
      card.consoleSessionId || '',
      JSON.stringify(card.linkedFiles || {}),
      JSON.stringify(card.linkedIssues || []),
+     card.costUsd || 0, card.inputTokens || 0, card.outputTokens || 0, card.durationMs || 0,
      card.id]
   );
 }
