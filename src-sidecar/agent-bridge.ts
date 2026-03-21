@@ -45,6 +45,7 @@ interface ReplyPayload {
   updatedInput?: Record<string, unknown>;
 }
 let pendingApproval: ((answer: ReplyPayload) => void) | null = null;
+let pendingReply: ReplyPayload | null = null;
 
 // Persistent session state
 let activeStream: MessageStream | null = null;
@@ -552,12 +553,20 @@ rl.on("line", async (line: string) => {
   }
 
   // Handle reply to pending tool approval
-  if (cmd.cmd === "reply" && pendingApproval) {
-    pendingApproval({
+  if (cmd.cmd === "reply") {
+    const payload: ReplyPayload = {
       content: cmd.content as string,
       updatedInput: cmd.updatedInput as Record<string, unknown> | undefined,
-    });
-    pendingApproval = null;
+    };
+    if (pendingApproval) {
+      pendingApproval(payload);
+      pendingApproval = null;
+    } else if (!pendingReply) {
+      process.stderr.write("[agent-bridge] reply arrived before pendingApproval — buffering\n");
+      pendingReply = payload;
+    } else {
+      process.stderr.write("[agent-bridge] warning: duplicate reply while buffer occupied — ignoring\n");
+    }
     return;
   }
 
@@ -573,6 +582,7 @@ rl.on("line", async (line: string) => {
       activeAbort = null;
       activeSessionConfig = null;
       knownSessionId = null;
+      pendingReply = null;
       abort.abort();
     }
     return;
@@ -585,6 +595,7 @@ rl.on("line", async (line: string) => {
       pendingApproval({ content: "deny" });
       pendingApproval = null;
     }
+    pendingReply = null;
     // Signal the stream to finish — SDK will close the CLI process
     if (activeStream) {
       activeStream.finish();
@@ -678,14 +689,23 @@ rl.on("line", async (line: string) => {
         input: Record<string, unknown>,
         options: { toolUseID: string },
       ): Promise<PermissionResult> => {
-        emit({
-          type: "tool_confirmation",
-          toolName,
-          toolInput: input,
-          toolUseId: options.toolUseID,
-        });
         const reply = await new Promise<ReplyPayload>((resolve) => {
           pendingApproval = resolve;
+          // Drain buffered reply if one arrived before this callback
+          if (pendingReply) {
+            const buffered = pendingReply;
+            pendingReply = null;
+            pendingApproval = null;
+            resolve(buffered);
+            return;
+          }
+          // Only emit after pendingApproval is assigned
+          emit({
+            type: "tool_confirmation",
+            toolName,
+            toolInput: input,
+            toolUseId: options.toolUseID,
+          });
         });
         if (reply.content === "allow") {
           return {
