@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile, exists, mkdir, copyFile, readDir } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, exists, mkdir, readDir } from '@tauri-apps/plugin-fs';
 import { homeDir, resourceDir, join as pathJoin } from '@tauri-apps/api/path';
 import * as yaml from 'js-yaml';
 import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning } from '~/types';
@@ -392,14 +392,27 @@ export function resolveConfigForState(
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {
   await mkdir(dest, { recursive: true });
-  const entries = await readDir(src);
+  let entries;
+  try {
+    entries = await readDir(src);
+  } catch (err) {
+    if (import.meta.dev) console.warn('[OnCraft] copyDirRecursive readDir failed:', src, err);
+    return;
+  }
   for (const entry of entries) {
     const srcPath  = `${src}/${entry.name}`;
     const destPath = `${dest}/${entry.name}`;
     if (entry.isDirectory) {
       await copyDirRecursive(srcPath, destPath);
     } else {
-      await copyFile(srcPath, destPath);
+      // Use readTextFile + writeTextFile (permissions are explicitly granted)
+      // instead of copyFile (which may lack fs:allow-copy-file permission)
+      try {
+        const content = await readTextFile(srcPath);
+        await writeTextFile(destPath, content);
+      } catch (err) {
+        if (import.meta.dev) console.warn('[OnCraft] copyDirRecursive file copy failed:', srcPath, err);
+      }
     }
   }
 }
@@ -442,6 +455,7 @@ export async function installBundledPresets(): Promise<void> {
       // Ensure parent directories exist
       await mkdir(`${home}/.oncraft/presets`, { recursive: true });
 
+      if (import.meta.dev) console.log('[OnCraft] copying preset from:', srcDir, '→', destDir);
       await copyDirRecursive(srcDir, destDir);
       if (import.meta.dev) console.log('[OnCraft] installed bundled preset:', presetName);
     }
