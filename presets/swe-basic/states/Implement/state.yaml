@@ -1,2 +1,5 @@
 name: Implement
 color: "#fbbf24"
+icon: i-lucide-code
+requiredFiles:
+  - plan

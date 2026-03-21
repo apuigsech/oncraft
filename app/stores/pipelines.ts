@@ -13,6 +13,7 @@ export const usePipelinesStore = defineStore('pipelines', () => {
       columns: flowStore.flow.states.map(s => ({
         name:    s.name,
         color:   s.color,
+        icon:    s.icon,
         inputs:  [],
         outputs: [],
       })),
@@ -27,7 +28,7 @@ export const usePipelinesStore = defineStore('pipelines', () => {
       s => s.name === columnName || s.slug === columnName
     );
     if (!state) return undefined;
-    return { name: state.name, color: state.color };
+    return { name: state.name, color: state.color, icon: state.icon };
   }
 
   // loadForProject delegates to flowStore
