@@ -185,13 +185,118 @@ watch(() => props.filePath, loadFile, { immediate: true });
   margin: 0 auto;
 }
 
+/* ─── Markdown typography (GitHub-inspired dark theme) ─── */
+.viewer-markdown :deep(p) { margin: 0 0 16px 0; font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.viewer-markdown :deep(p:last-child) { margin-bottom: 0; }
+.viewer-markdown :deep(strong) { font-weight: 600; color: #f1f5f9; }
+.viewer-markdown :deep(em) { font-style: italic; }
+
+/* Headings */
+.viewer-markdown :deep(h1) { font-size: 1.75em; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: #f1f5f9; }
+.viewer-markdown :deep(h2) { font-size: 1.4em; font-weight: 600; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; color: #f1f5f9; }
+.viewer-markdown :deep(h3) { font-size: 1.15em; font-weight: 600; margin: 24px 0 10px; color: #e2e8f0; }
+.viewer-markdown :deep(h4) { font-size: 1em; font-weight: 600; margin: 20px 0 8px; color: #cbd5e1; }
+.viewer-markdown :deep(h5), .viewer-markdown :deep(h6) { font-size: 0.9em; font-weight: 600; margin: 16px 0 8px; color: #94a3b8; }
+
+/* Lists */
+.viewer-markdown :deep(ul), .viewer-markdown :deep(ol) { margin: 8px 0 16px 24px; padding: 0; }
+.viewer-markdown :deep(li) { margin-bottom: 6px; font-size: 14px; line-height: 1.7; color: var(--text-primary); }
+.viewer-markdown :deep(li > ul), .viewer-markdown :deep(li > ol) { margin-top: 4px; margin-bottom: 4px; }
+.viewer-markdown :deep(ul) { list-style-type: disc; }
+.viewer-markdown :deep(ol) { list-style-type: decimal; }
+
+/* Links */
+.viewer-markdown :deep(a) { color: #60a5fa; text-decoration: none; font-weight: 500; }
+.viewer-markdown :deep(a:hover) { text-decoration: underline; color: #93bbfc; }
+
+/* Blockquotes */
+.viewer-markdown :deep(blockquote) {
+  border-left: 4px solid #3b82f6;
+  margin: 16px 0;
+  padding: 8px 16px;
+  background: rgba(59, 130, 246, 0.06);
+  color: #94a3b8;
+  border-radius: 0 6px 6px 0;
+}
+.viewer-markdown :deep(blockquote p) { margin-bottom: 4px; }
+.viewer-markdown :deep(blockquote p:last-child) { margin-bottom: 0; }
+
+/* Horizontal rules */
+.viewer-markdown :deep(hr) { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+/* Tables */
+.viewer-markdown :deep(table) { border-collapse: collapse; margin: 16px 0; width: 100%; font-size: 13px; overflow: hidden; border-radius: 6px; border: 1px solid #334155; }
+.viewer-markdown :deep(thead) { background: #1e293b; }
+.viewer-markdown :deep(th) { padding: 10px 14px; text-align: left; font-weight: 600; color: #e2e8f0; border-bottom: 2px solid #334155; }
+.viewer-markdown :deep(td) { padding: 8px 14px; border-bottom: 1px solid #1e293b; color: var(--text-primary); }
+.viewer-markdown :deep(tbody tr:hover) { background: rgba(148, 163, 184, 0.04); }
+.viewer-markdown :deep(tbody tr:last-child td) { border-bottom: none; }
+
+/* Inline code */
+.viewer-markdown :deep(.inline-code) {
+  background: #1e293b;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.88em;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+}
+
+/* Code blocks */
+.viewer-markdown :deep(.code-block) {
+  position: relative;
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0f1219;
+  border: 1px solid #1e293b;
+}
+.viewer-markdown :deep(.code-block .code-lang) {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 10px;
+  color: #475569;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.viewer-markdown :deep(.code-block pre) { margin: 0; padding: 16px; overflow-x: auto; }
+.viewer-markdown :deep(.code-block code) {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Highlight.js Tokyo Night theme */
+.viewer-markdown :deep(.hljs) { color: #a9b1d6; background: transparent; }
+.viewer-markdown :deep(.hljs-keyword) { color: #bb9af7; }
+.viewer-markdown :deep(.hljs-string) { color: #9ece6a; }
+.viewer-markdown :deep(.hljs-number) { color: #ff9e64; }
+.viewer-markdown :deep(.hljs-function) { color: #7aa2f7; }
+.viewer-markdown :deep(.hljs-title) { color: #7aa2f7; }
+.viewer-markdown :deep(.hljs-params) { color: #e0af68; }
+.viewer-markdown :deep(.hljs-comment) { color: #565f89; font-style: italic; }
+.viewer-markdown :deep(.hljs-built_in) { color: #7dcfff; }
+.viewer-markdown :deep(.hljs-type) { color: #2ac3de; }
+.viewer-markdown :deep(.hljs-attr) { color: #7aa2f7; }
+.viewer-markdown :deep(.hljs-variable) { color: #c0caf5; }
+.viewer-markdown :deep(.hljs-literal) { color: #ff9e64; }
+.viewer-markdown :deep(.hljs-punctuation) { color: #89ddff; }
+.viewer-markdown :deep(.hljs-meta) { color: #565f89; }
+
+/* Images */
+.viewer-markdown :deep(img) { max-width: 100%; border-radius: 6px; margin: 12px 0; }
+
+/* ─── Raw code viewer (non-markdown files) ─── */
 .viewer-code { max-width: 100%; }
 
 .code-block {
   position: relative;
-  background: var(--bg-secondary);
+  background: #0f1219;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid #1e293b;
   overflow: hidden;
 }
 .code-lang {
@@ -199,8 +304,9 @@ watch(() => props.filePath, loadFile, { immediate: true });
   top: 8px;
   right: 12px;
   font-size: 10px;
-  color: var(--text-muted);
+  color: #475569;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
 .code-block pre {
@@ -209,9 +315,9 @@ watch(() => props.filePath, loadFile, { immediate: true });
   overflow-x: auto;
 }
 .code-block code {
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-primary);
+  line-height: 1.6;
+  color: #a9b1d6;
 }
 </style>
