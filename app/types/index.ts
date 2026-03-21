@@ -44,6 +44,58 @@ export interface ColumnConfig {
   prompt?: string;
 }
 
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export interface AgentConfig {
+  model?: ModelAlias;
+  effort?: EffortLevel;
+  permissionMode?: PermissionMode;
+  verbosity?: VerbosityLevel;
+}
+
+export interface FlowState {
+  slug: string;           // directory name — maps to Card.columnName
+  name: string;           // display name
+  color: string;
+  icon?: string;          // Iconify name e.g. "heroicons:magnifying-glass"
+  agent?: Partial<AgentConfig>;
+  agents?: string[];      // agent names → resolved at runtime
+  skills?: string[];
+  mcpServers?: Record<string, McpServerConfig>;
+  tools?: {
+    allowed?: string[];
+    disallowed?: string[];
+  };
+  requiredFiles?: string[];
+  prompt?: string;        // loaded from prompt.md
+  triggerPrompt?: string; // loaded from trigger.md
+}
+
+export interface Flow {
+  name: string;
+  preset?: string;
+  agent: AgentConfig;
+  agents: string[];
+  skills: string[];
+  mcpServers: Record<string, McpServerConfig>;
+  tools: {
+    allowed: string[];
+    disallowed: string[];
+  };
+  stateOrder: string[];
+  states: FlowState[];    // populated from filesystem
+}
+
+export interface FlowWarning {
+  scope: 'flow' | 'state';
+  stateSlug?: string;
+  message: string;
+}
+
 export interface CardLinkedIssue {
   number: number;
   title?: string;       // cached title for display without fetching
@@ -110,8 +162,11 @@ export interface SessionConfig {
 }
 
 export interface TemplateContext {
-  session: { name: string; id: string };
+  session: {
+    name: string;
+    id: string;
+    files: Record<string, string>;  // label → file path e.g. { plan: "docs/plan.md" }
+  };
   project: { path: string; name: string };
   card: { description: string };
-  column: { name: string };
 }
