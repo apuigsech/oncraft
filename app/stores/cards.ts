@@ -100,6 +100,16 @@ export const useCardsStore = defineStore('cards', () => {
     _debouncedDbWrite(card);
   }
 
+  function updateCardMetrics(cardId: string, metrics: { costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }): void {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.costUsd = metrics.costUsd;
+    card.inputTokens = metrics.inputTokens;
+    card.outputTokens = metrics.outputTokens;
+    card.durationMs = metrics.durationMs;
+    _debouncedDbWrite(card);
+  }
+
   async function reorderColumn(columnName: string, cardIds: string[]): Promise<void> {
     await db.updateCardsColumn(cardIds, columnName);
     for (let i = 0; i < cardIds.length; i++) {
@@ -158,7 +168,8 @@ export const useCardsStore = defineStore('cards', () => {
 
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
-    addCard, moveCard, updateCardState, updateCardSessionId, updateCardConsoleSessionId, updateCardInfo,
+    addCard, moveCard, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
+    updateCardMetrics, updateCardInfo,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,
   };
 });
