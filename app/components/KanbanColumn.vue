@@ -42,25 +42,17 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   const newIndex = evt.newIndex ?? 0;
   if (!card) return;
 
-  // requiredFiles gate — check before allowing cross-column move
-  if (fromSlug !== toSlug) {
-    const missing = flowStore.checkRequiredFiles(toSlug, card.linkedFiles);
-    if (missing.length > 0) {
-      // Abort drag: revert DOM
-      evt.from.appendChild(evt.to.children[newIndex] ?? evt.data as unknown as Node);
-      missingFiles.value            = missing;
-      showRequiredFilesDialog.value = true;
-      dragCards.value = [...storeCards.value];
-      return;
-    }
-  }
-
   syncing = true;
   try {
     if (fromSlug !== toSlug) {
-      await cardsStore.moveCard(card.id, toSlug, newIndex);
-      // Fire trigger prompt if the target state has one
-      await sessionsStore.fireTriggerPrompt(card.id, fromSlug, toSlug);
+      const result = await cardsStore.moveCardToColumn(card.id, toSlug, newIndex);
+      if (!result.success && result.missingFiles) {
+        evt.from.appendChild(evt.to.children[newIndex] ?? evt.data as unknown as Node);
+        missingFiles.value            = result.missingFiles;
+        showRequiredFilesDialog.value = true;
+        dragCards.value = [...storeCards.value];
+        return;
+      }
     } else {
       await cardsStore.applyColumnOrder(props.flowState.slug, dragCards.value);
     }

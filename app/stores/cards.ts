@@ -69,13 +69,33 @@ export const useCardsStore = defineStore('cards', () => {
     return card;
   }
 
-  async function moveCard(cardId: string, toColumn: string, newOrder: number): Promise<void> {
+  async function moveCardToColumn(
+    cardId: string,
+    toSlug: string,
+    newOrder?: number,
+  ): Promise<{ success: boolean; missingFiles?: string[] }> {
     const card = cards.value.find(c => c.id === cardId);
-    if (!card) return;
-    card.columnName = toColumn;
-    card.columnOrder = newOrder;
+    if (!card) return { success: false };
+
+    const fromSlug = card.columnName;
+    if (fromSlug === toSlug) return { success: true };
+
+    // requiredFiles gate
+    const flowStore = useFlowStore();
+    const missing = flowStore.checkRequiredFiles(toSlug, card.linkedFiles);
+    if (missing.length > 0) return { success: false, missingFiles: missing };
+
+    // Update fields + persist
+    card.columnName = toSlug;
+    card.columnOrder = newOrder ?? cardsByColumn(toSlug).length;
     card.lastActivityAt = new Date().toISOString();
     await db.updateCard(card);
+
+    // Fire trigger prompt
+    const sessionsStore = useSessionsStore();
+    await sessionsStore.fireTriggerPrompt(cardId, fromSlug, toSlug);
+
+    return { success: true };
   }
 
   // N-2: These hot-path functions update in-memory state immediately
@@ -184,7 +204,7 @@ export const useCardsStore = defineStore('cards', () => {
 
   return {
     cards, loadedProjectId, cardsByColumn, loadForProject,
-    addCard, moveCard, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
+    addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
     updateCardMetrics, updateCardInfo,
     updateCardLinkedFiles, updateCardLinkedIssues,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,

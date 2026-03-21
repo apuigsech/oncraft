@@ -387,7 +387,18 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
     } else if (req.action === 'update_current_card') {
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card) {
-        const allowed = ['name', 'description', 'columnName', 'state', 'tags', 'archived', 'linkedFiles', 'linkedIssues'] as const;
+        // Handle column move via centralized method (validates requiredFiles + fires trigger)
+        if (req.columnName !== undefined && req.columnName !== card.columnName) {
+          const result = await cardsStore.moveCardToColumn(card.id, req.columnName as string);
+          if (!result.success) {
+            responseData = { success: false, error: 'Missing required files', missingFiles: result.missingFiles };
+            await proc.write(JSON.stringify({ cmd: 'session_response', requestId: req.requestId, data: responseData }));
+            return;
+          }
+        }
+
+        // Apply remaining non-column fields
+        const allowed = ['name', 'description', 'state', 'tags', 'archived', 'linkedFiles', 'linkedIssues'] as const;
         for (const field of allowed) {
           if (req[field] !== undefined) {
             (card as any)[field] = req[field];

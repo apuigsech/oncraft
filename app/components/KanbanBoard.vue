@@ -35,7 +35,7 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
 
   syncing = true;
   try {
-    await cardsStore.moveCard(card.id, toSlug, newIndex);
+    await cardsStore.moveCardToColumn(card.id, toSlug, newIndex);
   } finally {
     orphanedCards.value = [...storeOrphaned.value];
     syncing = false;
