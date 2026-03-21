@@ -656,10 +656,28 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
   let project = await readFlowFromDir(projectPath);
 
   if (!project) {
-    // No flow config at all — create defaults
-    const defaults = makeDefaultFlow();
-    warnings.push({ scope: 'flow', message: 'No .oncraft/flow.yaml found, using defaults' });
-    return { flow: defaults, flowMd: '', warnings };
+    // No .oncraft/flow.yaml — bootstrap the project with the swe-basic preset.
+    // Write a minimal flow.yaml pointing to the preset so the project is self-describing
+    // and the user can customise it later.
+    const onCraftDir = `${projectPath}/${ONCRAFT_DIR}`;
+    try {
+      await mkdir(onCraftDir, { recursive: true });
+      await writeTextFile(
+        `${projectPath}/${FLOW_FILE}`,
+        yaml.dump({ preset: 'swe-basic' }, { lineWidth: 80 }),
+      );
+      if (import.meta.dev) console.log('[OnCraft] bootstrapped .oncraft/flow.yaml with preset: swe-basic');
+    } catch (err) {
+      if (import.meta.dev) console.warn('[OnCraft] could not write default flow.yaml:', err);
+    }
+    // Re-read so the normal preset-resolution path handles everything from here
+    project = await readFlowFromDir(projectPath);
+  }
+
+  if (!project) {
+    // Absolute fallback (e.g. FS write failed) — return hardcoded defaults in-memory only
+    warnings.push({ scope: 'flow', message: 'Could not initialise .oncraft/flow.yaml — using in-memory defaults' });
+    return { flow: makeDefaultFlow(), flowMd: '', warnings };
   }
 
   // Resolve preset if referenced
