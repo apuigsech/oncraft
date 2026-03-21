@@ -644,6 +644,7 @@ rl.on("line", async (line: string) => {
       env: claudeEnv,
       cwd: projectPath,
       resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
+      forkSession: cmd.forkSession ? true : undefined,
       abortController: abort,
       model: (cmd.model as string) || undefined,
       effort: (cmd.effort as string) || undefined,

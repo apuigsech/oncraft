@@ -81,6 +81,7 @@ export async function spawnSession(
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
   columnPrompt?: string,
+  forkSession?: boolean,
 ): Promise<void> {
   // Kill existing process for this card if any
   if (processes.has(cardId)) {
@@ -228,6 +229,7 @@ export async function spawnSession(
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
     ...(imagePaths?.length ? { imagePaths } : {}),
     ...(columnPrompt ? { columnPrompt } : {}),
+    ...(forkSession ? { forkSession: true } : {}),
   });
   if (import.meta.dev) {
     console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}`);
@@ -243,6 +245,7 @@ export async function sendStart(
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
   columnPrompt?: string,
+  forkSession?: boolean,
 ): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
@@ -266,6 +269,7 @@ export async function sendStart(
     ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
     ...(imagePaths?.length ? { imagePaths } : {}),
     ...(columnPrompt ? { columnPrompt } : {}),
+    ...(forkSession ? { forkSession: true } : {}),
   });
   await proc.write(startCmd);
 }
