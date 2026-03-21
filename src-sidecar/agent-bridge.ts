@@ -43,7 +43,13 @@ interface ReplyPayload {
   updatedInput?: Record<string, unknown>;
 }
 let pendingApproval: ((answer: ReplyPayload) => void) | null = null;
-let currentAbort: AbortController | null = null;
+
+// Persistent session state
+let activeStream: MessageStream | null = null;
+let activeAbort: AbortController | null = null;
+let activeSessionConfig: { projectPath: string; sessionId?: string } | null = null;
+let sessionAlive: boolean = false;
+let knownSessionId: string | null = null;
 
 // ---- async message queue for persistent sessions ----
 // Single-consumer queue: the SDK's streamInput loop is the only consumer.
@@ -86,6 +92,39 @@ class MessageStream {
     }
     return new Promise((resolve) => { this.waitResolve = resolve; });
   }
+}
+
+// ---- build SDK user message from stdin command data ----
+function buildUserMessage(
+  prompt: string,
+  imagePaths?: { path: string; mediaType: string }[],
+  sessionId?: string,
+): SDKUserMessage {
+  const content: Record<string, unknown>[] = [];
+
+  if (imagePaths?.length) {
+    for (const img of imagePaths) {
+      try {
+        const data = readFileSync(img.path, "base64");
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: img.mediaType, data },
+        });
+        try { unlinkSync(img.path); } catch { /* ignore */ }
+      } catch (err) {
+        process.stderr.write(`[agent-bridge] failed to read image ${img.path}: ${err}\n`);
+      }
+    }
+  }
+
+  content.push({ type: "text", text: prompt });
+
+  return {
+    type: "user",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+    session_id: sessionId || "",
+  } as unknown as SDKUserMessage;
 }
 
 // ---- message translation ----
@@ -376,6 +415,57 @@ function translateMessage(
   };
 }
 
+// ---- persistent session loop ----
+// Runs in background (not awaited) for the lifetime of the card session.
+// The for-await loop consumes messages from the SDK as they arrive.
+// It exits when the MessageStream finishes or an error/abort occurs.
+async function runSession(
+  stream: MessageStream,
+  options: Record<string, unknown>,
+): Promise<void> {
+  sessionAlive = true;
+  try {
+    const conversation = query({ prompt: stream as any, options });
+    for await (const message of conversation) {
+      // Capture session ID from init message
+      if (message.type === "system") {
+        const sysMsg = message as Record<string, unknown>;
+        if (sysMsg.subtype === "init" && sysMsg.session_id) {
+          knownSessionId = sysMsg.session_id as string;
+        }
+      }
+
+      const translated = translateMessage(message);
+      if (translated) {
+        if (Array.isArray(translated)) {
+          for (const t of translated) emit(t);
+        } else {
+          emit(translated);
+        }
+      }
+    }
+  } catch (err: unknown) {
+    process.stderr.write(`[agent-bridge] session error: ${String(err)}\n`);
+    process.stderr.write(`[agent-bridge] error stack: ${(err as Error).stack || "no stack"}\n`);
+    if ((err as Error).name === "AbortError") {
+      emit({
+        type: "system",
+        subtype: "interrupted",
+        content: "Query interrupted",
+      });
+    } else {
+      emitError(String(err));
+      emit({ type: "system", subtype: "session_died", content: String(err) });
+    }
+  } finally {
+    sessionAlive = false;
+    activeStream = null;
+    activeAbort = null;
+    activeSessionConfig = null;
+    knownSessionId = null;
+  }
+}
+
 // ---- main loop ----
 const rl = createInterface({ input: process.stdin, terminal: false });
 
@@ -398,133 +488,121 @@ rl.on("line", async (line: string) => {
     return;
   }
 
-  // Handle interrupt
+  // Handle interrupt — kill the persistent session, allow fresh start
   if (cmd.cmd === "interrupt") {
-    if (currentAbort) {
-      currentAbort.abort();
+    if (activeAbort) {
+      // Set sessionAlive=false synchronously BEFORE aborting to prevent
+      // race condition where a cmd:start arrives before runSession's
+      // finally block executes.
+      sessionAlive = false;
+      const abort = activeAbort;
+      activeStream = null;
+      activeAbort = null;
+      activeSessionConfig = null;
+      knownSessionId = null;
+      abort.abort();
     }
     return;
   }
 
-  // Handle stop
+  // Handle stop — clean shutdown of persistent session
   if (cmd.cmd === "stop") {
+    // Unblock any pending tool approval so the SDK doesn't hang
+    if (pendingApproval) {
+      pendingApproval({ content: "deny" });
+      pendingApproval = null;
+    }
+    // Signal the stream to finish — SDK will close the CLI process
+    if (activeStream) {
+      activeStream.finish();
+    }
     process.exit(0);
   }
 
-  // Handle start
+  // Handle start — create or reuse persistent session
   if (cmd.cmd === "start") {
-    currentAbort = new AbortController();
-    process.stderr.write(`[agent-bridge] starting query, cwd=${cmd.projectPath}\n`);
+    const projectPath = cmd.projectPath as string;
+    const imagePaths = cmd.imagePaths as { path: string; mediaType: string }[] | undefined;
 
-    try {
-      // Build multimodal prompt when images are attached.
-      // Images are passed as file paths (written by the frontend to temp dir)
-      // to avoid sending large base64 payloads over stdin IPC.
-      // The SDK's query() accepts prompt: string | AsyncIterable<SDKUserMessage>.
-      const imagePaths = cmd.imagePaths as { path: string; mediaType: string }[] | undefined;
-      let promptValue: string | AsyncIterable<SDKUserMessage>;
-      if (imagePaths && Array.isArray(imagePaths) && imagePaths.length > 0) {
-        process.stderr.write(`[agent-bridge] multimodal prompt with ${imagePaths.length} image(s) from temp files\n`);
-        const contentBlocks: Record<string, unknown>[] = [];
-        for (const img of imagePaths) {
-          try {
-            const data = readFileSync(img.path, "base64");
-            contentBlocks.push({
-              type: "image",
-              source: { type: "base64", media_type: img.mediaType, data },
-            });
-            // Clean up temp file after reading
-            try { unlinkSync(img.path); } catch { /* ignore */ }
-          } catch (err) {
-            process.stderr.write(`[agent-bridge] failed to read image ${img.path}: ${err}\n`);
-          }
-        }
-        if (contentBlocks.length > 0) {
-          contentBlocks.push({ type: "text", text: cmd.prompt as string });
-          const userMessage = {
-            type: "user" as const,
-            message: { role: "user" as const, content: contentBlocks },
-            parent_tool_use_id: null,
-            session_id: "",
-          } as unknown as SDKUserMessage;
-          promptValue = (async function* () { yield userMessage; })();
-        } else {
-          // All images failed to load, fall back to text-only
-          promptValue = cmd.prompt as string;
-        }
-      } else {
-        promptValue = cmd.prompt as string;
+    if (sessionAlive && activeStream && activeSessionConfig) {
+      // Active session exists — enqueue a new user message
+      if (activeSessionConfig.projectPath !== projectPath) {
+        process.stderr.write(`[agent-bridge] projectPath mismatch: active=${activeSessionConfig.projectPath}, requested=${projectPath}\n`);
+        emitError("Cannot change project path within an active session");
+        return;
       }
-
-      const conversation = query({
-        prompt: promptValue as any,
-        options: {
-          pathToClaudeCodeExecutable: cliPath,
-          executable: "node",
-          env: claudeEnv,
-          cwd: cmd.projectPath as string,
-          resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
-          abortController: currentAbort,
-          model: (cmd.model as string) || undefined,
-          effort: (cmd.effort as string) || undefined,
-          permissionMode: (cmd.permissionMode as string) || "default",
-          settingSources: ["user", "project"],
-          includePartialMessages: true,
-          ...(cmd.worktreeName ? {
-            extraArgs: { worktree: cmd.worktreeName as string },
-          } : {}),
-          canUseTool: async (
-            toolName: string,
-            input: Record<string, unknown>,
-            options: { toolUseID: string },
-          ): Promise<PermissionResult> => {
-            // Emit tool_confirmation to stdout and block until reply arrives
-            emit({
-              type: "tool_confirmation",
-              toolName,
-              toolInput: input,
-              toolUseId: options.toolUseID,
-            });
-            // Wait for the reply command from stdin
-            const reply = await new Promise<ReplyPayload>((resolve) => {
-              pendingApproval = resolve;
-            });
-            if (reply.content === "allow") {
-              return {
-                behavior: "allow" as const,
-                ...(reply.updatedInput ? { updatedInput: reply.updatedInput } : {}),
-              };
-            }
-            return { behavior: "deny" as const, message: "User denied" };
-          },
-        },
-      });
-
-      for await (const message of conversation) {
-        const translated = translateMessage(message);
-        if (translated) {
-          if (Array.isArray(translated)) {
-            for (const t of translated) emit(t);
-          } else {
-            emit(translated);
-          }
-        }
-      }
-    } catch (err: unknown) {
-      process.stderr.write(`[agent-bridge] error: ${String(err)}\n`);
-      process.stderr.write(`[agent-bridge] error stack: ${(err as Error).stack || 'no stack'}\n`);
-      if ((err as Error).name === "AbortError") {
-        emit({
-          type: "system",
-          subtype: "interrupted",
-          content: "Query interrupted",
-        });
-      } else {
-        emitError(String(err));
-      }
-    } finally {
-      currentAbort = null;
+      process.stderr.write(`[agent-bridge] enqueueing message into active session\n`);
+      const userMsg = buildUserMessage(
+        cmd.prompt as string,
+        imagePaths,
+        knownSessionId || undefined,
+      );
+      activeStream.enqueue(userMsg);
+      return;
     }
+
+    // No active session — create a new persistent session
+    process.stderr.write(`[agent-bridge] starting persistent session, cwd=${projectPath}\n`);
+
+    const stream = new MessageStream();
+    const abort = new AbortController();
+
+    activeStream = stream;
+    activeAbort = abort;
+    activeSessionConfig = {
+      projectPath,
+      sessionId: cmd.sessionId as string | undefined,
+    };
+
+    // Build and enqueue the first user message
+    const userMsg = buildUserMessage(
+      cmd.prompt as string,
+      imagePaths,
+    );
+    stream.enqueue(userMsg);
+
+    // Build query options (same as before, but bound once per session)
+    const queryOptions = {
+      pathToClaudeCodeExecutable: cliPath,
+      executable: "node",
+      env: claudeEnv,
+      cwd: projectPath,
+      resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
+      abortController: abort,
+      model: (cmd.model as string) || undefined,
+      effort: (cmd.effort as string) || undefined,
+      permissionMode: (cmd.permissionMode as string) || "default",
+      settingSources: ["user", "project"],
+      includePartialMessages: true,
+      ...(cmd.worktreeName ? {
+        extraArgs: { worktree: cmd.worktreeName as string },
+      } : {}),
+      canUseTool: async (
+        toolName: string,
+        input: Record<string, unknown>,
+        options: { toolUseID: string },
+      ): Promise<PermissionResult> => {
+        emit({
+          type: "tool_confirmation",
+          toolName,
+          toolInput: input,
+          toolUseId: options.toolUseID,
+        });
+        const reply = await new Promise<ReplyPayload>((resolve) => {
+          pendingApproval = resolve;
+        });
+        if (reply.content === "allow") {
+          return {
+            behavior: "allow" as const,
+            ...(reply.updatedInput ? { updatedInput: reply.updatedInput } : {}),
+          };
+        }
+        return { behavior: "deny" as const, message: "User denied" };
+      },
+    };
+
+    // Launch session in background — do not await
+    runSession(stream, queryOptions);
     return;
   }
 
@@ -751,7 +829,8 @@ rl.on("line", async (line: string) => {
   emitError(`Unknown command: ${cmd.cmd}`);
 });
 
-// Handle stdin close (Tauri killed us)
+// Handle stdin close (Tauri killed us) — clean up persistent session
 rl.on("close", () => {
+  if (activeAbort) activeAbort.abort();
   process.exit(0);
 });
