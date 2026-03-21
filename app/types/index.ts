@@ -31,6 +31,7 @@ export interface Card {
   durationMs?: number;
   linkedFiles?: Record<string, string>;    // { label: relativePath } e.g. { "plan": "docs/plan.md" }
   linkedIssues?: CardLinkedIssue[];
+  forkedFromId?: string;
 }
 
 export type CardState = 'active' | 'idle' | 'error' | 'completed';
