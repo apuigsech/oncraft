@@ -1,2 +1,6 @@
 name: Plan
 color: "#34d399"
+icon: i-lucide-list-checks
+artifact: plan
+requiredFiles:
+  - spec

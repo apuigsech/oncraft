@@ -1,5 +1,6 @@
 name: Review
 color: "#f472b6"
+icon: i-lucide-search-check
 requiredFiles:
   - spec
   - plan

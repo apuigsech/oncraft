@@ -1,5 +1,5 @@
-The card "{{ session.name }}" has moved to the Implementation phase.
+The card "{{ session.name }}" has moved to the Implement phase.
 
 {{ card.description }}
 
-Work through the implementation systematically. If a plan exists at {{ session.files.plan }}, follow it. Commit progress frequently.
+Read the implementation plan at {{ card.linkedFiles.plan }} and work through it systematically. Commit progress frequently.

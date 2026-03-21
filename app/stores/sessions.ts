@@ -412,7 +412,8 @@ export const useSessionsStore = defineStore('sessions', () => {
         files: card.linkedFiles || {},
       },
       project: { path: project.path, name: project.name },
-      card:    { description: card.description },
+      card:    { description: card.description, linkedFiles: card.linkedFiles || {} },
+      column:  { from: card.columnName, to: toSlug },
     });
 
     await send(cardId, prompt);
