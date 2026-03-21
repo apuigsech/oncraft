@@ -253,29 +253,42 @@ export const useSessionsStore = defineStore('sessions', () => {
       config.worktreeName = card.worktreeName;
     }
 
-    // Resolve column workflow prompt for system prompt injection
-    let columnPrompt: string | undefined;
-    if (card) {
-      const pipelinesStore = usePipelinesStore();
-      const colConfig = pipelinesStore.getColumnConfig(project.path, card.columnName);
-      if (colConfig?.prompt) {
-        columnPrompt = resolveTemplate(colConfig.prompt, {
-          session: { name: card.name, id: card.sessionId },
-          project: { path: project.path, name: project.name },
-          card: { description: card.description },
-          column: { name: card.columnName },
-        });
-        const parts: string[] = [];
-        if (colConfig.inputs?.length) parts.push(`Expected inputs: ${colConfig.inputs.join(', ')}`);
-        if (colConfig.outputs?.length) parts.push(`Expected outputs: ${colConfig.outputs.join(', ')}`);
-        if (parts.length) columnPrompt += '\n\n' + parts.join('\n');
+    // Resolve Flow config for this card's current state (Flow + FlowState layers)
+    const flowStore = useFlowStore();
+    let flowPayload: import('~/services/claude-process').FlowPayload | undefined;
+
+    if (card && flowStore.flow) {
+      const flowConfig = await flowStore.getResolvedConfig(card.columnName, project.path);
+      if (flowConfig) {
+        // Apply Flow agent defaults under card overrides
+        if (!config.model          && flowConfig.agent.model)          config.model          = flowConfig.agent.model;
+        if (!config.effort         && flowConfig.agent.effort)         config.effort         = flowConfig.agent.effort;
+        if (!config.permissionMode && flowConfig.agent.permissionMode) config.permissionMode = flowConfig.agent.permissionMode;
+
+        flowPayload = {
+          systemPromptAppend: flowConfig.systemPromptAppend || undefined,
+          allowedTools:       flowConfig.allowedTools.length   ? flowConfig.allowedTools   : undefined,
+          disallowedTools:    flowConfig.disallowedTools.length ? flowConfig.disallowedTools : undefined,
+          agents: flowConfig.agents.length ? Object.fromEntries(
+            flowConfig.agents.map(a => [a.name || a.description.slice(0, 30), {
+              description:     a.description,
+              prompt:          a.prompt,
+              model:           a.model,
+              tools:           a.tools,
+              disallowedTools: a.disallowedTools,
+              skills:          a.skills,
+              maxTurns:        a.maxTurns,
+            }])
+          ) : undefined,
+          mcpServers: Object.keys(flowConfig.mcpServers).length ? flowConfig.mcpServers : undefined,
+        };
       }
     }
 
     // If sidecar is already alive (previous query completed), reuse it
     if (isProcessActive(cardId)) {
       try {
-        await sendStart(cardId, project.path, message, sessionId, config, images, columnPrompt, forkSession);
+        await sendStart(cardId, project.path, message, sessionId, config, images, flowPayload, forkSession);
       } catch (err) {
         appendPart(cardId, {
           id: `error-${Date.now()}`,
@@ -290,7 +303,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       // No sidecar running — spawn a new one
       setupMessageListener(cardId);
       try {
-        await spawnSession(cardId, project.path, message, sessionId, config, images, columnPrompt, forkSession);
+        await spawnSession(cardId, project.path, message, sessionId, config, images, flowPayload, forkSession);
       } catch (err) {
         appendPart(cardId, {
           id: `error-${Date.now()}`,
@@ -380,6 +393,31 @@ export const useSessionsStore = defineStore('sessions', () => {
   function closeChat(): void { activeChatCardId.value = null; }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
 
+  // Fire the trigger prompt when a card moves to a new FlowState
+  // Called by KanbanColumn.onDragEnd after a successful card move.
+  async function fireTriggerPrompt(cardId: string, toSlug: string): Promise<void> {
+    const flowStore  = useFlowStore();
+    const raw        = flowStore.getTriggerPrompt(toSlug);
+    if (!raw) return;
+
+    const cardsStore = useCardsStore();
+    const card       = cardsStore.cards.find(c => c.id === cardId);
+    const project    = useProjectsStore().activeProject;
+    if (!card || !project) return;
+
+    const prompt = resolveTemplate(raw, {
+      session: {
+        name:  card.name,
+        id:    card.sessionId || '',
+        files: card.linkedFiles || {},
+      },
+      project: { path: project.path, name: project.name },
+      card:    { description: card.description },
+    });
+
+    await send(cardId, prompt);
+  }
+
   // ME-3: Purge in-memory messages for a card (e.g. when archived or removed)
   function purgeCard(cardId: string): void {
     delete messages[cardId];
@@ -393,7 +431,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   return {
     messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
-    appendPart, resolveActionPart, handleMeta,
+    appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, purgeCard,
   };
