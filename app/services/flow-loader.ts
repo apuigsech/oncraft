@@ -415,19 +415,27 @@ export async function installBundledPresets(): Promise<void> {
       if (destExists) continue; // already installed — never overwrite user customizations
 
       // In production, presets are bundled inside resourceDir/presets/.
-      // In dev, resourceDir points to src-tauri/ and the presets live at ../presets/
-      // relative to that. Try both locations.
-      let srcDir = await pathJoin(resDir, 'presets', presetName);
-      let srcExists = await exists(srcDir);
+      // In dev, resourceDir() returns src-tauri/target/debug/ or similar.
+      // The presets/ dir lives at the repo root. Try multiple paths.
+      const candidates = [
+        await pathJoin(resDir, 'presets', presetName),           // production bundle
+        await pathJoin(resDir, '..', 'presets', presetName),     // src-tauri/../presets
+        await pathJoin(resDir, '..', '..', 'presets', presetName), // src-tauri/target/../../presets
+        await pathJoin(resDir, '..', '..', '..', 'presets', presetName), // deeper nesting
+      ];
 
-      if (!srcExists) {
-        // Dev fallback: resourceDir is src-tauri/, presets are at ../presets/
-        srcDir = await pathJoin(resDir, '..', 'presets', presetName);
-        srcExists = await exists(srcDir);
+      let srcDir = '';
+      let srcExists = false;
+      for (const candidate of candidates) {
+        if (await exists(candidate)) {
+          srcDir = candidate;
+          srcExists = true;
+          break;
+        }
       }
 
       if (!srcExists) {
-        if (import.meta.dev) console.warn('[OnCraft] bundled preset not found at:', srcDir);
+        if (import.meta.dev) console.warn('[OnCraft] bundled preset not found. Tried:', candidates);
         continue;
       }
 
