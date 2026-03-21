@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { VueDraggable } from 'vue-draggable-plus';
+import type { Card } from '~/types';
 
 const projectsStore = useProjectsStore();
 const flowStore = useFlowStore();
@@ -10,11 +12,17 @@ const columns = computed(() =>
 );
 
 // Orphaned cards: columnName slug not in stateOrder
-const orphanedCards = computed(() =>
+const orphanedCards = ref<Card[]>([]);
+
+// Keep orphanedCards in sync with store
+const storeOrphaned = computed(() =>
   cardsStore.cards.filter(
     c => !c.archived && !flowStore.stateOrder.includes(c.columnName)
   )
 );
+watch(storeOrphaned, (newCards) => {
+  orphanedCards.value = [...newCards];
+}, { immediate: true, deep: true });
 </script>
 
 <template>
@@ -33,15 +41,25 @@ const orphanedCards = computed(() =>
           <UBadge variant="soft" color="neutral" size="sm">{{ orphanedCards.length }}</UBadge>
         </div>
       </div>
-      <div class="column-body">
-        <p class="unknown-hint">These cards reference a column that no longer exists. Move them to a valid column.</p>
+      <VueDraggable
+        v-model="orphanedCards"
+        group="kanban"
+        :animation="150"
+        ghost-class="ghost"
+        draggable=".kanban-card"
+        :force-fallback="true"
+        :delay="60"
+        data-column-name="_unknown"
+        class="column-body"
+      >
+        <p class="unknown-hint">These cards reference a column that no longer exists. Drag them to a valid column.</p>
         <KanbanCard
           v-for="card in orphanedCards"
           :key="card.id"
           :card="card"
           column-color="#6b7280"
         />
-      </div>
+      </VueDraggable>
     </div>
   </div>
 </template>
