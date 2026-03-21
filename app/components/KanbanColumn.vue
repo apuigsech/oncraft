@@ -110,7 +110,8 @@ async function createForkedSession(name: string, description: string, useWorktre
     <!-- Column header -->
     <div class="column-header">
       <div class="column-title">
-        <span class="color-dot" :style="{ background: flowState.color }" />
+        <UIcon v-if="flowState.icon" :name="flowState.icon" class="column-icon" :style="{ color: flowState.color }" />
+        <span v-else class="color-dot" :style="{ background: flowState.color }" />
         <span>{{ flowState.name }}</span>
         <UBadge variant="soft" color="neutral" size="sm" class="card-count">
           {{ dragCards.length }}
@@ -210,6 +211,7 @@ async function createForkedSession(name: string, description: string, useWorktre
   font-weight: 600;
 }
 .color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.column-icon { font-size: 16px; flex-shrink: 0; }
 .warning-icon { font-size: 13px; color: #fbbf24; cursor: help; }
 .header-actions { display: flex; gap: 2px; }
 .action-btn {
