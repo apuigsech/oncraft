@@ -59,6 +59,7 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
           <UBadge variant="soft" color="neutral" size="sm">{{ orphanedCards.length }}</UBadge>
         </div>
       </div>
+      <p class="unknown-hint">These cards reference a column that no longer exists. Drag them to a valid column.</p>
       <VueDraggable
         v-model="orphanedCards"
         group="kanban"
@@ -71,7 +72,6 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
         class="column-body"
         @end="onOrphanDragEnd"
       >
-        <p class="unknown-hint">These cards reference a column that no longer exists. Drag them to a valid column.</p>
         <KanbanCard
           v-for="card in orphanedCards"
           :key="card.id"
@@ -87,5 +87,5 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
 .kanban-board { display: flex; gap: 12px; padding: 16px; height: 100%; overflow-x: auto; align-items: stretch; }
 .column-unknown { min-width: 260px; max-width: 300px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-primary); border-radius: 8px; border: 1px solid rgba(234, 179, 8, 0.4); height: 100%; }
 .column-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 100px; }
-.unknown-hint { font-size: 11px; color: var(--text-muted); padding: 4px 2px; }
+.unknown-hint { font-size: 11px; color: var(--text-muted); padding: 4px 10px; }
 </style>
