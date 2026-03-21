@@ -53,6 +53,19 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute("ALTER TABLE cards ADD COLUMN console_session_id TEXT DEFAULT ''");
   } catch { /* column already exists */ }
+  // Migration: add cost tracking columns if missing (for existing DBs)
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN cost_usd REAL DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN input_tokens INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN output_tokens INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
+  try {
+    await db.execute('ALTER TABLE cards ADD COLUMN duration_ms INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -96,6 +109,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     console_session_id: string;
     state: string; tags: string; created_at: string; last_activity_at: string;
     archived: number; use_worktree: number; worktree_name: string;
+    cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => ({
     id: r.id, projectId: r.project_id, name: r.name, description: r.description,
@@ -106,6 +120,10 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     archived: r.archived === 1,
     useWorktree: r.use_worktree === 1,
     worktreeName: r.worktree_name || undefined,
+    costUsd: r.cost_usd || 0,
+    inputTokens: r.input_tokens || 0,
+    outputTokens: r.output_tokens || 0,
+    durationMs: r.duration_ms || 0,
   }));
 }
 
@@ -125,12 +143,15 @@ export async function updateCard(card: Card): Promise<void> {
   await d.execute(
     `UPDATE cards SET name=$1, description=$2, column_name=$3, column_order=$4,
      session_id=$5, state=$6, tags=$7, last_activity_at=$8, archived=$9,
-     use_worktree=$10, worktree_name=$11, console_session_id=$12 WHERE id=$13`,
+     use_worktree=$10, worktree_name=$11, console_session_id=$12,
+     cost_usd=$13, input_tokens=$14, output_tokens=$15, duration_ms=$16 WHERE id=$17`,
     [card.name, card.description, card.columnName, card.columnOrder,
      card.sessionId, card.state, JSON.stringify(card.tags),
      card.lastActivityAt, card.archived ? 1 : 0,
      card.useWorktree ? 1 : 0, card.worktreeName || '',
-     card.consoleSessionId || '', card.id]
+     card.consoleSessionId || '',
+     card.costUsd || 0, card.inputTokens || 0, card.outputTokens || 0, card.durationMs || 0,
+     card.id]
   );
 }
 
