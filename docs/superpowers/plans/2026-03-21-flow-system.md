@@ -25,7 +25,10 @@
 | `src-sidecar/agent-bridge.ts` | Modify | Accept new `start` command fields; pass them to `query()` |
 | `app/components/KanbanColumn.vue` | Modify | Get color/name/icon from `FlowState` via store; show warnings badge |
 | `app/components/KanbanBoard.vue` | Modify | Use `stateOrder` from `useFlowStore` instead of `usePipelinesStore` columns |
-| `app/components/KanbanCard.vue` | Modify | `requiredFiles` gate on card move; show "Unknown column" for orphaned slugs |
+| `app/components/KanbanColumn.vue` | Modify (drag) | `requiredFiles` gate and trigger prompt on card move (drag handled here, not in KanbanCard) |
+| `app/components/KanbanCard.vue` | Modify | Show "Unknown column" badge for orphaned slugs |
+| `app/app.vue` | Modify | Ensure `useFlowStore().loadForProject()` is called on project open |
+| `app/components/TabBar.vue` | Modify | Update `usePipelinesStore` usage to `useFlowStore` |
 | `app/components/ProjectSettings.vue` | Modify | Replace pipeline/column editors with Flow info + open-in-editor action |
 
 ---
@@ -218,10 +221,12 @@ import * as yaml from 'js-yaml';
 import type { Flow, FlowState, AgentConfig, McpServerConfig } from '~/types';
 
 const ONCRAFT_DIR = '.oncraft';
-const FLOW_FILE = '.oncraft/flow.yaml';
-const STATES_DIR = '.oncraft/states';
-const LEGACY_CONFIG = '.oncraft/config.yaml';
-const LEGACY_BACKUP = '.oncraft/config.yaml.bak';
+const FLOW_FILE   = `${ONCRAFT_DIR}/flow.yaml`;
+const LEGACY_CONFIG = `${ONCRAFT_DIR}/config.yaml`;
+const LEGACY_BACKUP = `${ONCRAFT_DIR}/config.yaml.bak`;
+
+// All paths below are resolved as: ${projectPath}/${relative}
+// readFlowState and readFlowFromDir always receive projectPath (repo root), never an inner dir.
 
 // ─── Default Flow (used when no config exists) ────────────────────────────────
 
@@ -300,8 +305,10 @@ async function readMd(path: string): Promise<string> {
 
 // ─── Read a FlowState from its directory ─────────────────────────────────────
 
+// projectPath is always the repo root (e.g. /home/user/myproject)
+// States live at ${projectPath}/.oncraft/states/${slug}/
 async function readFlowState(projectPath: string, slug: string): Promise<FlowState | null> {
-  const stateYaml = `${projectPath}/${STATES_DIR}/${slug}/state.yaml`;
+  const stateYaml = `${projectPath}/${ONCRAFT_DIR}/states/${slug}/state.yaml`;
   let raw: Record<string, unknown> = {};
   try {
     const e = await exists(stateYaml);
@@ -315,8 +322,8 @@ async function readFlowState(projectPath: string, slug: string): Promise<FlowSta
   const color = (raw.color as string | undefined) || '#6b7280';
   const icon  = raw.icon  as string | undefined;
 
-  const prompt        = await readMd(`${projectPath}/${STATES_DIR}/${slug}/prompt.md`);
-  const triggerPrompt = await readMd(`${projectPath}/${STATES_DIR}/${slug}/trigger.md`);
+  const prompt        = await readMd(`${projectPath}/${ONCRAFT_DIR}/states/${slug}/prompt.md`);
+  const triggerPrompt = await readMd(`${projectPath}/${ONCRAFT_DIR}/states/${slug}/trigger.md`);
 
   return {
     slug,
@@ -336,8 +343,10 @@ async function readFlowState(projectPath: string, slug: string): Promise<FlowSta
 
 // ─── Read a Flow from a directory (project or preset) ────────────────────────
 
-async function readFlowFromDir(dir: string): Promise<Flow | null> {
-  const flowYaml = `${dir}/flow.yaml`;
+// projectPath = repo root. Flow lives at ${projectPath}/.oncraft/flow.yaml
+// For preset dirs, the caller adjusts: presetDir is already a full path and we use a different helper.
+async function readFlowFromDir(projectPath: string): Promise<Flow | null> {
+  const flowYaml = `${projectPath}/${FLOW_FILE}`;
   try {
     const e = await exists(flowYaml);
     if (!e) return null;
@@ -347,11 +356,11 @@ async function readFlowFromDir(dir: string): Promise<Flow | null> {
     const stateOrder: string[] = Array.isArray(raw.stateOrder) ? raw.stateOrder as string[] : [];
     const states: FlowState[] = [];
     for (const slug of stateOrder) {
-      const state = await readFlowState(dir, slug);
+      const state = await readFlowState(projectPath, slug);
       if (state) states.push(state);
     }
 
-    const flowMd = await readMd(`${dir}/flow.md`);
+    const flowMd = await readMd(`${projectPath}/${ONCRAFT_DIR}/flow.md`);
 
     return {
       name:       (raw.name as string | undefined) || 'Flow',
@@ -419,11 +428,63 @@ function mergeStateYaml(
 
 // ─── Preset merge ─────────────────────────────────────────────────────────────
 
+// Presets have a self-contained directory: flow.yaml + states/ at the top level (no .oncraft/ prefix)
+// So we use a separate reader that treats presetDir as the root directly.
+async function readFlowFromPresetDir(presetDir: string): Promise<Flow | null> {
+  const flowYaml = `${presetDir}/flow.yaml`;
+  try {
+    const e = await exists(flowYaml);
+    if (!e) return null;
+    const content = await readTextFile(flowYaml);
+    const raw = (yaml.load(content) as Record<string, unknown>) || {};
+
+    const stateOrder: string[] = Array.isArray(raw.stateOrder) ? raw.stateOrder as string[] : [];
+    const states: FlowState[] = [];
+    for (const slug of stateOrder) {
+      // Preset states live at: presetDir/states/<slug>/state.yaml
+      const stateYaml = `${presetDir}/states/${slug}/state.yaml`;
+      let sRaw: Record<string, unknown> = {};
+      try {
+        const se = await exists(stateYaml);
+        if (se) sRaw = (yaml.load(await readTextFile(stateYaml)) as Record<string, unknown>) || {};
+      } catch { /* treat as empty */ }
+      states.push({
+        slug,
+        name:          (sRaw.name  as string) || slug,
+        color:         (sRaw.color as string) || '#6b7280',
+        icon:           sRaw.icon  as string | undefined,
+        agent:         sRaw.agent  ? parseAgentConfig(sRaw.agent as Record<string, unknown>) : undefined,
+        agents:        Array.isArray(sRaw.agents) ? sRaw.agents as string[] : undefined,
+        skills:        Array.isArray(sRaw.skills) ? sRaw.skills as string[] : undefined,
+        mcpServers:    sRaw.mcpServers ? parseMcpServers(sRaw.mcpServers) : undefined,
+        tools:         sRaw.tools  ? parseTools(sRaw.tools) as FlowState['tools'] : undefined,
+        requiredFiles: Array.isArray(sRaw.requiredFiles) ? sRaw.requiredFiles as string[] : undefined,
+        prompt:        (await readMd(`${presetDir}/states/${slug}/prompt.md`))   || undefined,
+        triggerPrompt: (await readMd(`${presetDir}/states/${slug}/trigger.md`))  || undefined,
+      });
+    }
+
+    return {
+      name:       (raw.name as string) || 'Preset',
+      agent:      raw.agent ? parseAgentConfig(raw.agent as Record<string, unknown>) as AgentConfig : {},
+      agents:     Array.isArray(raw.agents) ? raw.agents as string[] : [],
+      skills:     Array.isArray(raw.skills) ? raw.skills as string[] : [],
+      mcpServers: parseMcpServers(raw.mcpServers),
+      tools:      parseTools(raw.tools),
+      stateOrder,
+      states,
+      _flowMd: (await readMd(`${presetDir}/flow.md`)) || undefined,
+    } as Flow & { _flowMd?: string };
+  } catch {
+    return null;
+  }
+}
+
 async function resolvePreset(presetName: string): Promise<Flow | null> {
   try {
     const home = await homeDir();
     const presetDir = `${home}/.oncraft/presets/${presetName}`;
-    return await readFlowFromDir(presetDir);
+    return await readFlowFromPresetDir(presetDir);
   } catch {
     return null;
   }
@@ -569,10 +630,8 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
     }
   } catch { /* non-fatal */ }
 
-  // Read project flow
-  let project = await readFlowFromDir(projectPath + '/' + ONCRAFT_DIR.replace('.oncraft', '') + '.oncraft');
-  // readFlowFromDir expects a base dir, pass projectPath directly
-  project = await readFlowFromDir(projectPath + `/${ONCRAFT_DIR}`);
+  // Read project flow — pass projectPath (repo root); flow-loader constructs .oncraft/ paths internally
+  let project = await readFlowFromDir(projectPath);
 
   if (!project) {
     // No flow config at all — create defaults
@@ -598,10 +657,12 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
     }
   }
 
-  const flowMd = merged._flowMd || '';
-  const { _flowMd: _removed, ...flow } = merged as Flow & { _flowMd?: string };
+  // Extract flowMd separately — it is never stored on the Flow object itself.
+  // _flowMd is a loader-internal transport field attached by readFlowFromDir/readFlowFromPresetDir.
+  const { _flowMd: extractedFlowMd, ...cleanFlow } = merged as Flow & { _flowMd?: string };
+  const flowMd = extractedFlowMd || '';
 
-  return { flow, flowMd, warnings };
+  return { flow: cleanFlow as Flow, flowMd, warnings };
 }
 
 export async function saveFlowYaml(projectPath: string, flowYaml: Record<string, unknown>): Promise<void> {
@@ -851,7 +912,8 @@ export const useFlowStore = defineStore('flow', () => {
 
   // Resolve full config for a card in a given state (Flow + FlowState layers)
   // Card-level overrides (model, effort, permissionMode) are applied by sessions.ts on top.
-  async function resolvedConfigForState(
+  // Note: named getResolvedConfig to avoid collision with imported resolveConfigForState from flow-loader.
+  async function getResolvedConfig(
     stateSlug: string,
     projectPath: string,
   ): Promise<{
@@ -918,7 +980,7 @@ export const useFlowStore = defineStore('flow', () => {
   return {
     flow, flowMd, warnings, loaded, stateOrder, flowWarnings,
     loadForProject, getFlowState, stateWarnings,
-    resolvedConfigForState, getTriggerPrompt, checkRequiredFiles, reset,
+    getResolvedConfig, getTriggerPrompt, checkRequiredFiles, reset,
   };
 });
 ```
@@ -936,6 +998,10 @@ export const usePipelinesStore = defineStore('pipelines', () => {
 
   function getConfig(projectPath: string): ProjectConfig | undefined {
     if (!flowStore.flow) return undefined;
+    // Note: GitHub config is no longer part of Flow. It is stored separately in the project DB
+    // or in a future .oncraft/project.yaml. Components that read github config (e.g. linked issues)
+    // must be updated to read from the project store directly, not via pipelinesStore.getConfig().github.
+    // For now, return undefined for github to avoid crashes (callers check optional chaining ?.github).
     return {
       columns: flowStore.flow.states.map(s => ({
         name:   s.name,
@@ -943,8 +1009,13 @@ export const usePipelinesStore = defineStore('pipelines', () => {
         inputs:  [],
         outputs: [],
       })),
+      // github: intentionally omitted — see migration note above
     };
   }
+
+  // IMPORTANT: Any component reading getConfig().github?.repository for GitHub integration
+  // (e.g. linked issues in KanbanCard) must be updated in Task 8 to read github config
+  // from useProjectsStore() or a dedicated github config store instead.
 
   function getColumnConfig(projectPath: string, columnName: string): ColumnConfig | undefined {
     if (!flowStore.flow) return undefined;
@@ -1001,10 +1072,10 @@ Replace the existing `columnPrompt` block in `sessions.ts` (the block that calls
 // Resolve Flow config for the card's current state
 const flowStore = useFlowStore();
 const project = useProjectsStore().activeProject;
-let flowConfig: Awaited<ReturnType<typeof flowStore.resolvedConfigForState>> | null = null;
+let flowConfig: Awaited<ReturnType<typeof flowStore.getResolvedConfig>> | null = null;
 
 if (card && project && flowStore.flow) {
-  flowConfig = await flowStore.resolvedConfigForState(card.columnName, project.path);
+  flowConfig = await flowStore.getResolvedConfig(card.columnName, project.path);
 }
 
 // Card-level overrides on top of Flow defaults
@@ -1128,7 +1199,11 @@ export interface FlowPayload {
 }
 ```
 
-Update `spawnSession` signature to accept `flowPayload?: FlowPayload` after `columnPrompt` (or replace `columnPrompt` entirely). Update the `startCmd` JSON to include the new fields:
+Update `spawnSession` and `sendStart` signatures: **replace** the old `columnPrompt?: string` parameter with `flowPayload?: FlowPayload`. Remove `columnPrompt` entirely — it is superseded by `flowPayload.systemPromptAppend`. Also remove the `...(columnPrompt ? { columnPrompt } : {})` line from the `startCmd` JSON.
+
+In `src-sidecar/agent-bridge.ts`, **remove** the existing `columnPrompt` handling (the block that sets `systemPrompt` from `cmd.columnPrompt`) before adding the new `systemPromptAppend` handling — otherwise both code paths would fight over the `systemPrompt` option.
+
+Update the `startCmd` JSON to include the new fields:
 
 ```typescript
 const startCmd = JSON.stringify({
@@ -1214,13 +1289,25 @@ const columns = computed(() =>
 );
 ```
 
-Replace the `v-for` over `config.columns` with `v-for` over `columns`.
+Replace the `v-for` over `config.columns` with `v-for` over `columns`. Use `:key="state.slug"` (the stable identifier, not `state.name` which can change):
 
-- [ ] **Step 2: Update `KanbanColumn.vue` — show warnings badge**
+```html
+<KanbanColumn
+  v-for="state in columns"
+  :key="state.slug"
+  :flowState="state"
+/>
+```
 
-`KanbanColumn` now receives a `FlowState` object (or slug) as a prop instead of `ColumnConfig`. Update the prop type:
+- [ ] **Step 2: Update `KanbanColumn.vue` — switch prop from `ColumnConfig` to `FlowState`; show warnings badge**
+
+`KanbanColumn` currently receives `:column="col"` (a `ColumnConfig`) from `KanbanBoard`. Change it to receive the full `FlowState`:
 
 ```typescript
+// Old prop (remove):
+// const props = defineProps<{ column: ColumnConfig }>();
+
+// New prop:
 const props = defineProps<{
   flowState: import('~/types').FlowState;
 }>();
@@ -1228,37 +1315,73 @@ const flowStore = useFlowStore();
 const warnings  = computed(() => flowStore.stateWarnings(props.flowState.slug));
 ```
 
-Add a warning indicator next to the column name:
+Update **all** internal references throughout `KanbanColumn.vue`:
+- `props.column.name` → `props.flowState.name`
+- `props.column.color` → `props.flowState.color`
+- `cardsStore.cardsByColumn(props.column.name)` → `cardsStore.cardsByColumn(props.flowState.slug)`
+  - `cardsByColumn` matches on `card.columnName` which now stores the slug, so pass the slug
+- `data-column-name` attribute in the draggable → use `props.flowState.slug` (stable identifier)
+- `moveCard(cardId, props.column.name, ...)` → `moveCard(cardId, props.flowState.slug, ...)`
+
+Add a warning indicator next to the column name in the template:
 
 ```html
 <span v-if="warnings.length" class="state-warning" title="Flow configuration issues">⚠️</span>
 ```
 
-- [ ] **Step 3: Update `KanbanCard.vue` — `requiredFiles` gate + unknown slug**
-
-On drag-drop or move, check `flowStore.checkRequiredFiles()` before allowing the move:
-
-```typescript
-async function handleDrop(toSlug: string) {
-  const flowStore = useFlowStore();
-  const card = cardsStore.cards.find(c => c.id === props.cardId);
-  const missing = flowStore.checkRequiredFiles(toSlug, card?.linkedFiles);
-  if (missing.length > 0) {
-    // Show a modal/toast listing the missing slots
-    missingFiles.value = missing;
-    showRequiredFilesDialog.value = true;
-    return;
-  }
-  await cardsStore.moveCard(props.cardId, toSlug, newOrder);
-  // Fire trigger prompt (Task 6)
-  const sessionsStore = useSessionsStore();
-  await sessionsStore.fireTriggerPrompt(props.cardId, toSlug);
-}
+Update `KanbanBoard.vue` to pass `:flowState="state"` instead of `:column="col"`:
+```html
+<KanbanColumn
+  v-for="state in columns"
+  :key="state.slug"
+  :flowState="state"
+/>
 ```
 
-For cards in unknown columns (slug not in `stateOrder`), show them in a ghost "Unknown" column with a reassign prompt. This is a display-only change in `KanbanBoard.vue`:
+- [ ] **Step 3: Update `KanbanColumn.vue` `onDragEnd` — `requiredFiles` gate + trigger prompt**
+
+Drag-and-drop is handled in `KanbanColumn.vue`'s `onDragEnd` function (not in `KanbanCard.vue`). Find the existing `onDragEnd` callback and add the `requiredFiles` check and trigger prompt firing:
 
 ```typescript
+// In KanbanColumn.vue — inside onDragEnd, after computing toSlug and newOrder
+// but BEFORE calling cardsStore.moveCard():
+const flowStore   = useFlowStore();
+const sessionsStore = useSessionsStore();
+const movingCard  = cardsStore.cards.find(c => c.id === movedCardId);
+
+const missing = flowStore.checkRequiredFiles(toSlug, movingCard?.linkedFiles);
+if (missing.length > 0) {
+  // Abort drag: revert DOM, show dialog listing missing slots
+  evt.from.appendChild(evt.item); // revert drag DOM
+  missingFiles.value     = missing;
+  showRequiredFilesDialog.value = true;
+  return;
+}
+
+await cardsStore.moveCard(movedCardId, toSlug, newOrder);
+// Fire trigger prompt if the target state has trigger.md
+await sessionsStore.fireTriggerPrompt(movedCardId, toSlug);
+```
+
+Add reactive state for the dialog:
+```typescript
+const missingFiles            = ref<string[]>([]);
+const showRequiredFilesDialog = ref(false);
+```
+
+Add a simple dialog/toast in the template:
+```html
+<div v-if="showRequiredFilesDialog" class="required-files-dialog">
+  <p>Cannot move card — missing required files:</p>
+  <ul><li v-for="f in missingFiles" :key="f">{{ f }}</li></ul>
+  <button @click="showRequiredFilesDialog = false">Close</button>
+</div>
+```
+
+For orphaned cards (slug not in `stateOrder`), `KanbanBoard.vue` computes them and renders a ghost column:
+
+```typescript
+// In KanbanBoard.vue
 const orphanedCards = computed(() =>
   cardsStore.cards.filter(
     c => !c.archived && !flowStore.stateOrder.includes(c.columnName)
@@ -1266,13 +1389,35 @@ const orphanedCards = computed(() =>
 );
 ```
 
-- [ ] **Step 4: Verify TypeScript compiles**
+```html
+<!-- In KanbanBoard.vue template, after the normal columns v-for -->
+<div v-if="orphanedCards.length" class="column-unknown">
+  <h3>⚠️ Unknown Column</h3>
+  <p>These cards reference a column that no longer exists. Move them to a valid column.</p>
+  <KanbanCard v-for="card in orphanedCards" :key="card.id" :card="card" />
+</div>
+```
+
+- [ ] **Step 4: Fix GitHub config reading in components**
+
+Components (e.g. `KanbanCard.vue`) that currently read `pipelinesStore.getConfig(path)?.github?.repository` for GitHub issue linking must be updated. The compatibility shim no longer returns `github`.
+
+Find all such usages:
+```bash
+grep -rn "github\|\.github" app/components/ app/stores/ --include="*.vue" --include="*.ts" | grep -v node_modules
+```
+
+For each one: replace `pipelinesStore.getConfig(path)?.github?.repository` with reading directly from the project object in `useProjectsStore().activeProject` — but note that the `Project` type does not currently store github config. For V1, read it from `usePipelinesStore().getConfig(path)?.github` which will be `undefined` (acceptable — GitHub integration degrades gracefully until a proper `project.yaml` is implemented).
+
+Document this as a known V1 limitation in a code comment.
+
+- [ ] **Step 5: Verify TypeScript compiles**
 
 ```bash
 pnpm nuxt typecheck 2>&1 | grep "error TS" | head -30
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/components/KanbanBoard.vue app/components/KanbanColumn.vue app/components/KanbanCard.vue
@@ -1288,15 +1433,38 @@ git commit -m "feat(flow): update board components to use useFlowStore; add warn
 
 Ensure `useFlowStore().loadForProject()` is called when a project opens.
 
-- [ ] **Step 1: Find where `loadForProject` is called**
+- [ ] **Step 1: Audit all `usePipelinesStore` call sites**
+
+Known call sites beyond those already updated in Tasks 5–8:
 
 ```bash
-grep -rn "loadForProject\|loadForProject" app/ --include="*.vue" --include="*.ts" | grep -v node_modules
+grep -rn "usePipelinesStore\|pipelinesStore" app/ --include="*.vue" --include="*.ts" | grep -v node_modules
 ```
 
-- [ ] **Step 2: Replace or augment with `useFlowStore().loadForProject()`**
+Expected locations (from codebase analysis):
+- `app/app.vue` — calls `pipelinesStore.loadForProject()` on project open
+- `app/components/TabBar.vue` — calls `pipelinesStore.loadForProject()` or reads `getConfig()`
+- `app/services/claude-process.ts` — `handleSessionRequest` reads `pipelinesStore.getConfig()` for the MCP `get_project` action (returns columns to the agent)
 
-In every place where `pipelinesStore.loadForProject(project.path)` is called, also call `flowStore.loadForProject(project.path)`. Since the `usePipelinesStore` shim now delegates to `useFlowStore`, calling either one loads the flow. Verify the chain works correctly.
+For `app/app.vue` and `app/components/TabBar.vue`: since the compatibility shim delegates `loadForProject` to `useFlowStore`, calling `usePipelinesStore().loadForProject()` will correctly trigger `useFlowStore` loading. No change needed unless they bypass the shim.
+
+For `app/services/claude-process.ts` `handleSessionRequest` (the `get_project` action): update to use `useFlowStore` directly:
+
+```typescript
+// OLD:
+const pipelinesStore = usePipelinesStore();
+const config = projectPath ? pipelinesStore.getConfig(projectPath) : undefined;
+const columns = (config?.columns ?? []).map(c => ({ name: c.name, color: c.color, ... }));
+
+// NEW:
+const flowStore = useFlowStore();
+const columns = flowStore.stateOrder.map(slug => {
+  const s = flowStore.getFlowState(slug);
+  return s ? { name: s.name, color: s.color, slug: s.slug, hasPrompt: !!s.prompt } : null;
+}).filter(Boolean);
+```
+
+- [ ] **Step 2: Verify all `usePipelinesStore` call sites are handled**
 
 - [ ] **Step 3: Add Flow warnings to project tab badge**
 
@@ -1515,19 +1683,23 @@ Replace the `ColumnEditor` and `PipelineEditor` components with a simple Flow su
 ```
 
 ```typescript
+import { open as openPath } from '@tauri-apps/plugin-opener';
+
 const flowStore = useFlowStore();
 
 async function openFlowConfig() {
   const project = useProjectsStore().activeProject;
   if (!project) return;
-  // Open the .oncraft/ directory in the system file manager / editor
-  await invoke('open_path', { path: `${project.path}/.oncraft` });
+  // Open .oncraft/ in the system file manager using Tauri opener plugin
+  // (invoke('open_path') does not exist — use the opener plugin instead)
+  await openPath(`${project.path}/.oncraft`);
 }
 ```
 
-- [ ] **Step 2: Remove `PipelineEditor` import/usage**
+- [ ] **Step 2: Remove `ColumnEditor` import/usage**
 
-Remove the `<PipelineEditor>` block entirely from `ProjectSettings.vue`.
+Remove the `<ColumnEditor>` block from `ProjectSettings.vue` — it is superseded by the Flow summary.
+Note: `ProjectSettings.vue` uses `<ColumnEditor>`, not `<PipelineEditor>` — the PipelineEditor was already removed in a previous commit.
 
 - [ ] **Step 3: Verify TypeScript compiles**
 
@@ -1539,7 +1711,7 @@ pnpm nuxt typecheck 2>&1 | grep "error TS" | head -20
 
 ```bash
 git add app/components/ProjectSettings.vue
-git commit -m "feat(flow): update ProjectSettings to show Flow summary; remove deprecated PipelineEditor"
+git commit -m "feat(flow): update ProjectSettings to show Flow summary; remove deprecated ColumnEditor"
 ```
 
 ---
@@ -1591,7 +1763,7 @@ git commit -m "feat(flow): complete Flow system — board-aware agent config, tr
 |-----------|----------------|
 | `Card.columnName` = `FlowState.slug` (not display name) | `flow-loader.ts` migration renames slugs; `KanbanCard` passes slug on move |
 | `disallowed` wins over `allowed` in tool merge | `resolveConfigForState()` in `flow-loader.ts` |
-| Trigger fires only on user-initiated moves | `KanbanCard.handleDrop()` — no auto-move in V1 |
-| Missing agents/MCPs = warning, not error | `useFlowStore.resolvedConfigForState()` |
+| Trigger fires only on user-initiated moves | `KanbanColumn.onDragEnd()` — no auto-move in V1 |
+| Missing agents/MCPs = warning, not error | `useFlowStore.getResolvedConfig()` |
 | `requiredFiles` = only hard block | `useFlowStore.checkRequiredFiles()` called before `moveCard` |
 | Preset merge: additive for resources, replacement for `stateOrder`/`flow.md`/`*.md` | `flow-loader.ts` `mergeWithPreset()` |
