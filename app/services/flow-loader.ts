@@ -414,12 +414,25 @@ export async function installBundledPresets(): Promise<void> {
       const destExists = await exists(destDir);
       if (destExists) continue; // already installed — never overwrite user customizations
 
-      const srcDir = await pathJoin(resDir, 'presets', presetName);
-      const srcExists = await exists(srcDir);
+      // In production, presets are bundled inside resourceDir/presets/.
+      // In dev, resourceDir points to src-tauri/ and the presets live at ../presets/
+      // relative to that. Try both locations.
+      let srcDir = await pathJoin(resDir, 'presets', presetName);
+      let srcExists = await exists(srcDir);
+
+      if (!srcExists) {
+        // Dev fallback: resourceDir is src-tauri/, presets are at ../presets/
+        srcDir = await pathJoin(resDir, '..', 'presets', presetName);
+        srcExists = await exists(srcDir);
+      }
+
       if (!srcExists) {
         if (import.meta.dev) console.warn('[OnCraft] bundled preset not found at:', srcDir);
         continue;
       }
+
+      // Ensure parent directories exist
+      await mkdir(`${home}/.oncraft/presets`, { recursive: true });
 
       await copyDirRecursive(srcDir, destDir);
       if (import.meta.dev) console.log('[OnCraft] installed bundled preset:', presetName);
