@@ -30,6 +30,7 @@
 | `app/app.vue` | Modify | Ensure `useFlowStore().loadForProject()` is called on project open |
 | `app/components/TabBar.vue` | Modify | Update `usePipelinesStore` usage to `useFlowStore` |
 | `app/components/ProjectSettings.vue` | Modify | Replace pipeline/column editors with Flow info + open-in-editor action |
+| `app/services/database.ts` | Modify | Add `migrateColumnName(oldName, newSlug)` helper for legacy migration |
 
 ---
 
@@ -220,8 +221,9 @@ import { homeDir } from '@tauri-apps/api/path';
 import * as yaml from 'js-yaml';
 import type { Flow, FlowState, AgentConfig, McpServerConfig } from '~/types';
 
-const ONCRAFT_DIR = '.oncraft';
-const FLOW_FILE   = `${ONCRAFT_DIR}/flow.yaml`;
+const ONCRAFT_DIR   = '.oncraft';
+const STATES_DIR    = `${ONCRAFT_DIR}/states`;   // .oncraft/states
+const FLOW_FILE     = `${ONCRAFT_DIR}/flow.yaml`;
 const LEGACY_CONFIG = `${ONCRAFT_DIR}/config.yaml`;
 const LEGACY_BACKUP = `${ONCRAFT_DIR}/config.yaml.bak`;
 
@@ -308,7 +310,7 @@ async function readMd(path: string): Promise<string> {
 // projectPath is always the repo root (e.g. /home/user/myproject)
 // States live at ${projectPath}/.oncraft/states/${slug}/
 async function readFlowState(projectPath: string, slug: string): Promise<FlowState | null> {
-  const stateYaml = `${projectPath}/${ONCRAFT_DIR}/states/${slug}/state.yaml`;
+  const stateYaml = `${projectPath}/${STATES_DIR}/${slug}/state.yaml`;
   let raw: Record<string, unknown> = {};
   try {
     const e = await exists(stateYaml);
@@ -322,8 +324,8 @@ async function readFlowState(projectPath: string, slug: string): Promise<FlowSta
   const color = (raw.color as string | undefined) || '#6b7280';
   const icon  = raw.icon  as string | undefined;
 
-  const prompt        = await readMd(`${projectPath}/${ONCRAFT_DIR}/states/${slug}/prompt.md`);
-  const triggerPrompt = await readMd(`${projectPath}/${ONCRAFT_DIR}/states/${slug}/trigger.md`);
+  const prompt        = await readMd(`${projectPath}/${STATES_DIR}/${slug}/prompt.md`);
+  const triggerPrompt = await readMd(`${projectPath}/${STATES_DIR}/${slug}/trigger.md`);
 
   return {
     slug,
@@ -595,6 +597,24 @@ async function migrateLegacyConfig(projectPath: string): Promise<void> {
     try { await mkdir(onCraftDir, { recursive: true }); } catch { /* exists */ }
     await writeTextFile(flowYaml, yaml.dump(flowConfig));
 
+    // Migrate card.columnName values in SQLite: display names → slugs
+    // This MUST run before the board renders, otherwise all existing cards appear orphaned.
+    // Import db inline to avoid circular deps (flow-loader is a service, not a store).
+    try {
+      const db = await import('~/services/database');
+      for (const col of columns) {
+        const displayName = col.name as string;
+        const slug        = slugify(displayName);
+        if (displayName !== slug) {
+          // Update all cards whose columnName equals the old display name
+          await db.migrateColumnName(displayName, slug);
+        }
+      }
+      if (import.meta.dev) console.log('[OnCraft] card columnName slugs migrated');
+    } catch (err) {
+      if (import.meta.dev) console.warn('[OnCraft] card columnName migration failed:', err);
+    }
+
     // Backup original config
     await rename(legacyPath, backupPath);
     if (import.meta.dev) console.log('[OnCraft] migration complete, backup at', LEGACY_BACKUP);
@@ -715,18 +735,40 @@ export function resolveConfigForState(
 }
 ```
 
-- [ ] **Step 2: Verify TypeScript compiles**
+- [ ] **Step 2: Add `migrateColumnName` to `app/services/database.ts`**
+
+The legacy migration calls `db.migrateColumnName(displayName, slug)` to update `card.columnName` values in SQLite. Without this, all existing cards appear orphaned after migration.
+
+First, check the exact column name used in the SQLite schema:
+```bash
+grep -n "column_name\|columnName" app/services/database.ts | head -10
+```
+
+Then add the helper (use the correct SQL column name found above):
+```typescript
+// In database.ts — add after batchUpdateCardPositions
+export async function migrateColumnName(oldName: string, newSlug: string): Promise<void> {
+  const db = await getDb();
+  // Use the exact SQL column name from the schema (e.g. 'column_name' or 'columnName')
+  await db.execute(
+    'UPDATE cards SET column_name = ? WHERE column_name = ?',
+    [newSlug, oldName],
+  );
+}
+```
+
+- [ ] **Step 3: Verify TypeScript compiles**
 
 ```bash
 pnpm nuxt typecheck 2>&1 | grep -E "flow-loader|error TS" | head -30
 ```
 
-Expected: no errors in `flow-loader.ts`.
+Expected: no errors in `flow-loader.ts` or `database.ts`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add app/services/flow-loader.ts
+git add app/services/flow-loader.ts app/services/database.ts
 git commit -m "feat(flow): add flow-loader service with filesystem parsing, preset merge, legacy migration"
 ```
 
@@ -1315,13 +1357,21 @@ const flowStore = useFlowStore();
 const warnings  = computed(() => flowStore.stateWarnings(props.flowState.slug));
 ```
 
-Update **all** internal references throughout `KanbanColumn.vue`:
-- `props.column.name` → `props.flowState.name`
+Update **all** internal references throughout `KanbanColumn.vue`. There are two categories:
+
+**Display-only** (use `flowState.name` — the human-readable label):
+- `props.column.name` in template text (column header) → `props.flowState.name`
 - `props.column.color` → `props.flowState.color`
+
+**Data operations** (use `flowState.slug` — the stable identifier stored in `Card.columnName`):
 - `cardsStore.cardsByColumn(props.column.name)` → `cardsStore.cardsByColumn(props.flowState.slug)`
-  - `cardsByColumn` matches on `card.columnName` which now stores the slug, so pass the slug
-- `data-column-name` attribute in the draggable → use `props.flowState.slug` (stable identifier)
+- `data-column-name` attribute on the draggable element → `props.flowState.slug`
 - `moveCard(cardId, props.column.name, ...)` → `moveCard(cardId, props.flowState.slug, ...)`
+- `cardsStore.applyColumnOrder(props.column.name, ...)` → `cardsStore.applyColumnOrder(props.flowState.slug, ...)`
+- `cardsStore.addCard(project.id, props.column.name, ...)` → `cardsStore.addCard(project.id, props.flowState.slug, ...)`
+  - This is the call that creates new cards; the slug is stored as `Card.columnName` in the DB
+- `<ImportSessionsDialog :column-name="column.name" ...>` → `:column-name="flowState.slug"`
+  - `ImportSessionsDialog` passes this value to `addCard` internally, so it must be the slug
 
 Add a warning indicator next to the column name in the template:
 
