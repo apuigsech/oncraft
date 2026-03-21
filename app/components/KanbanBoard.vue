@@ -2,7 +2,6 @@
 import { VueDraggable } from 'vue-draggable-plus';
 import type { Card } from '~/types';
 
-const projectsStore = useProjectsStore();
 const flowStore = useFlowStore();
 const cardsStore = useCardsStore();
 
@@ -20,9 +19,28 @@ const storeOrphaned = computed(() =>
     c => !c.archived && !flowStore.stateOrder.includes(c.columnName)
   )
 );
+let syncing = false;
 watch(storeOrphaned, (newCards) => {
+  if (syncing) return;
   orphanedCards.value = [...newCards];
 }, { immediate: true, deep: true });
+
+async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: number; newIndex?: number; data: Card }) {
+  const toSlug = evt.to.dataset.columnName;
+  if (!toSlug || toSlug === '_unknown') return;
+
+  const card = evt.data;
+  const newIndex = evt.newIndex ?? 0;
+  if (!card) return;
+
+  syncing = true;
+  try {
+    await cardsStore.moveCard(card.id, toSlug, newIndex);
+  } finally {
+    orphanedCards.value = [...storeOrphaned.value];
+    syncing = false;
+  }
+}
 </script>
 
 <template>
@@ -51,6 +69,7 @@ watch(storeOrphaned, (newCards) => {
         :delay="60"
         data-column-name="_unknown"
         class="column-body"
+        @end="onOrphanDragEnd"
       >
         <p class="unknown-hint">These cards reference a column that no longer exists. Drag them to a valid column.</p>
         <KanbanCard
