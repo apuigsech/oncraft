@@ -9,6 +9,7 @@ const sessionsStore = useSessionsStore();
 
 const showNewDialog = ref(false);
 const showImportDialog = ref(false);
+const forkParent = ref<Card | null>(null);
 
 // Store-derived computed (read-only) for watching changes
 const storeCards = computed(() => cardsStore.cardsByColumn(props.column.name));
@@ -51,9 +52,31 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
 
 async function createSession(name: string, description: string, useWorktree: boolean) {
   showNewDialog.value = false;
+  forkParent.value = null;
   const project = projectsStore.activeProject;
   if (!project) return;
   const card = await cardsStore.addCard(project.id, props.column.name, name, description, useWorktree);
+  if (useWorktree && card.worktreeName) {
+    sessionsStore.updateSessionConfig(card.id, { worktreeName: card.worktreeName });
+  }
+  sessionsStore.openChat(card.id);
+}
+
+function handleFork(parentCard: Card) {
+  forkParent.value = parentCard;
+  showNewDialog.value = true;
+}
+
+async function createForkedSession(name: string, description: string, useWorktree: boolean) {
+  showNewDialog.value = false;
+  const parent = forkParent.value;
+  forkParent.value = null;
+  const project = projectsStore.activeProject;
+  if (!project) return;
+  const card = await cardsStore.addCard(
+    project.id, props.column.name, name, description, useWorktree,
+    parent?.id,
+  );
   if (useWorktree && card.worktreeName) {
     sessionsStore.updateSessionConfig(card.id, { worktreeName: card.worktreeName });
   }
@@ -101,10 +124,17 @@ async function createSession(name: string, description: string, useWorktree: boo
         :key="card.id"
         :card="card"
         :column-color="column.color"
+        @fork="handleFork"
       />
     </VueDraggable>
 
-    <NewSessionDialog v-if="showNewDialog" @create="createSession" @cancel="showNewDialog = false" />
+    <NewSessionDialog
+      v-if="showNewDialog"
+      :initial-name="forkParent?.name ? forkParent.name + ' (fork)' : undefined"
+      :initial-description="forkParent?.description"
+      @create="forkParent ? createForkedSession : createSession"
+      @cancel="showNewDialog = false; forkParent = null"
+    />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"
       :project-id="projectsStore.activeProject.id"
