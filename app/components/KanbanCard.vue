@@ -139,7 +139,9 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   e.stopPropagation();
   const project = projectsStore.activeProject;
   if (!project) return;
-  openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${project.path}/${filePath}`);
+  const config = sessionsStore.getSessionConfig(props.card.id);
+  const basePath = config.worktreePath || project.path;
+  openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${basePath}/${filePath}`);
 }
 </script>
 
