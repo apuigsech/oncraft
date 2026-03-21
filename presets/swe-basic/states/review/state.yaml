@@ -1,0 +1,5 @@
+name: Review
+color: "#f472b6"
+requiredFiles:
+  - spec
+  - plan

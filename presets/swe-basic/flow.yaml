@@ -1,0 +1,12 @@
+name: "SWE Basic"
+agent:
+  model: sonnet
+  effort: high
+  permissionMode: default
+stateOrder:
+  - brainstorm
+  - specify
+  - plan
+  - implement
+  - review
+  - done
