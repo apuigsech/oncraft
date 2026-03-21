@@ -4,6 +4,9 @@ import { deleteSessionNative, gitBranchStatus } from '~/services/claude-process'
 import type { BranchStatus } from '~/services/claude-process';
 
 const props = defineProps<{ card: Card; columnColor: string }>();
+const emit = defineEmits<{
+  fork: [card: Card];
+}>();
 const sessionsStore = useSessionsStore();
 const cardsStore = useCardsStore();
 const projectsStore = useProjectsStore();
@@ -79,9 +82,20 @@ function onContextMenu(e: MouseEvent) {
   showMenu.value = true;
 }
 
+const parentCardName = computed(() => {
+  if (!props.card.forkedFromId) return undefined;
+  const parent = cardsStore.cards.find(c => c.id === props.card.forkedFromId);
+  return parent?.name;
+});
+
 function handleEdit() {
   showMenu.value = false;
   showEdit.value = true;
+}
+
+function handleFork() {
+  showMenu.value = false;
+  emit('fork', props.card);
 }
 
 async function saveEdit(name: string, description: string, linkedFiles: Record<string, string>, linkedIssues: CardLinkedIssue[]) {
@@ -132,6 +146,14 @@ async function handleDelete(cardId: string) {
           class="worktree-badge"
           :title="'Worktree: ' + (card.worktreeName || '')"
         >WT</UBadge>
+        <UBadge
+          v-if="card.forkedFromId"
+          variant="soft"
+          color="warning"
+          size="xs"
+          class="fork-badge"
+          :title="parentCardName ? 'Forked from ' + parentCardName : 'Fork'"
+        >Fork</UBadge>
         <StatusIndicator :state="card.state" />
       </div>
       <p v-if="card.description" class="card-desc">{{ card.description }}</p>
@@ -173,7 +195,7 @@ async function handleDelete(cardId: string) {
     <CardContextMenu
       v-if="showMenu"
       :x="menuX" :y="menuY" :card-id="card.id" :archived="card.archived"
-      @edit="handleEdit" @archive="handleArchive" @unarchive="handleUnarchive"
+      @edit="handleEdit" @fork="handleFork" @archive="handleArchive" @unarchive="handleUnarchive"
       @delete="handleDelete" @close="showMenu = false"
     />
     <EditCardDialog
@@ -202,6 +224,7 @@ async function handleDelete(cardId: string) {
 .card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .card-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; }
 .worktree-badge { flex-shrink: 0; font-family: 'SF Mono', 'Fira Code', monospace; letter-spacing: 0.5px; }
+.fork-badge { flex-shrink: 0; }
 .card-desc {
   font-size: 12px;
   color: var(--text-secondary);
