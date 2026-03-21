@@ -49,7 +49,8 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function addCard(
-    projectId: string, columnName: string, name: string, description: string, useWorktree?: boolean
+    projectId: string, columnName: string, name: string, description: string,
+    useWorktree?: boolean, forkedFromId?: string,
   ): Promise<Card> {
     const columnCards = cards.value.filter(c => c.columnName === columnName);
     const worktreeName = useWorktree
@@ -61,6 +62,7 @@ export const useCardsStore = defineStore('cards', () => {
       createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), archived: false,
       useWorktree: useWorktree || false,
       worktreeName,
+      forkedFromId,
     };
     await db.insertCard(card);
     cards.value.push(card);
