@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { openPath } from '@tauri-apps/plugin-opener';
-
 const emit = defineEmits<{ close: [] }>();
 const projectsStore = useProjectsStore();
 const flowStore = useFlowStore();
@@ -10,10 +8,13 @@ const project = computed(() => projectsStore.activeProject);
 async function openFlowConfig() {
   if (!project.value) return;
   try {
+    const { openPath } = await import('@tauri-apps/plugin-opener');
     await openPath(`${project.value.path}/.oncraft`);
   } catch {
-    // Fallback: open the project directory itself
-    await openPath(project.value.path);
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener');
+      await openPath(project.value!.path);
+    } catch { /* ignore */ }
   }
 }
 </script>
