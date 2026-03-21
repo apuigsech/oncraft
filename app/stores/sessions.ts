@@ -117,9 +117,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (msg.durationMs) m.durationMs += msg.durationMs as number;
       if (msg.usage) {
         const usage = msg.usage as { inputTokens?: number; outputTokens?: number };
-        m.inputTokens = usage.inputTokens || m.inputTokens;
-        m.outputTokens = usage.outputTokens || m.outputTokens;
+        m.inputTokens += usage.inputTokens || 0;
+        m.outputTokens += usage.outputTokens || 0;
       }
+      // Persist accumulated metrics to SQLite via cards store
+      cardsStore.updateCardMetrics(cardId, {
+        costUsd: m.costUsd,
+        inputTokens: m.inputTokens,
+        outputTokens: m.outputTokens,
+        durationMs: m.durationMs,
+      });
       markQueryComplete(cardId);
       cardsStore.updateCardState(cardId, 'idle');
       return;
@@ -298,6 +305,18 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function openChat(cardId: string): Promise<void> {
     activeChatCardId.value = cardId;
+
+    // Seed session metrics from persisted card data (survives app restart)
+    const cardsStore = useCardsStore();
+    const card = cardsStore.cards.find(c => c.id === cardId);
+    if (card && !sessionMetrics[cardId]) {
+      sessionMetrics[cardId] = {
+        costUsd: card.costUsd || 0,
+        inputTokens: card.inputTokens || 0,
+        outputTokens: card.outputTokens || 0,
+        durationMs: card.durationMs || 0,
+      };
+    }
 
     // ME-5: Eagerly init markdown engine when chat opens (lazy-loaded deps)
     ensureMarkdownReady();
