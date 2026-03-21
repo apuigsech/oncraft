@@ -12,6 +12,28 @@ interface SidecarProcess {
   kill: () => void;
 }
 
+// Flow-injected configuration passed from the frontend to the sidecar.
+// Replaces the old columnPrompt string parameter.
+export interface FlowPayload {
+  systemPromptAppend?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  agents?: Record<string, {
+    description: string;
+    prompt: string;
+    model?: string;
+    tools?: string[];
+    disallowedTools?: string[];
+    skills?: string[];
+    maxTurns?: number;
+  }>;
+  mcpServers?: Record<string, {
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }>;
+}
+
 // ─── Image temp file helpers ───
 // Write image attachments to temp files and return paths.
 // This avoids sending large base64 payloads over Tauri stdin IPC.
@@ -80,7 +102,7 @@ export async function spawnSession(
   sessionId?: string,
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
-  columnPrompt?: string,
+  flowPayload?: FlowPayload,
   forkSession?: boolean,
 ): Promise<void> {
   // Kill existing process for this card if any
@@ -223,16 +245,21 @@ export async function spawnSession(
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
-    ...(config?.model ? { model: config.model } : {}),
-    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(config?.model          ? { model:          config.model          } : {}),
+    ...(config?.effort         ? { effort:         config.effort         } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
-    ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
-    ...(imagePaths?.length ? { imagePaths } : {}),
-    ...(columnPrompt ? { columnPrompt } : {}),
+    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
+    ...(imagePaths?.length     ? { imagePaths }                            : {}),
+    // Flow-injected fields (replace old columnPrompt)
+    ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
+    ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
+    ...(flowPayload?.disallowedTools?.length                         ? { disallowedTools:    flowPayload.disallowedTools    } : {}),
+    ...(flowPayload?.agents && Object.keys(flowPayload.agents).length ? { agents:            flowPayload.agents             } : {}),
+    ...(flowPayload?.mcpServers && Object.keys(flowPayload.mcpServers).length ? { mcpServers: flowPayload.mcpServers        } : {}),
     ...(forkSession ? { forkSession: true } : {}),
   });
   if (import.meta.dev) {
-    console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}`);
+    console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}, hasFlowPrompt=${!!flowPayload?.systemPromptAppend}`);
   }
   await proc.write(startCmd);
 }
@@ -244,7 +271,7 @@ export async function sendStart(
   sessionId?: string,
   config?: SessionConfig,
   images?: import('~/types').ImageAttachment[],
-  columnPrompt?: string,
+  flowPayload?: FlowPayload,
   forkSession?: boolean,
 ): Promise<void> {
   const proc = processes.get(cardId);
@@ -263,12 +290,17 @@ export async function sendStart(
     prompt,
     projectPath,
     ...(sessionId ? { sessionId } : {}),
-    ...(config?.model ? { model: config.model } : {}),
-    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(config?.model          ? { model:          config.model          } : {}),
+    ...(config?.effort         ? { effort:         config.effort         } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
-    ...(config?.worktreeName ? { worktreeName: config.worktreeName } : {}),
-    ...(imagePaths?.length ? { imagePaths } : {}),
-    ...(columnPrompt ? { columnPrompt } : {}),
+    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
+    ...(imagePaths?.length     ? { imagePaths }                            : {}),
+    // Flow-injected fields
+    ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
+    ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
+    ...(flowPayload?.disallowedTools?.length                         ? { disallowedTools:    flowPayload.disallowedTools    } : {}),
+    ...(flowPayload?.agents && Object.keys(flowPayload.agents).length ? { agents:            flowPayload.agents             } : {}),
+    ...(flowPayload?.mcpServers && Object.keys(flowPayload.mcpServers).length ? { mcpServers: flowPayload.mcpServers        } : {}),
     ...(forkSession ? { forkSession: true } : {}),
   });
   await proc.write(startCmd);

@@ -635,7 +635,12 @@ rl.on("line", async (line: string) => {
     );
     stream.enqueue(userMsg);
 
-    const columnPrompt = cmd.columnPrompt as string | undefined;
+    // Flow-injected fields (from useFlowStore resolution in the frontend)
+    const systemPromptAppend = cmd.systemPromptAppend as string | undefined;
+    const allowedTools       = cmd.allowedTools    as string[] | undefined;
+    const disallowedTools    = cmd.disallowedTools as string[] | undefined;
+    const agents             = cmd.agents          as Record<string, unknown> | undefined;
+    const extraMcpServers    = cmd.mcpServers      as Record<string, unknown> | undefined;
 
     // Build query options (same as before, but bound once per session)
     const queryOptions = {
@@ -653,14 +658,18 @@ rl.on("line", async (line: string) => {
       includePartialMessages: true,
       mcpServers: {
         oncraft: oncraftMcpServer,
+        ...(extraMcpServers || {}),
       },
-      ...(columnPrompt ? {
+      ...(systemPromptAppend ? {
         systemPrompt: {
           type: "preset" as const,
           preset: "claude_code" as const,
-          append: columnPrompt,
+          append: systemPromptAppend,
         },
       } : {}),
+      ...(allowedTools?.length    ? { allowedTools }    : {}),
+      ...(disallowedTools?.length ? { disallowedTools } : {}),
+      ...(agents && Object.keys(agents).length ? { agents } : {}),
       ...(cmd.worktreeName ? {
         extraArgs: { worktree: cmd.worktreeName as string },
       } : {}),
