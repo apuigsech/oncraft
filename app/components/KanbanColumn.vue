@@ -132,7 +132,7 @@ async function createForkedSession(name: string, description: string, useWorktre
       v-if="showNewDialog"
       :initial-name="forkParent?.name ? forkParent.name + ' (fork)' : undefined"
       :initial-description="forkParent?.description"
-      @create="forkParent ? createForkedSession : createSession"
+      @create="(n: string, d: string, w: boolean) => (forkParent ? createForkedSession : createSession)(n, d, w)"
       @cancel="showNewDialog = false; forkParent = null"
     />
     <ImportSessionsDialog
