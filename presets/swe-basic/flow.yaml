@@ -4,9 +4,9 @@ agent:
   effort: high
   permissionMode: default
 stateOrder:
-  - brainstorm
-  - specify
-  - plan
-  - implement
-  - review
-  - done
+  - Brainstorm
+  - Specify
+  - Plan
+  - Implement
+  - Review
+  - Done
