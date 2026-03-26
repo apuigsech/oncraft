@@ -1,10 +1,55 @@
 <script setup lang="ts">
-/**
- * Home screen with four content blocks:
- * 1. Recent Projects  2. Global Activity  3. Usage Metrics  4. System Health
- * Blocks are populated incrementally in Steps 4.2–4.5.
- */
-const { addProject } = useProjectActions()
+import { exists } from '@tauri-apps/plugin-fs'
+import { getProjectCardSummaries, type ProjectCardSummary } from '~/services/database'
+
+const projectsStore = useProjectsStore()
+const { addProject, switchToProject } = useProjectActions()
+
+// --- Block 1: Recent Projects ---
+const projectSummaries = ref<Map<string, ProjectCardSummary>>(new Map())
+const projectPathExists = ref<Map<string, boolean>>(new Map())
+
+async function loadProjectSummaries() {
+  const summaries = await getProjectCardSummaries()
+  const map = new Map<string, ProjectCardSummary>()
+  for (const s of summaries) map.set(s.projectId, s)
+  projectSummaries.value = map
+
+  // Check disk existence in parallel
+  const checks = projectsStore.projects.map(async (p) => {
+    try {
+      const ok = await exists(p.path)
+      return [p.id, ok] as const
+    } catch {
+      return [p.id, false] as const
+    }
+  })
+  const results = await Promise.all(checks)
+  const pathMap = new Map<string, boolean>()
+  for (const [id, ok] of results) pathMap.set(id, ok)
+  projectPathExists.value = pathMap
+}
+
+function getSummary(projectId: string): ProjectCardSummary {
+  return projectSummaries.value.get(projectId) || {
+    projectId, activeCount: 0, totalCount: 0, lastActivityAt: null,
+  }
+}
+
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return 'No activity'
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(dateStr).toLocaleDateString()
+}
+
+onMounted(() => { loadProjectSummaries() })
 </script>
 
 <template>
@@ -15,14 +60,58 @@ const { addProject } = useProjectActions()
     </header>
 
     <div class="home-grid">
-      <!-- Block 1: Recent Projects (Step 4.2) -->
+      <!-- Block 1: Recent Projects -->
       <section class="home-block">
         <div class="block-header">
           <UIcon name="i-lucide-folder-open" class="block-icon" />
           <h2 class="block-title">Recent Projects</h2>
+          <div class="block-header-spacer" />
+          <UButton
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            icon="i-lucide-plus"
+            @click="addProject"
+          >
+            Open project
+          </UButton>
         </div>
         <div class="block-content">
+          <div v-if="projectsStore.projects.length > 0" class="project-list">
+            <div
+              v-for="project in projectsStore.projects"
+              :key="project.id"
+              class="project-card"
+              :class="{ 'project-card--warning': projectPathExists.get(project.id) === false }"
+              @click="switchToProject(project.id)"
+            >
+              <div class="project-card-top">
+                <span class="project-name">{{ project.name }}</span>
+                <UIcon
+                  v-if="projectPathExists.get(project.id) === false"
+                  name="i-lucide-triangle-alert"
+                  class="project-warning-icon"
+                  title="Directory not found on disk"
+                />
+              </div>
+              <div class="project-card-meta">
+                <span class="project-path" :title="project.path">{{ project.path }}</span>
+              </div>
+              <div class="project-card-stats">
+                <span v-if="getSummary(project.id).activeCount > 0" class="stat stat--active">
+                  {{ getSummary(project.id).activeCount }} active
+                </span>
+                <span class="stat">
+                  {{ getSummary(project.id).totalCount }} cards
+                </span>
+                <span class="stat stat--time">
+                  {{ formatRelativeTime(getSummary(project.id).lastActivityAt || project.lastOpenedAt) }}
+                </span>
+              </div>
+            </div>
+          </div>
           <EmptyState
+            v-else
             icon="i-lucide-folder-plus"
             title="No projects yet"
             description="Open a project folder to get started."
@@ -131,6 +220,7 @@ const { addProject } = useProjectActions()
   gap: 8px;
   padding: 14px 16px 0;
 }
+.block-header-spacer { flex: 1; }
 .block-icon {
   width: 16px;
   height: 16px;
@@ -148,6 +238,76 @@ const { addProject } = useProjectActions()
   flex: 1;
   padding: 8px 16px 14px;
   overflow-y: auto;
+}
+
+/* Recent Projects */
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.project-card:hover {
+  border-color: var(--border);
+  background: var(--bg-primary);
+}
+.project-card--warning {
+  border-color: var(--warning);
+  opacity: 0.7;
+}
+
+.project-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.project-warning-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--warning);
+}
+
+.project-card-meta {
+  margin-top: 3px;
+}
+.project-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  max-width: 100%;
+}
+
+.project-card-stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.stat {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.stat--active {
+  color: var(--success);
+  font-weight: 600;
+}
+.stat--time {
+  margin-left: auto;
 }
 
 @media (max-width: 700px) {
