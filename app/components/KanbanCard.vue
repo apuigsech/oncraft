@@ -161,6 +161,26 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
       :style="{ borderLeftColor: props.columnColor }"
       @click="openChat"
     >
+      <!-- Quick actions overlay (hover) -->
+      <div class="card-actions">
+        <UButton
+          v-if="sessionsStore.isActive(card.id)"
+          variant="soft"
+          color="error"
+          size="xs"
+          icon="i-lucide-square"
+          title="Stop"
+          @click.stop="sessionsStore.interruptSession(card.id)"
+        />
+        <UButton
+          variant="soft"
+          color="neutral"
+          size="xs"
+          icon="i-lucide-pencil"
+          title="Edit"
+          @click.stop="handleEdit"
+        />
+      </div>
       <div class="card-inner">
         <div class="card-header">
           <span class="card-name">{{ card.name }}</span>
@@ -264,6 +284,7 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 
 <style scoped>
 .kanban-card {
+  position: relative;
   background: var(--bg-secondary);
   border-left: 3px solid;
   border-radius: 6px;
@@ -271,6 +292,23 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   transition: background 0.15s;
 }
 .kanban-card:hover { background: var(--bg-tertiary); }
+
+/* Quick actions overlay */
+.card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.kanban-card:hover .card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
 .card-inner { padding: 10px; }
 .card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .card-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; }
