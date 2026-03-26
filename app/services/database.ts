@@ -225,3 +225,101 @@ export async function updateCardsColumn(
     );
   }
 }
+
+// --- Cross-project queries for Home screen ---
+
+export interface ProjectCardSummary {
+  projectId: string;
+  activeCount: number;
+  totalCount: number;
+  lastActivityAt: string | null;
+}
+
+export async function getProjectCardSummaries(): Promise<ProjectCardSummary[]> {
+  const d = await getDb();
+  const rows = await d.select<Array<{
+    project_id: string;
+    active_count: number;
+    total_count: number;
+    last_activity: string | null;
+  }>>(`
+    SELECT
+      project_id,
+      SUM(CASE WHEN state = 'active' THEN 1 ELSE 0 END) AS active_count,
+      COUNT(*) AS total_count,
+      MAX(last_activity_at) AS last_activity
+    FROM cards
+    WHERE archived = 0
+    GROUP BY project_id
+  `);
+  return rows.map(r => ({
+    projectId: r.project_id,
+    activeCount: r.active_count,
+    totalCount: r.total_count,
+    lastActivityAt: r.last_activity,
+  }));
+}
+
+export interface ActiveCardRow {
+  id: string;
+  projectId: string;
+  name: string;
+  columnName: string;
+  lastActivityAt: string;
+}
+
+export async function getActiveCardsAllProjects(): Promise<ActiveCardRow[]> {
+  const d = await getDb();
+  const rows = await d.select<Array<{
+    id: string; project_id: string; name: string;
+    column_name: string; last_activity_at: string;
+  }>>(`
+    SELECT id, project_id, name, column_name, last_activity_at
+    FROM cards
+    WHERE state = 'active' AND archived = 0
+    ORDER BY last_activity_at DESC
+  `);
+  return rows.map(r => ({
+    id: r.id,
+    projectId: r.project_id,
+    name: r.name,
+    columnName: r.column_name,
+    lastActivityAt: r.last_activity_at,
+  }));
+}
+
+export interface UsageMetrics {
+  costToday: number;
+  costWeek: number;
+  costMonth: number;
+  inputTokens: number;
+  outputTokens: number;
+  sessionCount: number;
+}
+
+export async function getUsageMetrics(): Promise<UsageMetrics> {
+  const d = await getDb();
+  const rows = await d.select<Array<{
+    cost_today: number; cost_week: number; cost_month: number;
+    input_tokens: number; output_tokens: number; session_count: number;
+  }>>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN date(last_activity_at) = date('now') THEN cost_usd ELSE 0 END), 0) AS cost_today,
+      COALESCE(SUM(CASE WHEN last_activity_at >= datetime('now', '-7 days') THEN cost_usd ELSE 0 END), 0) AS cost_week,
+      COALESCE(SUM(CASE WHEN last_activity_at >= datetime('now', '-30 days') THEN cost_usd ELSE 0 END), 0) AS cost_month,
+      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+      COUNT(*) AS session_count
+    FROM cards
+    WHERE session_id != '' AND session_id IS NOT NULL
+  `);
+  const r = rows[0] || { cost_today: 0, cost_week: 0, cost_month: 0, input_tokens: 0, output_tokens: 0, session_count: 0 };
+  return {
+    costToday: r.cost_today,
+    costWeek: r.cost_week,
+    costMonth: r.cost_month,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    sessionCount: r.session_count,
+  };
+}

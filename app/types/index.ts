@@ -133,6 +133,9 @@ export interface GlobalSettings {
   theme: 'dark' | 'light';
   defaultColumns: ColumnConfig[];
   chatMode: ChatMode;
+  onboardingCompleted?: boolean;
+  onboardingDismissed?: boolean;
+  telemetryEnabled?: boolean;
 }
 
 export interface StreamMessage {

@@ -38,5 +38,11 @@ export function useProjectActions() {
     }
   }
 
-  return { addProject, switchToProject, closeProject };
+  async function navigateToCard(projectId: string, cardId: string): Promise<void> {
+    await switchToProject(projectId);
+    const sessionsStore = useSessionsStore();
+    sessionsStore.openChat(cardId);
+  }
+
+  return { addProject, switchToProject, closeProject, navigateToCard };
 }
