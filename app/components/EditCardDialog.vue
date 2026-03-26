@@ -7,6 +7,7 @@ const props = defineProps<{
   linkedFiles?: Record<string, string>;
   linkedIssues?: CardLinkedIssue[];
   githubRepo?: string;
+  projectPath?: string;
 }>();
 
 const open = defineModel<boolean>('open', { default: true });
@@ -80,11 +81,10 @@ function cancel() {
               class="file-label-input"
               placeholder="label (e.g. plan)"
             />
-            <UInput
+            <FilePickerInput
               v-model="entry.path"
-              size="xs"
+              :project-path="props.projectPath || ''"
               class="file-path-input"
-              placeholder="path (e.g. docs/plan.md)"
             />
             <UButton variant="ghost" color="error" size="xs" icon="i-lucide-x" @click="removeFileEntry(i)" />
           </div>
