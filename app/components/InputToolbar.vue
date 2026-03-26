@@ -113,9 +113,12 @@ const modeColorClass = computed(() => {
 
     <!-- Effort level -->
     <div class="effort-bars" :title="'Effort: ' + effort">
-      <button
+      <UButton
         v-for="(level, i) in EFFORT_LEVELS"
         :key="level"
+        variant="ghost"
+        color="neutral"
+        size="xs"
         class="effort-bar"
         :class="{ active: i <= effortIndex }"
         @click="emit('update:effort', level)"
@@ -155,17 +158,18 @@ const modeColorClass = computed(() => {
   cursor: pointer;
 }
 .effort-bar {
-  width: 6px;
-  height: 14px;
-  border-radius: 2px;
-  background: var(--ui-border);
-  border: none;
-  padding: 0;
+  width: 6px !important;
+  min-width: 6px !important;
+  height: 14px !important;
+  min-height: 14px !important;
+  border-radius: 2px !important;
+  background: var(--ui-border) !important;
+  padding: 0 !important;
   cursor: pointer;
   transition: background 0.15s;
 }
 .effort-bar.active {
-  background: #f97316;
+  background: #f97316 !important;
 }
 .effort-label {
   font-size: 10px;

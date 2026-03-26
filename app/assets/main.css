@@ -5,7 +5,10 @@
 
 @layer base {
   body {
-    @apply bg-neutral-950 text-neutral-200 overflow-hidden h-screen;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
   }
 }
 
@@ -13,3 +16,9 @@
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--ui-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ui-border-accented); }
+
+/* Smooth transitions for all interactive elements */
+button, a, input, select, textarea {
+  transition: all 0.15s ease;
+}

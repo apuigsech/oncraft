@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { open } from '@tauri-apps/plugin-dialog'
 import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
 
@@ -17,12 +18,27 @@ const pipelinesStore = usePipelinesStore()
 const sessionsStore = useSessionsStore()
 const { activeFile, closeFile } = useFileViewer()
 
+const appReady = ref(false)
 const showSettings = ref(false)
 const showGlobalSettings = ref(false)
 const showChat = computed(() => sessionsStore.activeChatCardId !== null)
 const isConsoleMode = computed(() => settingsStore.settings.chatMode === 'console')
 const chatWidth = ref(400)
 const consoleWidth = ref(520)
+
+async function addProject() {
+  try {
+    const selected = await open({ directory: true, multiple: false })
+    if (!selected) return
+    const path = typeof selected === 'string' ? selected : String(selected)
+    const name = path.split('/').filter(Boolean).pop() || 'project'
+    const project = await projectsStore.addProject(name, path)
+    await cardsStore.loadForProject(project.id)
+    await pipelinesStore.loadForProject(project.path)
+  } catch (err) {
+    console.error('[OnCraft] addProject error:', err)
+  }
+}
 
 function startResize(e: MouseEvent) {
   const startX = e.clientX
@@ -61,6 +77,7 @@ onMounted(async () => {
   }
   if (projectsResult.status === 'rejected') {
     if (import.meta.dev) console.error('[OnCraft] project load error:', projectsResult.reason)
+    appReady.value = true
     return
   }
 
@@ -75,33 +92,56 @@ onMounted(async () => {
     // when the user opens a chat (sidecar is only needed for SDK operations)
     preloadUtilSidecar()
   }
+
+  appReady.value = true
 })
 </script>
 
 <template>
   <UApp>
-    <div id="app">
+    <!-- Splash screen during initialization -->
+    <Transition name="splash-fade">
+      <AppSplash v-if="!appReady" />
+    </Transition>
+
+    <div v-show="appReady" id="app">
       <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
-          <FileViewer
-            v-if="activeFile && projectsStore.activeProject"
-            :label="activeFile.label"
-            :file-path="activeFile.path"
-            :project-path="projectsStore.activeProject.path"
-            @close="closeFile()"
-          />
-          <KanbanBoard v-else-if="projectsStore.activeProject" />
-          <div v-else class="empty-state">
-            <p>Add a project to get started</p>
-          </div>
+          <ErrorBoundary>
+            <FileViewer
+              v-if="activeFile && projectsStore.activeProject"
+              :label="activeFile.label"
+              :file-path="activeFile.path"
+              :project-path="projectsStore.activeProject.path"
+              @close="closeFile()"
+            />
+            <KanbanBoard v-else-if="projectsStore.activeProject" />
+            <EmptyState
+              v-else
+              icon="i-lucide-folder-open"
+              title="No project open"
+              description="Open a project folder to start managing your Claude Code sessions."
+              action-label="Open project"
+              action-icon="i-lucide-plus"
+              @action="addProject"
+            />
+          </ErrorBoundary>
         </div>
-        <div v-if="showChat" class="divider" @mousedown="startResize" />
-        <ConsolePanel v-if="showChat && isConsoleMode" :style="{ width: consoleWidth + 'px' }" />
-        <ChatPanel v-else-if="showChat" :style="{ width: chatWidth + 'px' }" />
+        <Transition name="chat-slide">
+          <div v-if="showChat" class="chat-side">
+            <div class="divider" @mousedown="startResize" />
+            <ErrorBoundary v-if="isConsoleMode">
+              <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
+            </ErrorBoundary>
+            <ErrorBoundary v-else>
+              <ChatPanel :style="{ width: chatWidth + 'px' }" />
+            </ErrorBoundary>
+          </div>
+        </Transition>
       </div>
-      <ProjectSettings v-if="showSettings" @close="showSettings = false" />
-      <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
+      <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />
+      <GlobalSettings v-if="showGlobalSettings" v-model:open="showGlobalSettings" @close="showGlobalSettings = false" />
     </div>
   </UApp>
 </template>
@@ -110,10 +150,17 @@ onMounted(async () => {
 #app { height: 100vh; display: flex; flex-direction: column; }
 .main-content { flex: 1; display: flex; overflow: hidden; }
 .board-area { flex: 1; overflow-x: auto; overflow-y: hidden; }
-.empty-state {
-  display: flex; align-items: center; justify-content: center;
-  height: 100%; color: var(--text-muted); font-size: 1.1rem;
-}
+.chat-side { display: flex; flex-shrink: 0; }
 .divider { width: 4px; cursor: col-resize; background: var(--border); transition: background 0.15s; }
 .divider:hover { background: var(--accent); }
+
+/* Splash fade-out transition */
+.splash-fade-leave-active { transition: opacity 0.3s ease; }
+.splash-fade-leave-to { opacity: 0; }
+
+/* Chat panel slide-in/out transition */
+.chat-slide-enter-active { transition: transform 0.25s ease-out, opacity 0.25s ease-out; }
+.chat-slide-leave-active { transition: transform 0.2s ease-in, opacity 0.2s ease-in; }
+.chat-slide-enter-from { transform: translateX(100%); opacity: 0; }
+.chat-slide-leave-to { transform: translateX(100%); opacity: 0; }
 </style>

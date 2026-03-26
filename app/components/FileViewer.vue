@@ -62,10 +62,9 @@ watch(() => props.filePath, loadFile, { immediate: true });
         <span class="file-label">{{ label }}</span>
         <span class="file-path-display">{{ filePath }}</span>
       </div>
-      <button class="close-btn" title="Back to board" @click="emit('close')">
-        <UIcon name="i-lucide-layout-dashboard" />
-        <span>Back to board</span>
-      </button>
+      <UButton variant="outline" color="neutral" size="sm" icon="i-lucide-layout-dashboard" title="Back to board" @click="emit('close')">
+        Back to board
+      </UButton>
     </div>
 
     <div class="viewer-body">
@@ -136,24 +135,6 @@ watch(() => props.filePath, loadFile, { immediate: true });
   white-space: nowrap;
 }
 
-.close-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
-}
-.close-btn:hover {
-  background: var(--bg-hover, var(--bg-secondary));
-  color: var(--text-primary);
-}
 
 .viewer-body {
   flex: 1;

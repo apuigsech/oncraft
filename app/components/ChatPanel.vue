@@ -402,9 +402,15 @@ onUnmounted(() => {
         </template>
       </UChatMessages>
 
-      <div v-if="!inlineParts.length" class="empty-chat">
-        Start chatting to begin the session
-      </div>
+      <ChatSkeleton
+        v-if="!inlineParts.length && sessionsStore.activeChatCardId && sessionsStore.isLoadingHistory(sessionsStore.activeChatCardId)"
+      />
+      <EmptyState
+        v-else-if="!inlineParts.length"
+        icon="i-lucide-message-square"
+        title="Start a conversation"
+        description="Send a message to begin working with Claude."
+      />
     </div>
 
     <!-- Input area -->
@@ -518,7 +524,6 @@ onUnmounted(() => {
 .chat-messages-wrapper { flex: 1; overflow-y: auto; }
 /* Neutralize UChatMessages' --last-message-height spacer (we own scroll) */
 .chat-messages-inner { padding: 12px; --last-message-height: 0px !important; }
-.empty-chat { text-align: center; color: var(--text-muted); margin-top: 40%; font-size: 13px; }
 
 .chat-input-area { position: relative; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .chat-input-area.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 8px; }

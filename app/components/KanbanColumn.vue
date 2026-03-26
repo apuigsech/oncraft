@@ -146,12 +146,8 @@ async function createForkedSession(name: string, description: string, useWorktre
         </UTooltip>
       </div>
       <div class="header-actions">
-        <button class="action-btn" @click="showImportDialog = true" title="Import existing sessions">
-          <UIcon name="i-lucide-download" />
-        </button>
-        <button class="action-btn" @click="showNewDialog = true" title="New session">
-          <UIcon name="i-lucide-plus" />
-        </button>
+        <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-download" title="Import existing sessions" @click="showImportDialog = true" />
+        <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-plus" title="New session" @click="showNewDialog = true" />
       </div>
     </div>
 
@@ -180,48 +176,52 @@ async function createForkedSession(name: string, description: string, useWorktre
     </VueDraggable>
 
     <!-- requiredFiles blocked-move dialog -->
-    <div v-if="showRequiredFilesDialog" class="required-files-overlay" @click.self="showRequiredFilesDialog = false">
-      <div class="required-files-dialog">
-        <p class="required-files-title">Cannot move card — missing required files:</p>
+    <UModal v-model:open="showRequiredFilesDialog" title="Cannot move card">
+      <template #body>
+        <p class="required-files-title">Missing required files:</p>
         <ul class="required-files-list">
           <li v-for="f in missingFiles" :key="f"><code>{{ f }}</code></li>
         </ul>
         <p class="required-files-hint">Assign these linked file slots on the card before moving it here.</p>
-        <button class="btn-close" @click="showRequiredFilesDialog = false">Close</button>
-      </div>
-    </div>
+      </template>
+      <template #footer>
+        <div class="flex justify-end">
+          <UButton variant="ghost" color="neutral" @click="showRequiredFilesDialog = false">Close</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- Close Issues on Done dialog -->
-    <div v-if="showCloseIssuesDialog" class="dialog-overlay" @click.self="showCloseIssuesDialog = false">
-      <div class="dialog dialog-close-issues">
-        <div class="dialog-header">
-          <h3>Close issues on GitHub?</h3>
-          <button class="close-btn" @click="showCloseIssuesDialog = false">&times;</button>
-        </div>
-        <div class="dialog-body">
-          <label
+    <UModal v-model:open="showCloseIssuesDialog" title="Close issues on GitHub?">
+      <template #body>
+        <div class="flex flex-col gap-2">
+          <div
             v-for="issue in closeIssuesCandidates"
             :key="issue.number"
             class="close-issue-row"
+            @click="issue.checked = !issue.checked"
           >
-            <input type="checkbox" v-model="issue.checked" />
+            <UCheckbox v-model="issue.checked" />
             <span class="close-issue-number">#{{ issue.number }}</span>
             <span v-if="issue.title" class="close-issue-title">{{ issue.title }}</span>
-          </label>
+          </div>
         </div>
-        <div class="dialog-footer">
-          <button class="btn-secondary" @click="showCloseIssuesDialog = false">Skip</button>
-          <button
-            class="btn-primary"
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton variant="ghost" color="neutral" @click="showCloseIssuesDialog = false">Skip</UButton>
+          <UButton
             :disabled="closingIssues || !closeIssuesCandidates.some(i => i.checked)"
+            :loading="closingIssues"
             @click="confirmCloseIssues"
-          >{{ closingIssues ? 'Closing...' : 'Close selected' }}</button>
+          >{{ closingIssues ? 'Closing...' : 'Close selected' }}</UButton>
         </div>
-      </div>
-    </div>
+      </template>
+    </UModal>
 
     <NewSessionDialog
       v-if="showNewDialog"
+      v-model:open="showNewDialog"
       :initial-name="forkParent?.name ? forkParent.name + ' (fork)' : undefined"
       :initial-description="forkParent?.description"
       :github-repo="flowStore.githubRepository"
@@ -230,6 +230,7 @@ async function createForkedSession(name: string, description: string, useWorktre
     />
     <ImportSessionsDialog
       v-if="showImportDialog && projectsStore.activeProject"
+      v-model:open="showImportDialog"
       :project-id="projectsStore.activeProject.id"
       :project-path="projectsStore.activeProject.path"
       :column-name="flowState.slug"
@@ -268,16 +269,6 @@ async function createForkedSession(name: string, description: string, useWorktre
 .column-icon { font-size: 16px; flex-shrink: 0; }
 .warning-icon { font-size: 13px; color: #fbbf24; cursor: help; }
 .header-actions { display: flex; gap: 2px; }
-.action-btn {
-  font-size: 16px;
-  color: var(--text-muted);
-  padding: 0 5px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.action-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .column-body {
   flex: 1;
   overflow-y: auto;
@@ -288,35 +279,15 @@ async function createForkedSession(name: string, description: string, useWorktre
   min-height: 100px;
 }
 .ghost { opacity: 0.4; }
+
 /* requiredFiles dialog */
-.required-files-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-  display: flex; align-items: center; justify-content: center; z-index: 200;
-}
-.required-files-dialog {
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 8px; padding: 20px; max-width: 360px; width: 100%;
-}
 .required-files-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 .required-files-list { margin: 0 0 8px 16px; font-size: 13px; }
 .required-files-list li { margin-bottom: 4px; }
-.required-files-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
-.btn-close { padding: 6px 16px; border-radius: 4px; font-size: 13px; background: var(--bg-tertiary); color: var(--text-primary); }
+.required-files-hint { font-size: 12px; color: var(--text-muted); }
 
 /* Close issues dialog */
-.dialog-close-issues { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 380px; display: flex; flex-direction: column; gap: 12px; }
-.dialog-header { display: flex; justify-content: space-between; align-items: center; }
-.dialog-header h3 { font-size: 15px; }
-.close-btn { font-size: 18px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
-.close-btn:hover { background: var(--bg-tertiary); }
-.dialog-body { display: flex; flex-direction: column; gap: 8px; }
-.dialog-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.btn-primary { background: var(--accent); color: white; padding: 6px 16px; border-radius: 4px; font-size: 13px; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
-.btn-secondary:hover { background: var(--bg-tertiary); }
 .close-issue-row { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 0; font-size: 13px; color: var(--text-primary); }
-.close-issue-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); }
 .close-issue-number { font-weight: 600; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; }
 .close-issue-title { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
