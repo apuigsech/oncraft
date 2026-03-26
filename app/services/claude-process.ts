@@ -2,6 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
 import { writeFile, mkdir } from '@tauri-apps/plugin-fs';
 import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
+import { reactive } from 'vue';
 import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
 import { process as registryProcess } from './chat-part-registry';
@@ -66,8 +67,14 @@ type MetaCallback = (msg: SidecarMessage) => void;
 const messageCallbacks = new Map<string, PartCallback>();
 const metaCallbacks = new Map<string, MetaCallback>();
 
-// Track whether a query is actively running (vs sidecar idle between queries)
-const activeQueries = new Set<string>();
+// Track whether a query is actively running (vs sidecar idle between queries).
+// Uses Vue reactive() so that isQueryActive() triggers reactivity in computed properties.
+const activeQueries = reactive(new Set<string>());
+
+// Stable card snapshot registry: survives Pinia store reloads (project switch).
+// When a sidecar spawns, we store a snapshot of the card. MCP bridge uses this
+// as fallback when cardsStore.cards.find() fails (e.g. after project switch).
+const cardSnapshots = new Map<string, Record<string, unknown>>();
 
 export function onMessage(cardId: string, callback: PartCallback): void {
   messageCallbacks.set(cardId, callback);
@@ -213,6 +220,7 @@ export async function spawnSession(
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
     activeQueries.delete(cardId);
+    cardSnapshots.delete(cardId);
     if (import.meta.dev) console.log('[OnCraft] sidecar closed, code:', payload.code);
   });
 
@@ -224,6 +232,8 @@ export async function spawnSession(
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
+    activeQueries.delete(cardId);
+    cardSnapshots.delete(cardId);
   });
 
   const proc: SidecarProcess = {
@@ -236,6 +246,13 @@ export async function spawnSession(
   };
 
   processes.set(cardId, proc);
+
+  // Snapshot the card for MCP bridge resilience (survives store reloads)
+  const cardsStore = useCardsStore();
+  const cardForSnapshot = cardsStore.cards.find(c => c.id === cardId);
+  if (cardForSnapshot) {
+    cardSnapshots.set(cardId, { ...cardForSnapshot });
+  }
 
   // Mark query as active and send the start command
   activeQueries.add(cardId);
@@ -339,6 +356,7 @@ export async function killProcess(cardId: string): Promise<void> {
   messageCallbacks.delete(cardId);
   metaCallbacks.delete(cardId);
   activeQueries.delete(cardId);
+  cardSnapshots.delete(cardId);
 }
 
 export function isProcessActive(cardId: string): boolean {
@@ -378,6 +396,25 @@ interface SessionRequest {
   [key: string]: unknown;
 }
 
+// Helper: find card in store or fall back to snapshot for MCP bridge resilience.
+// Snapshots survive store reloads (project switches) so MCP tools keep working.
+function findCardForMcp(cardId: string): Record<string, unknown> | null {
+  const cardsStore = useCardsStore();
+  const live = cardsStore.cards.find(c => c.id === cardId);
+  if (live) {
+    // Keep snapshot fresh with latest store data
+    cardSnapshots.set(cardId, { ...live });
+    return live as unknown as Record<string, unknown>;
+  }
+  // Fallback to snapshot if store was reloaded
+  const snapshot = cardSnapshots.get(cardId);
+  if (snapshot) {
+    if (import.meta.dev) console.warn(`[OnCraft] MCP bridge: card ${cardId} not in store, using snapshot`);
+    return snapshot;
+  }
+  return null;
+}
+
 async function handleSessionRequest(cardId: string, req: SessionRequest): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) return;
@@ -389,8 +426,12 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
 
   try {
     if (req.action === 'get_current_card') {
-      const card = cardsStore.cards.find(c => c.id === cardId);
-      responseData = { card: card ? { ...card } : null };
+      const card = findCardForMcp(cardId);
+      if (card) {
+        responseData = { card: { ...card } };
+      } else {
+        responseData = { card: null, error: `Card ${cardId} not found (store size: ${cardsStore.cards.length}, has process: ${processes.has(cardId)})` };
+      }
 
     } else if (req.action === 'update_current_card') {
       const card = cardsStore.cards.find(c => c.id === cardId);
@@ -416,7 +457,7 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
         await db.updateCard(card);
         responseData = { success: true, card: { ...card } };
       } else {
-        responseData = { success: false, error: 'Card not found' };
+        responseData = { success: false, error: `Card ${cardId} not found for update (store size: ${cardsStore.cards.length}, has process: ${processes.has(cardId)})` };
       }
 
     } else if (req.action === 'get_project') {

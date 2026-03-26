@@ -423,7 +423,7 @@ onUnmounted(() => {
       @paste="handlePaste"
     >
       <div class="progress-area">
-        <AgentProgressBar :parts="progressParts" :is-active="isActive" />
+        <AgentProgressBar :parts="progressParts" :is-active="isActive" :card-id="sessionsStore.activeChatCardId!" />
       </div>
 
       <!-- Action Bar Zone — shows one pending action at a time -->

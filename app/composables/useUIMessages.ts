@@ -100,6 +100,24 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
             loading: !hasResult,
           });
         }
+      } else if (part.placement === 'action-bar' && part.resolved && part.kind === 'tool_confirmation') {
+        // Resolved tool_confirmation (normal tools only): render as tool block (same style as tool_use)
+        // so that post-decision tool widgets look identical to normal tool calls.
+        // Excludes tool_confirmation:AskUserQuestion which renders via UserQuestionBar.
+        if (!currentAssistant) {
+          currentAssistant = { id: part.id, role: 'assistant', parts: [] };
+        }
+        const hasResult = !!part.data.toolResult;
+        currentAssistant.parts.push({
+          type: 'dynamic-tool',
+          toolName: (part.data.toolName as string) || 'unknown',
+          toolCallId: (part.data.toolUseId as string) || part.id,
+          state: hasResult ? 'output-available' : 'input-available',
+          input: part.data.toolInput || {},
+          ...(hasResult ? { output: part.data.toolResult } : {}),
+          streaming: false,
+          loading: false,
+        });
       } else {
         // Non-conversation parts (hooks, errors, resolved actions, etc.)
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }

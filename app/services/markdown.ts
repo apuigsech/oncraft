@@ -56,6 +56,9 @@ async function _initMarkdownEngine(): Promise<void> {
     // Configure marked renderer
     const renderer = new _marked!.Renderer();
 
+    // HTML-escape helper for code content (prevents raw HTML injection in code spans)
+    const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
     renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
       let highlighted: string;
       if (lang && _hljs!.getLanguage(lang)) {
@@ -63,12 +66,12 @@ async function _initMarkdownEngine(): Promise<void> {
       } else {
         highlighted = _hljs!.highlightAuto(text).value;
       }
-      const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
+      const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
       return `<div class="code-block">${langLabel}<pre><code class="hljs">${highlighted}</code></pre></div>`;
     };
 
     renderer.codespan = function ({ text }: { text: string }) {
-      return `<code class="inline-code">${text}</code>`;
+      return `<code class="inline-code">${escapeHtml(text)}</code>`;
     };
 
     _marked!.setOptions({ renderer, breaks: true });
