@@ -323,3 +323,30 @@ export async function getUsageMetrics(): Promise<UsageMetrics> {
     sessionCount: r.session_count,
   };
 }
+
+export async function getUsageMetricsByProject(projectId: string): Promise<UsageMetrics> {
+  const d = await getDb();
+  const rows = await d.select<Array<{
+    cost_today: number; cost_week: number; cost_month: number;
+    input_tokens: number; output_tokens: number; session_count: number;
+  }>>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN date(last_activity_at) = date('now') THEN cost_usd ELSE 0 END), 0) AS cost_today,
+      COALESCE(SUM(CASE WHEN last_activity_at >= datetime('now', '-7 days') THEN cost_usd ELSE 0 END), 0) AS cost_week,
+      COALESCE(SUM(CASE WHEN last_activity_at >= datetime('now', '-30 days') THEN cost_usd ELSE 0 END), 0) AS cost_month,
+      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+      COUNT(*) AS session_count
+    FROM cards
+    WHERE session_id != '' AND session_id IS NOT NULL AND project_id = $1
+  `, [projectId]);
+  const r = rows[0] || { cost_today: 0, cost_week: 0, cost_month: 0, input_tokens: 0, output_tokens: 0, session_count: 0 };
+  return {
+    costToday: r.cost_today,
+    costWeek: r.cost_week,
+    costMonth: r.cost_month,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    sessionCount: r.session_count,
+  };
+}

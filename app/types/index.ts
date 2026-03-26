@@ -138,6 +138,7 @@ export interface GlobalSettings {
   onboardingCompleted?: boolean;
   onboardingDismissed?: boolean;
   telemetryEnabled?: boolean;
+  telemetryInstallId?: string;
 }
 
 export interface StreamMessage {
