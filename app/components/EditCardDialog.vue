@@ -8,6 +8,9 @@ const props = defineProps<{
   linkedIssues?: CardLinkedIssue[];
   githubRepo?: string;
 }>();
+
+const open = defineModel<boolean>('open', { default: true });
+
 const emit = defineEmits<{
   save: [name: string, description: string, linkedFiles: Record<string, string>, linkedIssues: CardLinkedIssue[]];
   cancel: [];
@@ -44,44 +47,46 @@ function save() {
     if (label && path) files[label] = path;
   }
   emit('save', editName.value.trim(), editDesc.value.trim(), files, issueEntries.value);
+  open.value = false;
+}
+
+function cancel() {
+  emit('cancel');
+  open.value = false;
 }
 </script>
 
 <template>
-  <div class="dialog-overlay" @click.self="emit('cancel')">
-    <div class="dialog">
-      <div class="dialog-header">
-        <h3>Edit Card</h3>
-        <button class="close-btn" @click="emit('cancel')">&times;</button>
-      </div>
-      <div class="dialog-body">
-        <label>
-          Title
-          <input v-model="editName" autofocus @keydown.enter="save" />
-        </label>
-        <label>
-          Description
-          <textarea v-model="editDesc" rows="3" placeholder="Optional description..." />
-        </label>
+  <UModal v-model:open="open" title="Edit Card" :ui="{ width: 'sm:max-w-[420px]' }" @update:open="(val: boolean) => { if (!val) cancel() }">
+    <template #body>
+      <div class="flex flex-col gap-3">
+        <UFormField label="Title">
+          <UInput v-model="editName" autofocus @keydown.enter="save" />
+        </UFormField>
+        <UFormField label="Description">
+          <UTextarea v-model="editDesc" :rows="3" placeholder="Optional description..." />
+        </UFormField>
 
         <!-- Linked Files -->
         <div class="section">
           <div class="section-header">
             <span class="section-label">Linked Files</span>
-            <button class="add-btn" @click="addFileEntry">+ Add</button>
+            <UButton variant="ghost" color="primary" size="xs" @click="addFileEntry">+ Add</UButton>
           </div>
           <div v-for="(entry, i) in fileEntries" :key="i" class="file-row">
-            <input
+            <UInput
               v-model="entry.label"
+              size="xs"
               class="file-label-input"
               placeholder="label (e.g. plan)"
             />
-            <input
+            <UInput
               v-model="entry.path"
+              size="xs"
               class="file-path-input"
               placeholder="path (e.g. docs/plan.md)"
             />
-            <button class="remove-btn" @click="removeFileEntry(i)">&times;</button>
+            <UButton variant="ghost" color="error" size="xs" icon="i-lucide-x" @click="removeFileEntry(i)" />
           </div>
           <span v-if="fileEntries.length === 0" class="empty-hint">No files linked</span>
         </div>
@@ -95,47 +100,24 @@ function save() {
           <IssueSelector :repo="githubRepo" v-model="issueEntries" />
         </div>
       </div>
-      <div class="dialog-footer">
-        <button class="btn-secondary" @click="emit('cancel')">Cancel</button>
-        <button class="btn-primary" :disabled="!editName.trim()" @click="save">Save</button>
+    </template>
+    <template #footer>
+      <div class="flex justify-end gap-2">
+        <UButton variant="ghost" color="neutral" @click="cancel">Cancel</UButton>
+        <UButton :disabled="!editName.trim()" @click="save">Save</UButton>
       </div>
-    </div>
-  </div>
+    </template>
+  </UModal>
 </template>
 
 <style scoped>
-.dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.dialog { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 420px; max-height: 80vh; display: flex; flex-direction: column; gap: 12px; }
-.dialog-header { display: flex; justify-content: space-between; align-items: center; }
-.dialog-header h3 { font-size: 16px; }
-.close-btn { font-size: 18px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; }
-.close-btn:hover { background: var(--bg-tertiary); }
-.dialog-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
-input, textarea { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 13px; font-family: inherit; color: var(--text-primary); }
-input:focus, textarea:focus { outline: none; border-color: var(--accent); }
-textarea { resize: vertical; }
-
 .section { display: flex; flex-direction: column; gap: 6px; }
 .section-header { display: flex; justify-content: space-between; align-items: center; }
 .section-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .section-repo { font-size: 11px; color: var(--text-muted); font-family: 'SF Mono', 'Fira Code', monospace; }
 
 .file-row { display: flex; gap: 6px; align-items: center; }
-.file-label-input { width: 90px; flex-shrink: 0; font-size: 12px; padding: 5px 7px; font-family: 'SF Mono', 'Fira Code', monospace; }
-.file-path-input { flex: 1; font-size: 12px; padding: 5px 7px; font-family: 'SF Mono', 'Fira Code', monospace; }
-
-
-.add-btn { font-size: 12px; color: var(--accent); padding: 3px 8px; border-radius: 4px; }
-.add-btn:hover:not(:disabled) { background: var(--bg-tertiary); }
-.add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.remove-btn { font-size: 14px; color: var(--text-muted); padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
-.remove-btn:hover { color: var(--error); background: rgba(239, 68, 68, 0.1); }
+.file-label-input { width: 90px; flex-shrink: 0; font-family: 'SF Mono', 'Fira Code', monospace; }
+.file-path-input { flex: 1; font-family: 'SF Mono', 'Fira Code', monospace; }
 .empty-hint { font-size: 11px; color: var(--text-muted); }
-
-.dialog-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.btn-primary { background: var(--accent); color: white; padding: 6px 16px; border-radius: 4px; font-size: 13px; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { padding: 6px 16px; border-radius: 4px; font-size: 13px; color: var(--text-secondary); }
-.btn-secondary:hover { background: var(--bg-tertiary); }
 </style>

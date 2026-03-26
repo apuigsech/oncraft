@@ -49,10 +49,9 @@ watch(() => props.card.state, (newState) => {
   if (newState === 'idle') refreshBranchStatus();
 });
 
-const showMenu = ref(false);
 const showEdit = ref(false);
-const menuX = ref(0);
-const menuY = ref(0);
+const showDeleteConfirm = ref(false);
+const pendingDeleteCardId = ref<string | null>(null);
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -78,13 +77,6 @@ async function openIssue(number: number) {
   openUrl(`https://github.com/${githubRepo.value}/issues/${number}`);
 }
 
-function onContextMenu(e: MouseEvent) {
-  e.preventDefault();
-  menuX.value = e.clientX;
-  menuY.value = e.clientY;
-  showMenu.value = true;
-}
-
 const parentCardName = computed(() => {
   if (!props.card.forkedFromId) return undefined;
   const parent = cardsStore.cards.find(c => c.id === props.card.forkedFromId);
@@ -92,12 +84,10 @@ const parentCardName = computed(() => {
 });
 
 function handleEdit() {
-  showMenu.value = false;
   showEdit.value = true;
 }
 
 function handleFork() {
-  showMenu.value = false;
   emit('fork', props.card);
 }
 
@@ -109,19 +99,24 @@ async function saveEdit(name: string, description: string, linkedFiles: Record<s
 }
 
 async function handleArchive(cardId: string) {
-  showMenu.value = false;
   sessionsStore.closeChat();
   await cardsStore.archiveCard(cardId);
 }
 
 async function handleUnarchive(cardId: string) {
-  showMenu.value = false;
   await cardsStore.unarchiveCard(cardId);
 }
 
-async function handleDelete(cardId: string) {
-  showMenu.value = false;
-  if (!confirm(`Delete "${props.card.name}" and its Claude session? This cannot be undone.`)) return;
+function handleDeleteRequest(cardId: string) {
+  pendingDeleteCardId.value = cardId;
+  showDeleteConfirm.value = true;
+}
+
+async function confirmDelete() {
+  const cardId = pendingDeleteCardId.value;
+  if (!cardId) return;
+  showDeleteConfirm.value = false;
+  pendingDeleteCardId.value = null;
   const sessionId = props.card.sessionId;
   sessionsStore.closeChat();
   await cardsStore.removeCard(cardId);
@@ -152,99 +147,119 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 </script>
 
 <template>
-  <div
-    class="kanban-card"
-    :style="{ borderLeftColor: props.columnColor }"
-    @click="openChat"
-    @contextmenu="onContextMenu"
+  <CardContextMenu
+    :card-id="card.id"
+    :archived="card.archived"
+    @edit="handleEdit"
+    @fork="handleFork"
+    @archive="handleArchive"
+    @unarchive="handleUnarchive"
+    @delete="handleDeleteRequest"
   >
-    <div class="card-inner">
-      <div class="card-header">
-        <span class="card-name">{{ card.name }}</span>
-        <UBadge
-          v-if="card.useWorktree"
-          variant="soft"
-          color="primary"
-          size="xs"
-          class="worktree-badge"
-          :title="'Worktree: ' + (card.worktreeName || '')"
-        >WT</UBadge>
-        <UBadge
-          v-if="card.forkedFromId"
-          variant="soft"
-          color="warning"
-          size="xs"
-          class="fork-badge"
-          :title="parentCardName ? 'Forked from ' + parentCardName : 'Fork'"
-        >Fork</UBadge>
-        <StatusIndicator :state="card.state" />
-      </div>
-      <p v-if="card.description" class="card-desc">{{ card.description }}</p>
-      <!-- Linked file tags -->
-      <div v-if="linkedFilesEntries.length > 0" class="card-files">
-        <template v-for="([label, filePath], idx) in linkedFilesEntries" :key="label">
-          <button
-            class="file-tag"
-            :class="{ 'file-tag--active': isFileActive(label) }"
-            :title="String(filePath)"
-            @click="onFileClick($event, label, String(filePath))"
-          >{{ label }}</button>
-          <span v-if="idx < linkedFilesEntries.length - 1" class="file-sep">|</span>
-        </template>
-      </div>
-
-      <div class="card-footer">
-        <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
-        <div class="card-footer-right">
-          <span
-            v-for="issue in (card.linkedIssues || [])"
-            :key="issue.number"
-            class="card-indicator card-indicator--issue"
-            :title="`#${issue.number}${issue.title ? ' ' + issue.title : ''}`"
-            @click.stop="openIssue(issue.number)"
-          >
-            <svg class="gh-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-            #{{ issue.number }}
-          </span>
-          <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
-            <span v-if="branchStatus.ahead > 0" class="commits-ahead">↑{{ branchStatus.ahead }}</span>
-            <span v-if="branchStatus.behind > 0" class="commits-behind">↓{{ branchStatus.behind }}</span>
-            <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="commits-synced">✓</span>
-          </div>
-          <div v-if="card.tags?.length" class="card-tags">
-            <UBadge
-              v-for="tag in card.tags"
-              :key="tag"
-              variant="soft"
+    <div
+      class="kanban-card"
+      :style="{ borderLeftColor: props.columnColor }"
+      @click="openChat"
+    >
+      <div class="card-inner">
+        <div class="card-header">
+          <span class="card-name">{{ card.name }}</span>
+          <UBadge
+            v-if="card.useWorktree"
+            variant="soft"
+            color="primary"
+            size="xs"
+            class="worktree-badge"
+            :title="'Worktree: ' + (card.worktreeName || '')"
+          >WT</UBadge>
+          <UBadge
+            v-if="card.forkedFromId"
+            variant="soft"
+            color="warning"
+            size="xs"
+            class="fork-badge"
+            :title="parentCardName ? 'Forked from ' + parentCardName : 'Fork'"
+          >Fork</UBadge>
+          <StatusIndicator :state="card.state" />
+        </div>
+        <p v-if="card.description" class="card-desc">{{ card.description }}</p>
+        <!-- Linked file tags -->
+        <div v-if="linkedFilesEntries.length > 0" class="card-files">
+          <template v-for="([label, filePath], idx) in linkedFilesEntries" :key="label">
+            <UButton
+              variant="link"
               color="neutral"
-              size="sm"
-            >{{ tag }}</UBadge>
+              size="xs"
+              class="file-tag"
+              :class="{ 'file-tag--active': isFileActive(label) }"
+              :title="String(filePath)"
+              @click="onFileClick($event, label, String(filePath))"
+            >{{ label }}</UButton>
+            <span v-if="idx < linkedFilesEntries.length - 1" class="file-sep">|</span>
+          </template>
+        </div>
+
+        <div class="card-footer">
+          <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
+          <div class="card-footer-right">
+            <span
+              v-for="issue in (card.linkedIssues || [])"
+              :key="issue.number"
+              class="card-indicator card-indicator--issue"
+              :title="`#${issue.number}${issue.title ? ' ' + issue.title : ''}`"
+              @click.stop="openIssue(issue.number)"
+            >
+              <svg class="gh-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              #{{ issue.number }}
+            </span>
+            <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
+              <span v-if="branchStatus.ahead > 0" class="commits-ahead">&uarr;{{ branchStatus.ahead }}</span>
+              <span v-if="branchStatus.behind > 0" class="commits-behind">&darr;{{ branchStatus.behind }}</span>
+              <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="commits-synced">&check;</span>
+            </div>
+            <div v-if="card.tags?.length" class="card-tags">
+              <UBadge
+                v-for="tag in card.tags"
+                :key="tag"
+                variant="soft"
+                color="neutral"
+                size="sm"
+              >{{ tag }}</UBadge>
+            </div>
           </div>
         </div>
-      </div>
-      <div v-if="card.costUsd && card.costUsd > 0" class="card-cost-footer">
-        <span class="cost-amount">${{ card.costUsd.toFixed(4) }}</span>
-        <span class="cost-tokens">↑{{ formatTokens(card.inputTokens) }} ↓{{ formatTokens(card.outputTokens) }}</span>
+        <div v-if="card.costUsd && card.costUsd > 0" class="card-cost-footer">
+          <span class="cost-amount">${{ card.costUsd.toFixed(4) }}</span>
+          <span class="cost-tokens">&uarr;{{ formatTokens(card.inputTokens) }} &darr;{{ formatTokens(card.outputTokens) }}</span>
+        </div>
       </div>
     </div>
+  </CardContextMenu>
 
-    <CardContextMenu
-      v-if="showMenu"
-      :x="menuX" :y="menuY" :card-id="card.id" :archived="card.archived"
-      @edit="handleEdit" @fork="handleFork" @archive="handleArchive" @unarchive="handleUnarchive"
-      @delete="handleDelete" @close="showMenu = false"
-    />
-    <EditCardDialog
-      v-if="showEdit"
-      :name="card.name"
-      :description="card.description"
-      :linked-files="card.linkedFiles"
-      :linked-issues="card.linkedIssues"
-      :github-repo="githubRepo"
-      @save="saveEdit"
-      @cancel="showEdit = false"
-    />
-  </div>
+  <EditCardDialog
+    v-if="showEdit"
+    v-model:open="showEdit"
+    :name="card.name"
+    :description="card.description"
+    :linked-files="card.linkedFiles"
+    :linked-issues="card.linkedIssues"
+    :github-repo="githubRepo"
+    @save="saveEdit"
+    @cancel="showEdit = false"
+  />
+
+  <!-- Delete confirmation modal -->
+  <UModal v-model:open="showDeleteConfirm" title="Delete session?">
+    <template #body>
+      <p class="text-sm">Delete "{{ card.name }}" and its Claude session? This cannot be undone.</p>
+    </template>
+    <template #footer>
+      <div class="flex justify-end gap-2">
+        <UButton variant="ghost" color="neutral" @click="showDeleteConfirm = false">Cancel</UButton>
+        <UButton color="error" @click="confirmDelete">Delete</UButton>
+      </div>
+    </template>
+  </UModal>
 </template>
 
 <style scoped>
@@ -277,21 +292,19 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   margin-bottom: 6px;
 }
 .file-tag {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 0.12s;
+  padding: 0 !important;
+  font-size: 11px !important;
+  color: var(--text-muted) !important;
+  text-decoration: none !important;
+  min-height: auto !important;
+  height: auto !important;
 }
 .file-tag:hover {
-  color: var(--text-secondary);
-  text-decoration: underline;
+  color: var(--text-secondary) !important;
+  text-decoration: underline !important;
 }
 .file-tag--active {
-  color: var(--accent, #7c8aff);
+  color: var(--accent, #7c8aff) !important;
   font-weight: 600;
 }
 .file-sep {

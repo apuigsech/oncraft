@@ -97,16 +97,21 @@ async function submitFreeform() {
 
         <!-- Options as buttons -->
         <div v-if="q.options && q.options.length > 0" class="question-options">
-          <button
+          <UButton
             v-for="opt in q.options"
             :key="opt.label"
+            variant="outline"
+            :color="isSelected(qIndex, opt.label) ? 'primary' : 'neutral'"
+            block
             class="option-btn"
             :class="{ selected: isSelected(qIndex, opt.label) }"
             @click="q.multiSelect ? toggleOption(qIndex, opt.label) : selectOption(opt.label)"
           >
-            <span class="option-label">{{ opt.label }}</span>
-            <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
-          </button>
+            <div class="option-content">
+              <span class="option-label">{{ opt.label }}</span>
+              <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+            </div>
+          </UButton>
 
           <!-- Submit button for multiSelect -->
           <UButton
@@ -190,26 +195,19 @@ async function submitFreeform() {
 }
 
 .option-btn {
+  height: auto !important;
+  padding: 8px 12px !important;
+  justify-content: flex-start !important;
+}
+.option-btn.selected {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.option-content {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--bg-tertiary);
-  background: var(--bg-primary, #1a1b2e);
-  cursor: pointer;
-  transition: all 0.15s;
   text-align: left;
-  width: 100%;
-}
-.option-btn:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-.option-btn.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .option-label {
