@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { exists } from '@tauri-apps/plugin-fs'
-import { getProjectCardSummaries, getActiveCardsAllProjects, type ProjectCardSummary, type ActiveCardRow } from '~/services/database'
+import { getProjectCardSummaries, getActiveCardsAllProjects, getUsageMetrics, type ProjectCardSummary, type ActiveCardRow, type UsageMetrics } from '~/services/database'
 
 const projectsStore = useProjectsStore()
 const { addProject, switchToProject, navigateToCard } = useProjectActions()
@@ -61,9 +61,30 @@ function getProjectName(projectId: string): string {
   return p?.name || 'Unknown'
 }
 
+// --- Block 3: Usage Metrics ---
+const usageMetrics = ref<UsageMetrics | null>(null)
+
+async function loadUsageMetrics() {
+  usageMetrics.value = await getUsageMetrics()
+}
+
+function formatCost(value: number): string {
+  if (value === 0) return '$0.00'
+  if (value < 0.01) return '<$0.01'
+  return `$${value.toFixed(2)}`
+}
+
+function formatTokens(value: number): string {
+  if (value === 0) return '0'
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(value)
+}
+
 onMounted(() => {
   loadProjectSummaries()
   loadActiveCards()
+  loadUsageMetrics()
 })
 </script>
 
@@ -179,14 +200,41 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Block 3: Usage Metrics (Step 4.4) -->
+      <!-- Block 3: Usage Metrics -->
       <section class="home-block">
         <div class="block-header">
           <UIcon name="i-lucide-bar-chart-3" class="block-icon" />
           <h2 class="block-title">Usage</h2>
         </div>
         <div class="block-content">
+          <div v-if="usageMetrics && usageMetrics.sessionCount > 0" class="metrics-grid">
+            <div class="metric">
+              <span class="metric-label">Today</span>
+              <span class="metric-value">{{ formatCost(usageMetrics.costToday) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">This week</span>
+              <span class="metric-value">{{ formatCost(usageMetrics.costWeek) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">This month</span>
+              <span class="metric-value">{{ formatCost(usageMetrics.costMonth) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Sessions</span>
+              <span class="metric-value">{{ usageMetrics.sessionCount }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Input tokens</span>
+              <span class="metric-value">{{ formatTokens(usageMetrics.inputTokens) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Output tokens</span>
+              <span class="metric-value">{{ formatTokens(usageMetrics.outputTokens) }}</span>
+            </div>
+          </div>
           <EmptyState
+            v-else
             icon="i-lucide-bar-chart-3"
             title="No usage data"
             description="Metrics will appear after your first session."
@@ -350,6 +398,29 @@ onMounted(() => {
 }
 .stat--time {
   margin-left: auto;
+}
+
+/* Usage Metrics */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding-top: 4px;
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Global Activity */
