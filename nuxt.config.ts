@@ -1,3 +1,5 @@
+import pkg from './package.json';
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   ssr: false,
@@ -23,6 +25,9 @@ export default defineNuxtConfig({
   },
   sourcemap: { client: false },
   vite: {
+    define: {
+      'import.meta.env.PACKAGE_VERSION': JSON.stringify(pkg.version),
+    },
     clearScreen: false,
     build: {
       rollupOptions: {

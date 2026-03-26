@@ -133,6 +133,8 @@ export interface GlobalSettings {
   theme: 'dark' | 'light';
   defaultColumns: ColumnConfig[];
   chatMode: ChatMode;
+  defaultModel?: ModelAlias;
+  defaultEffort?: EffortLevel;
   onboardingCompleted?: boolean;
   onboardingDismissed?: boolean;
   telemetryEnabled?: boolean;
