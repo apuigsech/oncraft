@@ -17,6 +17,9 @@ export const useSessionsStore = defineStore('sessions', () => {
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
 
+  // Track active sub-agents per card (task_started adds, result/notification removes)
+  const activeSubAgents: Record<string, Set<string>> = reactive({});
+
   // ME-3: Maximum messages kept in memory per card.
   // Older messages are discarded to prevent unbounded memory growth in long sessions.
   const MAX_MESSAGES_PER_CARD = 500;
@@ -73,8 +76,20 @@ export const useSessionsStore = defineStore('sessions', () => {
     return messages[cardId] || [];
   }
 
+  function getActiveSubAgentCount(cardId: string): number {
+    return activeSubAgents[cardId]?.size ?? 0;
+  }
+
   function appendPart(cardId: string, part: ChatPart): void {
     if (!messages[cardId]) { messages[cardId] = []; }
+
+    // Track sub-agent lifecycle via task events
+    if (part.kind === 'task_started' && part.data.taskId) {
+      if (!activeSubAgents[cardId]) activeSubAgents[cardId] = new Set();
+      activeSubAgents[cardId].add(part.data.taskId as string);
+    } else if (part.kind === 'task_notification' && part.data.taskId) {
+      activeSubAgents[cardId]?.delete(part.data.taskId as string);
+    }
 
     // QW-3: Streaming tokens are buffered and flushed via rAF
     // to avoid mutating reactive state on every single token (~10-20/s)
@@ -135,6 +150,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         durationMs: m.durationMs,
       });
       markQueryComplete(cardId);
+      delete activeSubAgents[cardId]; // Clear sub-agent tracking on query end
       cardsStore.updateCardState(cardId, 'idle');
       return;
     }
@@ -466,14 +482,15 @@ export const useSessionsStore = defineStore('sessions', () => {
     delete messages[cardId];
     delete sessionConfigs[cardId];
     delete sessionMetrics[cardId];
+    delete activeSubAgents[cardId];
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
   }
 
   return {
-    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands,
-    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
+    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, activeSubAgents,
+    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getActiveSubAgentCount,
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, isLoadingHistory, purgeCard,

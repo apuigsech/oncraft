@@ -4,7 +4,12 @@ import type { ChatPart } from '~/types';
 const props = defineProps<{
   parts: ChatPart[];
   isActive: boolean;
+  cardId: string;
 }>();
+
+const sessionsStore = useSessionsStore();
+
+const subAgentCount = computed(() => sessionsStore.getActiveSubAgentCount(props.cardId));
 
 const latest = computed(() => {
   const p = props.parts[props.parts.length - 1];
@@ -20,18 +25,29 @@ const subtypeIcon: Record<string, string> = {
   task_progress:     '◈',
   task_notification: '◎',
   status:            '◌',
+  tool_progress:     '⚙',
 };
 
 const icon = computed(() => subtypeIcon[latest.value?.subtype ?? ''] ?? '◌');
-const visible = computed(() => props.isActive && !!latest.value);
+
+// Always visible when agent is active — provides persistent activity feedback
+const visible = computed(() => props.isActive);
+
+const statusText = computed(() => {
+  if (latest.value?.content) return latest.value.content;
+  return 'Working...';
+});
 </script>
 
 <template>
   <Transition name="progress-fade">
     <div v-if="visible" class="agent-progress">
       <span class="progress-spinner" />
-      <span class="progress-icon">{{ icon }}</span>
-      <span class="progress-text">{{ latest!.content }}</span>
+      <span v-if="latest" class="progress-icon">{{ icon }}</span>
+      <span class="progress-text">{{ statusText }}</span>
+      <span v-if="subAgentCount > 0" class="sub-agent-badge">
+        {{ subAgentCount }} sub-agent{{ subAgentCount > 1 ? 's' : '' }}
+      </span>
     </div>
   </Transition>
 </template>
@@ -68,6 +84,16 @@ const visible = computed(() => props.isActive && !!latest.value);
 }
 .progress-icon { flex-shrink: 0; font-size: 10px; color: var(--accent); }
 .progress-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.sub-agent-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-primary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 .progress-fade-enter-active,
 .progress-fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .progress-fade-enter-from,
