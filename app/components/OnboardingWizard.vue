@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { runHealthChecks, type HealthCheckResult } from '~/services/health-check'
+import { setEnabled as telemetrySetEnabled } from '~/services/telemetry'
 
 const emit = defineEmits<{
   complete: []
@@ -26,9 +27,8 @@ async function runChecks() {
 
 function nextStep() {
   if (currentStep.value === 0) {
-    // Save telemetry preference from Step 1
-    settingsStore.settings.telemetryEnabled = telemetryChecked.value
-    settingsStore.save()
+    // Wire telemetry preference through the service (creates install ID on opt-in)
+    telemetrySetEnabled(telemetryChecked.value)
     // Start health checks for Step 2
     runChecks()
   }
@@ -51,7 +51,7 @@ async function dismiss() {
 
 async function finish() {
   settingsStore.settings.onboardingCompleted = true
-  settingsStore.settings.telemetryEnabled = telemetryChecked.value
+  telemetrySetEnabled(telemetryChecked.value)
   await settingsStore.save()
   emit('complete')
 }

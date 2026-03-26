@@ -1,12 +1,14 @@
 /**
  * Global error handler plugin.
  * Catches unhandled Vue errors, window errors, and unhandled promise rejections.
- * Logs locally and dispatches to telemetry (no-op until Phase 7 wires it up).
+ * Logs locally and dispatches to telemetry when opted in.
  */
+import { trackError } from '~/services/telemetry'
+
 export default defineNuxtPlugin((nuxtApp) => {
-  // Telemetry dispatch stub — replaced in Phase 7
-  const dispatchToTelemetry = (_error: unknown, _context?: string) => {
-    // no-op until telemetry service is implemented
+  // Dispatch to telemetry service (checks opt-in internally)
+  const dispatchToTelemetry = (error: unknown, context?: string) => {
+    trackError(error, context || 'unknown')
   }
 
   // Vue component errors

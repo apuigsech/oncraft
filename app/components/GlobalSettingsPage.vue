@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatMode, ModelAlias, EffortLevel } from '~/types';
 import type { HealthCheckItem } from '~/services/health-check';
+import { setEnabled as telemetrySetEnabled, getEventQueue, getInstallId, type TelemetryEvent } from '~/services/telemetry';
 
 const settingsStore = useSettingsStore();
 
@@ -70,11 +71,22 @@ const selectedEffort = computed({
 const telemetryEnabled = computed({
   get: () => settingsStore.settings.telemetryEnabled ?? false,
   set: (val: boolean) => {
-    settingsStore.settings.telemetryEnabled = val;
-    settingsStore.save();
+    telemetrySetEnabled(val);
   },
 });
 const showTelemetryDetails = ref(false);
+const showTelemetryData = ref(false);
+const showInstallId = ref(false);
+
+const telemetryInstallId = computed(() => getInstallId());
+const maskedInstallId = computed(() => {
+  const id = telemetryInstallId.value;
+  if (!id) return 'Not generated (opt-in first)';
+  if (showInstallId.value) return id;
+  return id.replace(/[a-f0-9]/g, 'x');
+});
+
+const telemetryEvents = computed<TelemetryEvent[]>(() => [...getEventQueue()]);
 
 // ── System section ──
 const healthData = ref<HealthCheckItem[]>([]);
@@ -254,17 +266,51 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
           </div>
 
           <div class="setting-group">
+            <span class="setting-label">Install ID</span>
+            <div class="install-id-row">
+              <code class="install-id-value">{{ maskedInstallId }}</code>
+              <UButton
+                v-if="telemetryInstallId"
+                variant="ghost"
+                color="neutral"
+                size="xs"
+                :icon="showInstallId ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                @click="showInstallId = !showInstallId"
+              />
+            </div>
+            <p class="hint">Anonymous identifier. Not linked to your identity.</p>
+          </div>
+
+          <div class="setting-group">
             <UButton
               variant="outline"
               color="neutral"
               size="sm"
               icon="i-lucide-eye"
-              disabled
+              @click="showTelemetryData = true"
             >
               View Telemetry Data
             </UButton>
-            <p class="hint">Coming soon: inspect exactly what data is being collected.</p>
+            <p class="hint">Inspect exactly what data has been collected this session.</p>
           </div>
+
+          <UModal v-model:open="showTelemetryData">
+            <template #content>
+              <div class="telemetry-modal">
+                <div class="telemetry-modal-header">
+                  <h3>Collected Telemetry Data</h3>
+                  <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-x" @click="showTelemetryData = false" />
+                </div>
+                <div v-if="telemetryEvents.length > 0" class="telemetry-modal-body">
+                  <pre class="telemetry-json">{{ JSON.stringify(telemetryEvents, null, 2) }}</pre>
+                </div>
+                <div v-else class="telemetry-modal-empty">
+                  <p v-if="!telemetryEnabled">Telemetry is disabled. No data is being collected.</p>
+                  <p v-else>No events collected yet this session.</p>
+                </div>
+              </div>
+            </template>
+          </UModal>
         </section>
 
         <!-- System -->
@@ -469,4 +515,49 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
 .about-value { font-size: 13px; color: var(--text-secondary); }
 .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
 .about-links { display: flex; gap: 8px; margin-top: 4px; }
+
+/* Install ID */
+.install-id-row { display: flex; align-items: center; gap: 8px; }
+.install-id-value {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Telemetry data modal */
+.telemetry-modal { padding: 20px; }
+.telemetry-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.telemetry-modal-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.telemetry-modal-body { max-height: 400px; overflow-y: auto; }
+.telemetry-json {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+.telemetry-modal-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.telemetry-modal-empty p { margin: 0; }
 </style>

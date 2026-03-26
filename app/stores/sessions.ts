@@ -7,6 +7,7 @@ import {
 } from '~/services/claude-process';
 import { resolveTemplate } from '~/services/template-engine';
 import { ensureMarkdownReady } from '~/services/markdown';
+import { trackSessionStart, trackSessionEnd } from '~/services/telemetry';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, ChatPart[]> = reactive({});
@@ -169,6 +170,8 @@ export const useSessionsStore = defineStore('sessions', () => {
         outputTokens: m.outputTokens,
         durationMs: m.durationMs,
       });
+      // Telemetry: track session end with duration (anonymous, no card/project data)
+      trackSessionEnd((msg.durationMs as number) || 0);
       markQueryComplete(cardId);
       delete activeSubAgents[cardId]; // Clear sub-agent tracking on query end
       cardsStore.updateCardState(cardId, 'idle');
@@ -309,6 +312,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     cardProjectMap.set(cardId, project.id);
 
     await cardsStore.updateCardState(cardId, 'active');
+    // Telemetry: track session start (anonymous, no card/project data)
+    trackSessionStart();
 
     // Determine session ID for resume
     let sessionId = card?.sessionId && !card.sessionId.startsWith('pending-')

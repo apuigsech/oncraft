@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
+import { initTelemetry, shutdownTelemetry } from '~/services/telemetry'
 
 // ME-5: Lazy-load heavy components that are not needed at startup.
 // ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
@@ -85,6 +86,9 @@ onMounted(async () => {
     preloadUtilSidecar()
   }
 
+  // Initialize telemetry after settings are loaded (tracks launch if opted in)
+  initTelemetry()
+
   // Show onboarding on first launch
   const s = settingsStore.settings
   if (!s.onboardingCompleted && !s.onboardingDismissed) {
@@ -92,6 +96,10 @@ onMounted(async () => {
   }
 
   appReady.value = true
+})
+
+onUnmounted(() => {
+  shutdownTelemetry()
 })
 </script>
 
