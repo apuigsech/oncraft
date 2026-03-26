@@ -44,7 +44,8 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
 </script>
 
 <template>
-  <div class="kanban-board">
+  <KanbanSkeleton v-if="!columns.length" />
+  <div v-else class="kanban-board">
     <KanbanColumn
       v-for="state in columns"
       :key="state!.slug"

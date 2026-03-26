@@ -18,6 +18,7 @@ const pipelinesStore = usePipelinesStore()
 const sessionsStore = useSessionsStore()
 const { activeFile, closeFile } = useFileViewer()
 
+const appReady = ref(false)
 const showSettings = ref(false)
 const showGlobalSettings = ref(false)
 const showChat = computed(() => sessionsStore.activeChatCardId !== null)
@@ -76,6 +77,7 @@ onMounted(async () => {
   }
   if (projectsResult.status === 'rejected') {
     if (import.meta.dev) console.error('[OnCraft] project load error:', projectsResult.reason)
+    appReady.value = true
     return
   }
 
@@ -90,12 +92,19 @@ onMounted(async () => {
     // when the user opens a chat (sidecar is only needed for SDK operations)
     preloadUtilSidecar()
   }
+
+  appReady.value = true
 })
 </script>
 
 <template>
   <UApp>
-    <div id="app">
+    <!-- Splash screen during initialization -->
+    <Transition name="splash-fade">
+      <AppSplash v-if="!appReady" />
+    </Transition>
+
+    <div v-show="appReady" id="app">
       <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
@@ -119,13 +128,17 @@ onMounted(async () => {
             />
           </ErrorBoundary>
         </div>
-        <div v-if="showChat" class="divider" @mousedown="startResize" />
-        <ErrorBoundary v-if="showChat && isConsoleMode">
-          <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
-        </ErrorBoundary>
-        <ErrorBoundary v-else-if="showChat">
-          <ChatPanel :style="{ width: chatWidth + 'px' }" />
-        </ErrorBoundary>
+        <Transition name="chat-slide">
+          <div v-if="showChat" class="chat-side">
+            <div class="divider" @mousedown="startResize" />
+            <ErrorBoundary v-if="isConsoleMode">
+              <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
+            </ErrorBoundary>
+            <ErrorBoundary v-else>
+              <ChatPanel :style="{ width: chatWidth + 'px' }" />
+            </ErrorBoundary>
+          </div>
+        </Transition>
       </div>
       <ProjectSettings v-if="showSettings" @close="showSettings = false" />
       <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
@@ -137,6 +150,17 @@ onMounted(async () => {
 #app { height: 100vh; display: flex; flex-direction: column; }
 .main-content { flex: 1; display: flex; overflow: hidden; }
 .board-area { flex: 1; overflow-x: auto; overflow-y: hidden; }
+.chat-side { display: flex; flex-shrink: 0; }
 .divider { width: 4px; cursor: col-resize; background: var(--border); transition: background 0.15s; }
 .divider:hover { background: var(--accent); }
+
+/* Splash fade-out transition */
+.splash-fade-leave-active { transition: opacity 0.3s ease; }
+.splash-fade-leave-to { opacity: 0; }
+
+/* Chat panel slide-in/out transition */
+.chat-slide-enter-active { transition: transform 0.25s ease-out, opacity 0.25s ease-out; }
+.chat-slide-leave-active { transition: transform 0.2s ease-in, opacity 0.2s ease-in; }
+.chat-slide-enter-from { transform: translateX(100%); opacity: 0; }
+.chat-slide-leave-to { transform: translateX(100%); opacity: 0; }
 </style>

@@ -12,6 +12,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, ChatPart[]> = reactive({});
   const activeChatCardId = ref<string | null>(null);
   const historyLoaded = new Set<string>();
+  const _loadingHistory = ref(new Set<string>());
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
@@ -419,17 +420,23 @@ export const useSessionsStore = defineStore('sessions', () => {
       const card = cardsStore.cards.find(c => c.id === cardId);
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
         if (import.meta.dev) console.log('[OnCraft] loading history for session:', card.sessionId);
+        _loadingHistory.value.add(cardId);
+        _loadingHistory.value = new Set(_loadingHistory.value); // trigger reactivity
         loadHistoryViaSidecar(card.sessionId).then((history) => {
           if (import.meta.dev) console.log('[OnCraft] loaded', history.length, 'messages from history');
           if (history.length > 0) {
             messages[cardId] = history;
           }
+        }).finally(() => {
+          _loadingHistory.value.delete(cardId);
+          _loadingHistory.value = new Set(_loadingHistory.value);
         });
       }
     }
   }
   function closeChat(): void { activeChatCardId.value = null; }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
+  function isLoadingHistory(cardId: string): boolean { return _loadingHistory.value.has(cardId); }
 
   // Fire the trigger prompt when a card moves to a new FlowState
   // Called by KanbanColumn.onDragEnd after a successful card move.
@@ -469,6 +476,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics,
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
-    loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, purgeCard,
+    loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, isLoadingHistory, purgeCard,
   };
 });

@@ -402,8 +402,11 @@ onUnmounted(() => {
         </template>
       </UChatMessages>
 
+      <ChatSkeleton
+        v-if="!inlineParts.length && sessionsStore.activeChatCardId && sessionsStore.isLoadingHistory(sessionsStore.activeChatCardId)"
+      />
       <EmptyState
-        v-if="!inlineParts.length"
+        v-else-if="!inlineParts.length"
         icon="i-lucide-message-square"
         title="Start a conversation"
         description="Send a message to begin working with Claude."
