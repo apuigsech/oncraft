@@ -1,51 +1,52 @@
 /**
- * OnCraft design tokens.
+ * [ProductName] design tokens — Tokyo Night inspired palette.
  *
  * Two layers:
  *  1. Nuxt UI dark-mode overrides  →  --ui-* variables (what UButton, UDropdownMenu etc. use)
  *  2. Legacy CSS custom properties →  --bg-*, --text-* (used by custom scoped styles)
  *
- * Both layers use the same slate palette so everything stays consistent.
+ * The palette is based on Tokyo Night Storm with indigo accent.
+ * Code highlighting colors remain unchanged (defined in ChatPanel.vue).
  */
 
-/* ─── 1. Nuxt UI semantic tokens (dark slate palette) ─────────────────────── */
+/* ─── 1. Nuxt UI semantic tokens (Tokyo Night Storm palette) ─────────────── */
 .dark {
-  /* Backgrounds */
-  --ui-bg:           #0f172a;   /* slate-950  — main app bg */
-  --ui-bg-muted:     #1e293b;   /* slate-800 */
-  --ui-bg-elevated:  #1e293b;   /* slate-800  — dropdowns, popovers */
-  --ui-bg-accented:  #334155;   /* slate-700  — hover states */
-  --ui-bg-inverted:  #f1f5f9;   /* slate-100 */
+  /* Backgrounds — deep blue-grey from Tokyo Night */
+  --ui-bg:           #1a1b2e;   /* storm base */
+  --ui-bg-muted:     #24283b;   /* storm surface */
+  --ui-bg-elevated:  #24283b;   /* dropdowns, popovers */
+  --ui-bg-accented:  #2f3549;   /* hover states */
+  --ui-bg-inverted:  #c0caf5;   /* light text on dark */
 
-  /* Text */
-  --ui-text-dimmed:      #475569;   /* slate-600 */
-  --ui-text-muted:       #64748b;   /* slate-500 */
-  --ui-text-toned:       #94a3b8;   /* slate-400 */
-  --ui-text:             #cbd5e1;   /* slate-300 */
-  --ui-text-highlighted: #f1f5f9;   /* slate-100 */
-  --ui-text-inverted:    #0f172a;   /* slate-950 */
+  /* Text — Tokyo Night grey scale */
+  --ui-text-dimmed:      #3b4261;   /* storm comment dark */
+  --ui-text-muted:       #565f89;   /* storm comment */
+  --ui-text-toned:       #9aa5ce;   /* storm foreground dim */
+  --ui-text:             #a9b1d6;   /* storm foreground */
+  --ui-text-highlighted: #c0caf5;   /* storm foreground bright */
+  --ui-text-inverted:    #1a1b2e;   /* dark on light */
 
-  /* Borders */
-  --ui-border:          #334155;   /* slate-700 */
-  --ui-border-muted:    #1e293b;   /* slate-800 */
-  --ui-border-accented: #475569;   /* slate-600 */
-  --ui-border-inverted: #f1f5f9;   /* slate-100 */
+  /* Borders — subtle blue-grey */
+  --ui-border:          #2f3549;   /* storm border */
+  --ui-border-muted:    #24283b;   /* storm surface */
+  --ui-border-accented: #3b4261;   /* storm comment dark */
+  --ui-border-inverted: #c0caf5;
 
-  /* Border radius (matches our app's 6px cards) */
+  /* Border radius */
   --ui-radius: 0.375rem;   /* 6px */
 }
 
 /* ─── 2. Legacy CSS custom properties (used by scoped styles) ─────────────── */
 :root {
-  --bg-primary:     #0f172a;   /* slate-950 */
-  --bg-secondary:   #1e293b;   /* slate-800 */
-  --bg-tertiary:    #334155;   /* slate-700 */
-  --text-primary:   #e2e8f0;   /* slate-200 */
-  --text-secondary: #94a3b8;   /* slate-400 */
-  --text-muted:     #64748b;   /* slate-500 */
-  --border:         #475569;   /* slate-600 */
-  --accent:         #3b82f6;   /* blue-500  */
-  --success:        #22c55e;   /* green-500 */
-  --warning:        #fbbf24;   /* amber-400 */
-  --error:          #ef4444;   /* red-500   */
+  --bg-primary:     #1a1b2e;   /* storm base */
+  --bg-secondary:   #24283b;   /* storm surface */
+  --bg-tertiary:    #2f3549;   /* storm highlight */
+  --text-primary:   #c0caf5;   /* storm fg bright */
+  --text-secondary: #a9b1d6;   /* storm fg */
+  --text-muted:     #565f89;   /* storm comment */
+  --border:         #3b4261;   /* storm comment dark */
+  --accent:         #7aa2f7;   /* Tokyo Night blue */
+  --success:        #9ece6a;   /* Tokyo Night green */
+  --warning:        #e0af68;   /* Tokyo Night yellow */
+  --error:          #f7768e;   /* Tokyo Night red */
 }

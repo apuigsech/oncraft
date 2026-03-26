@@ -1,8 +1,19 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'blue',
+      primary: 'indigo',
       neutral: 'slate',
+    },
+    button: {
+      defaultVariant: 'soft',
+    },
+    modal: {
+      overlay: {
+        background: 'bg-black/60',
+      },
+    },
+    toast: {
+      defaultCloseButton: true,
     },
   },
 })
