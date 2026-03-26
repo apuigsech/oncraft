@@ -343,3 +343,70 @@ pub async fn delete_session(session_id: String) -> bool {
     .await
     .unwrap_or(false)
 }
+
+/// Return the git status of specific files within a repository.
+/// Runs `git -C <repo_path> status --porcelain -- <file1> <file2> ...`.
+/// For each file returns one of: "clean", "modified", "missing".
+/// Files that appear in porcelain output (M, A, ??, etc.) → "modified".
+/// Files absent from output → check disk: exists → "clean", else → "missing".
+#[tauri::command]
+pub async fn git_file_status(
+    repo_path: String,
+    file_paths: Vec<String>,
+) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo = Path::new(&repo_path);
+
+        // Build git command: git -C <repo> status --porcelain -- file1 file2 ...
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["-C", &repo_path, "status", "--porcelain", "--"]);
+        for fp in &file_paths {
+            cmd.arg(fp);
+        }
+
+        let output = match cmd.output() {
+            Ok(o) if o.status.success() => o,
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                return serde_json::json!({ "error": stderr.trim() });
+            }
+            Err(e) => return serde_json::json!({ "error": e.to_string() }),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse porcelain output: lines like "XY <path>" or "XY <path> -> <path>"
+        let mut modified_files: HashSet<String> = HashSet::new();
+        for line in stdout.lines() {
+            if line.len() < 4 {
+                continue;
+            }
+            // Skip the 2-char status + space, take the path
+            let path_part = &line[3..];
+            // Handle renames: "old -> new"
+            let file_path = if let Some(pos) = path_part.find(" -> ") {
+                &path_part[pos + 4..]
+            } else {
+                path_part
+            };
+            modified_files.insert(file_path.to_string());
+        }
+
+        // Build result for each requested file
+        let mut result = serde_json::Map::new();
+        for fp in &file_paths {
+            let status = if modified_files.contains(fp.as_str()) {
+                "modified"
+            } else if repo.join(fp).exists() {
+                "clean"
+            } else {
+                "missing"
+            };
+            result.insert(fp.clone(), serde_json::json!(status));
+        }
+
+        serde_json::Value::Object(result)
+    })
+    .await
+    .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() }))
+}

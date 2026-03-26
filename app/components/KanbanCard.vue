@@ -2,6 +2,7 @@
 import type { Card, CardLinkedIssue } from '~/types';
 import { deleteSessionNative, gitBranchStatus } from '~/services/claude-process';
 import type { BranchStatus } from '~/services/claude-process';
+import { getFilesGitStatus, type FileGitStatus } from '~/services/git-status';
 
 const props = defineProps<{ card: Card; columnColor: string }>();
 const emit = defineEmits<{
@@ -42,12 +43,33 @@ async function refreshBranchStatus() {
   }
 }
 
-onMounted(() => { refreshBranchStatus(); });
+// Linked files git status
+const fileStatuses = ref<Record<string, FileGitStatus>>({});
+
+async function refreshFileStatuses() {
+  const basePath = effectiveProjectPath.value;
+  if (!basePath) return;
+  const paths = Object.values(props.card.linkedFiles || {}).map(String);
+  if (paths.length === 0) { fileStatuses.value = {}; return; }
+  fileStatuses.value = await getFilesGitStatus(basePath, paths);
+}
+
+function fileStatusClass(filePath: string): string {
+  const status = fileStatuses.value[filePath];
+  if (status === 'modified') return 'file-tag--modified';
+  if (status === 'missing') return 'file-tag--missing';
+  return '';
+}
+
+onMounted(() => { refreshBranchStatus(); refreshFileStatuses(); });
 
 // Refresh whenever the card transitions back to idle (query just finished)
 watch(() => props.card.state, (newState) => {
-  if (newState === 'idle') refreshBranchStatus();
+  if (newState === 'idle') { refreshBranchStatus(); refreshFileStatuses(); }
 });
+
+// Refresh file statuses when linked files change
+watch(() => props.card.linkedFiles, () => { refreshFileStatuses(); }, { deep: true });
 
 const showEdit = ref(false);
 const showDeleteConfirm = ref(false);
@@ -216,7 +238,7 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
               color="neutral"
               size="xs"
               class="file-tag"
-              :class="{ 'file-tag--active': isFileActive(label) }"
+              :class="[{ 'file-tag--active': isFileActive(label) }, fileStatusClass(String(filePath))]"
               :title="String(filePath)"
               @click="onFileClick($event, label, String(filePath))"
             >{{ label }}</UButton>
@@ -350,6 +372,13 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 .file-tag--active {
   color: var(--accent, #7c8aff) !important;
   font-weight: 600;
+}
+.file-tag--modified {
+  color: var(--warning, #f59e0b) !important;
+}
+.file-tag--missing {
+  color: var(--error, #f87171) !important;
+  text-decoration: line-through !important;
 }
 .file-sep {
   color: var(--border, #3a3a4e);
