@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { exists } from '@tauri-apps/plugin-fs'
 import { getProjectCardSummaries, getActiveCardsAllProjects, getUsageMetrics, type ProjectCardSummary, type ActiveCardRow, type UsageMetrics } from '~/services/database'
+import { runHealthChecks, type HealthCheckResult } from '~/services/health-check'
 
 const projectsStore = useProjectsStore()
 const { addProject, switchToProject, navigateToCard } = useProjectActions()
@@ -81,10 +82,26 @@ function formatTokens(value: number): string {
   return String(value)
 }
 
+// --- Block 4: System Health ---
+const healthResult = ref<HealthCheckResult | null>(null)
+const healthLoading = ref(false)
+
+async function loadHealthChecks() {
+  healthLoading.value = true
+  try {
+    healthResult.value = await runHealthChecks()
+  } catch (err) {
+    if (import.meta.dev) console.error('[OnCraft] health check failed:', err)
+  } finally {
+    healthLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadProjectSummaries()
   loadActiveCards()
   loadUsageMetrics()
+  loadHealthChecks()
 })
 </script>
 
@@ -242,17 +259,34 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Block 4: System Health (Step 4.5) -->
+      <!-- Block 4: System Health -->
       <section class="home-block">
         <div class="block-header">
           <UIcon name="i-lucide-heart-pulse" class="block-icon" />
           <h2 class="block-title">System Health</h2>
+          <div class="block-header-spacer" />
+          <UButton
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            icon="i-lucide-refresh-cw"
+            :loading="healthLoading"
+            @click="loadHealthChecks"
+          />
         </div>
         <div class="block-content">
+          <div v-if="healthResult" class="health-list">
+            <div v-for="item in healthResult.items" :key="item.label" class="health-row">
+              <div class="health-dot" :class="`health-dot--${item.status}`" />
+              <span class="health-label">{{ item.label }}</span>
+              <span class="health-detail">{{ item.detail }}</span>
+            </div>
+          </div>
           <EmptyState
+            v-else
             icon="i-lucide-heart-pulse"
             title="Checking..."
-            description="System health checks will appear here."
+            description="Running system health checks..."
           />
         </div>
       </section>
@@ -474,6 +508,38 @@ onMounted(() => {
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* System Health */
+.health-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.health-dot--green { background: var(--success); }
+.health-dot--amber { background: var(--warning); }
+.health-dot--red { background: var(--error); }
+.health-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 90px;
+}
+.health-detail {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 @media (max-width: 700px) {
