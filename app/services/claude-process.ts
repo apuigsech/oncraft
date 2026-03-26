@@ -153,6 +153,12 @@ export async function spawnSession(
           continue;
         }
 
+        // 3b. Intercept session_state_changed — update card state directly
+        if (sidecarMsg.type === 'session_state_changed') {
+          dispatchMeta(cardId, sidecarMsg);
+          continue;
+        }
+
         // 4. Process through registry
         const part = registryProcess(sidecarMsg);
 
@@ -187,6 +193,8 @@ export async function spawnSession(
         } else if (raw.type === 'init') {
           dispatchMeta(cardId, raw);
         } else if (raw.type === 'assistant' && (raw.subtype === 'streaming' || raw.subtype === 'thinking_streaming')) {
+          dispatchMeta(cardId, raw);
+        } else if (raw.type === 'session_state_changed') {
           dispatchMeta(cardId, raw);
         } else {
           const part = registryProcess(raw);

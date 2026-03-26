@@ -7,7 +7,14 @@ const sessionsStore = useSessionsStore();
 const toolName = computed(() => (props.part.data.toolName as string) || '');
 const toolInput = computed(() => (props.part.data.toolInput as Record<string, unknown>) || {});
 
+// SDK-provided permission prompt fields (0.2.84+)
+const sdkTitle = computed(() => (props.part.data.title as string) || '');
+const sdkDescription = computed(() => (props.part.data.description as string) || '');
+const sdkDisplayName = computed(() => (props.part.data.displayName as string) || '');
+
 const summary = computed(() => {
+  // Use SDK-provided title when available
+  if (sdkTitle.value) return sdkTitle.value;
   const input = toolInput.value;
   const name = toolName.value;
   switch (name) {
@@ -22,6 +29,8 @@ const summary = computed(() => {
     default: return name;
   }
 });
+
+const displayLabel = computed(() => sdkDisplayName.value || toolName.value);
 
 const isResolved = computed(() => !!props.part.resolved);
 const answer = computed(() => (props.part.data.answer as string) || '');
@@ -41,7 +50,7 @@ async function deny() {
   <!-- Resolved: compact inline record -->
   <div v-if="isResolved" class="approval-resolved">
     <span class="resolved-icon">&#x1F6E1;</span>
-    <span class="resolved-tool">{{ toolName }}</span>
+    <span class="resolved-tool">{{ displayLabel }}</span>
     <span class="resolved-summary">{{ summary }}</span>
     <span class="resolved-arrow">&rarr;</span>
     <span class="resolved-answer" :class="{ denied: answer === 'Denied' }">{{ answer }}</span>
@@ -50,8 +59,9 @@ async function deny() {
   <!-- Active: approval prompt -->
   <div v-else class="tool-approval-bar">
     <div class="approval-info">
-      <span class="approval-tool-name">{{ toolName }}</span>
+      <span class="approval-tool-name">{{ displayLabel }}</span>
       <span class="approval-summary">{{ summary }}</span>
+      <span v-if="sdkDescription" class="approval-description">{{ sdkDescription }}</span>
     </div>
     <div class="approval-actions">
       <UButton color="success" size="sm" @click="approve">Allow</UButton>
@@ -77,6 +87,7 @@ async function deny() {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .approval-tool-name {
@@ -92,6 +103,13 @@ async function deny() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.approval-description {
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .approval-actions {

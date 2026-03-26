@@ -3,20 +3,35 @@ import type { ChatPart } from '~/types';
 
 const props = defineProps<{ part: ChatPart; cardId: string }>();
 
+const isRetry = computed(() => !!props.part.data.isRetry);
 const rateLimitInfo = computed(() => (props.part.data.rateLimitInfo as Record<string, unknown>) || {});
 
 const infoEntries = computed(() => {
   return Object.entries(rateLimitInfo.value).filter(([_, v]) => v !== null && v !== undefined);
 });
+
+const retryText = computed(() => {
+  const attempt = props.part.data.attempt as number;
+  const max = props.part.data.maxRetries as number;
+  const delayMs = props.part.data.retryDelayMs as number;
+  const delaySec = delayMs ? Math.round(delayMs / 1000) : 0;
+  return `Retrying (${attempt}/${max}${delaySec ? `, ${delaySec}s` : ''})`;
+});
 </script>
 
 <template>
   <div class="rate-limit-notice">
-    <UIcon name="i-lucide-clock" class="rate-limit-icon" />
-    <span class="rate-limit-text">Rate limited</span>
-    <span v-for="[key, value] in infoEntries" :key="key" class="rate-limit-info">
-      {{ key }}: {{ value }}
-    </span>
+    <UIcon :name="isRetry ? 'i-lucide-refresh-cw' : 'i-lucide-clock'" class="rate-limit-icon" />
+    <template v-if="isRetry">
+      <span class="rate-limit-text">{{ retryText }}</span>
+      <span v-if="part.data.errorStatus" class="rate-limit-info">HTTP {{ part.data.errorStatus }}</span>
+    </template>
+    <template v-else>
+      <span class="rate-limit-text">Rate limited</span>
+      <span v-for="[key, value] in infoEntries" :key="key" class="rate-limit-info">
+        {{ key }}: {{ value }}
+      </span>
+    </template>
   </div>
 </template>
 

@@ -44,6 +44,9 @@ const registry: Record<string, ChatPartDefinition> = {
       toolName: raw.toolName ?? '',
       toolInput: raw.toolInput ?? {},
       toolUseId: raw.toolUseId ?? '',
+      ...(raw.title ? { title: raw.title } : {}),
+      ...(raw.displayName ? { displayName: raw.displayName } : {}),
+      ...(raw.description ? { description: raw.description } : {}),
     }),
   },
 
@@ -230,6 +233,19 @@ const registry: Record<string, ChatPartDefinition> = {
     verbosity: 'normal',
     parse: (raw) => ({
       rateLimitInfo: raw.rateLimitInfo ?? {},
+    }),
+  },
+
+  api_retry: {
+    placement: 'inline',
+    component: 'RateLimitNotice',
+    verbosity: 'quiet',
+    parse: (raw) => ({
+      isRetry: true,
+      attempt: raw.attempt,
+      maxRetries: raw.maxRetries,
+      retryDelayMs: raw.retryDelayMs,
+      errorStatus: raw.errorStatus,
     }),
   },
 

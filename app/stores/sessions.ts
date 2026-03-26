@@ -153,6 +153,17 @@ export const useSessionsStore = defineStore('sessions', () => {
       return;
     }
 
+    // session_state_changed: authoritative state from SDK
+    if (msg.type === 'session_state_changed') {
+      const state = msg.state as string;
+      if (state === 'idle') {
+        cardsStore.updateCardState(cardId, 'idle');
+      } else if (state === 'running') {
+        cardsStore.updateCardState(cardId, 'active');
+      }
+      return;
+    }
+
     // streaming delta: buffer the token
     if (msg.type === 'assistant' && msg.subtype === 'streaming') {
       if (!messages[cardId]) { messages[cardId] = []; }
