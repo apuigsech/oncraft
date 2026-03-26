@@ -6,6 +6,11 @@ export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([]);
   const activeProjectId = ref<string | null>(null);
 
+  // NAV: Tracks the active tab — 'home', 'settings', or a project ID.
+  // Owned here so that sessions store can derive per-project active chat correctly.
+  const activeTab = ref<string>('home');
+  const isProjectTab = computed(() => activeTab.value !== 'home' && activeTab.value !== 'settings');
+
   const activeProject = computed(() =>
     projects.value.find(p => p.id === activeProjectId.value) || null
   );
@@ -63,5 +68,13 @@ export const useProjectsStore = defineStore('projects', () => {
     await db.updateProjectLastOpened(id);
   }
 
-  return { projects, activeProjectId, activeProject, load, addProject, removeProject, setActive };
+  async function reorderProjects(orderedIds: string[]): Promise<void> {
+    const reordered = orderedIds
+      .map(id => projects.value.find(p => p.id === id))
+      .filter((p): p is Project => p !== undefined);
+    projects.value = reordered;
+    await db.updateProjectTabOrder(orderedIds);
+  }
+
+  return { projects, activeProjectId, activeTab, isProjectTab, activeProject, load, addProject, removeProject, setActive, reorderProjects };
 });
