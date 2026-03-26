@@ -84,21 +84,27 @@ onMounted(async () => {
       <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
-          <FileViewer
-            v-if="activeFile && projectsStore.activeProject"
-            :label="activeFile.label"
-            :file-path="activeFile.path"
-            :project-path="projectsStore.activeProject.path"
-            @close="closeFile()"
-          />
-          <KanbanBoard v-else-if="projectsStore.activeProject" />
-          <div v-else class="empty-state">
-            <p>Add a project to get started</p>
-          </div>
+          <ErrorBoundary>
+            <FileViewer
+              v-if="activeFile && projectsStore.activeProject"
+              :label="activeFile.label"
+              :file-path="activeFile.path"
+              :project-path="projectsStore.activeProject.path"
+              @close="closeFile()"
+            />
+            <KanbanBoard v-else-if="projectsStore.activeProject" />
+            <div v-else class="empty-state">
+              <p>Add a project to get started</p>
+            </div>
+          </ErrorBoundary>
         </div>
         <div v-if="showChat" class="divider" @mousedown="startResize" />
-        <ConsolePanel v-if="showChat && isConsoleMode" :style="{ width: consoleWidth + 'px' }" />
-        <ChatPanel v-else-if="showChat" :style="{ width: chatWidth + 'px' }" />
+        <ErrorBoundary v-if="showChat && isConsoleMode">
+          <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
+        </ErrorBoundary>
+        <ErrorBoundary v-else-if="showChat">
+          <ChatPanel :style="{ width: chatWidth + 'px' }" />
+        </ErrorBoundary>
       </div>
       <ProjectSettings v-if="showSettings" @close="showSettings = false" />
       <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
