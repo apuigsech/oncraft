@@ -140,8 +140,8 @@ onMounted(async () => {
           </div>
         </Transition>
       </div>
-      <ProjectSettings v-if="showSettings" @close="showSettings = false" />
-      <GlobalSettings v-if="showGlobalSettings" @close="showGlobalSettings = false" />
+      <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />
+      <GlobalSettings v-if="showGlobalSettings" v-model:open="showGlobalSettings" @close="showGlobalSettings = false" />
     </div>
   </UApp>
 </template>
