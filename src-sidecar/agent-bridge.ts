@@ -400,6 +400,21 @@ function translateMessage(
         elicitationId: sysMsg.elicitation_id,
       };
     }
+    if (subtype === "api_retry") {
+      return {
+        type: "api_retry",
+        attempt: sysMsg.attempt,
+        maxRetries: sysMsg.max_retries,
+        retryDelayMs: sysMsg.retry_delay_ms,
+        errorStatus: sysMsg.error_status,
+      };
+    }
+    if (subtype === "session_state_changed") {
+      return {
+        type: "session_state_changed",
+        state: sysMsg.state,
+      };
+    }
     // For any other system subtype, keep the existing generic handler:
     return {
       type: "system",
@@ -694,15 +709,38 @@ rl.on("line", async (line: string) => {
       canUseTool: async (
         toolName: string,
         input: Record<string, unknown>,
-        options: { toolUseID: string },
+        options: {
+          signal: AbortSignal;
+          toolUseID: string;
+          title?: string;
+          displayName?: string;
+          description?: string;
+        },
       ): Promise<PermissionResult> => {
         const reply = await new Promise<ReplyPayload>((resolve) => {
+          // If already aborted before we even start, deny immediately
+          if (options.signal.aborted) {
+            resolve({ content: "deny" });
+            return;
+          }
+
           pendingApproval = resolve;
+
+          // Auto-deny if the SDK aborts (e.g. user interrupted)
+          const onAbort = () => {
+            if (pendingApproval) {
+              pendingApproval({ content: "deny" });
+              pendingApproval = null;
+            }
+          };
+          options.signal.addEventListener("abort", onAbort, { once: true });
+
           // Drain buffered reply if one arrived before this callback
           if (pendingReply) {
             const buffered = pendingReply;
             pendingReply = null;
             pendingApproval = null;
+            options.signal.removeEventListener("abort", onAbort);
             resolve(buffered);
             return;
           }
@@ -712,15 +750,23 @@ rl.on("line", async (line: string) => {
             toolName,
             toolInput: input,
             toolUseId: options.toolUseID,
+            ...(options.title ? { title: options.title } : {}),
+            ...(options.displayName ? { displayName: options.displayName } : {}),
+            ...(options.description ? { description: options.description } : {}),
           });
         });
         if (reply.content === "allow") {
           return {
             behavior: "allow" as const,
-            ...(reply.updatedInput ? { updatedInput: reply.updatedInput } : {}),
+            updatedInput: reply.updatedInput ?? input,
+            decisionClassification: "user_temporary" as const,
           };
         }
-        return { behavior: "deny" as const, message: "User denied" };
+        return {
+          behavior: "deny" as const,
+          message: "User denied",
+          decisionClassification: "user_reject" as const,
+        };
       },
     };
 
