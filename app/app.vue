@@ -101,15 +101,7 @@ onMounted(async () => {
         <div class="board-area">
           <ErrorBoundary>
             <!-- Home tab -->
-            <EmptyState
-              v-if="activeTab === 'home'"
-              icon="i-lucide-house"
-              title="Welcome to OnCraft"
-              description="Open a project folder to start managing your Claude Code sessions."
-              action-label="Open project"
-              action-icon="i-lucide-plus"
-              @action="addProject"
-            />
+            <HomeScreen v-if="activeTab === 'home'" />
 
             <!-- Settings tab (full-screen) -->
             <GlobalSettings
