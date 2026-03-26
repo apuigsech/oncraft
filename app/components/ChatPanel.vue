@@ -373,11 +373,14 @@ onUnmounted(() => {
               <div v-else class="system-text">{{ part.text }}</div>
             </template>
 
-            <!-- Reasoning (thinking) -->
-            <div v-else-if="part.type === 'reasoning'" class="thinking-block">
-              <span class="thinking-label">Thinking...</span>
-              <div class="thinking-content">{{ part.reasoning }}</div>
-            </div>
+            <!-- Reasoning (thinking) — auto-opens during streaming, auto-closes after -->
+            <UChatReasoning
+              v-else-if="part.type === 'reasoning'"
+              :text="part.reasoning"
+              :streaming="part.streaming"
+              icon="i-lucide-brain"
+              :auto-close-delay="800"
+            />
 
             <!-- Tool invocations — delegate to ToolCallBlock via ChatPart -->
             <template v-else-if="part.type === 'dynamic-tool'">
@@ -538,21 +541,6 @@ onUnmounted(() => {
 /* User text */
 .user-text { white-space: pre-wrap; font-size: 13px; line-height: 1.6; word-break: break-word; }
 .system-text { font-size: 11px; color: var(--text-muted); text-align: center; padding: 4px; font-style: italic; }
-
-/* Thinking block */
-.thinking-block { opacity: 0.7; border-left: 2px solid var(--text-muted); padding-left: 10px; }
-.thinking-label { font-size: 11px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
-.thinking-content { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
-
-/* Tool fallback */
-.tool-fallback {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--text-secondary);
-  padding: 6px 10px; background: var(--bg-secondary);
-  border-radius: 6px; border: 1px solid var(--bg-tertiary);
-}
-.tool-fallback-icon { width: 14px; height: 14px; }
-.tool-done { font-size: 9px; color: var(--success); font-weight: 600; }
 
 /* ─── Markdown rendering (same as before) ─── */
 .markdown-body { font-size: 13px; line-height: 1.6; word-break: break-word; }

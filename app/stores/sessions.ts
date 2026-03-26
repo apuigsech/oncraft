@@ -92,7 +92,12 @@ export const useSessionsStore = defineStore('sessions', () => {
       const msgs = messages[cardId];
       const lastIdx = msgs.length - 1;
       if (lastIdx >= 0 && msgs[lastIdx].kind === 'assistant' && msgs[lastIdx].data.streaming) {
-        msgs[lastIdx] = part; // Replace streaming with final
+        msgs[lastIdx] = part; // Replace text streaming with final
+        return;
+      }
+      // Replace thinking streaming part with complete thinking block
+      if (part.data.thinking && lastIdx >= 0 && msgs[lastIdx].kind === 'assistant' && msgs[lastIdx].data.thinkingStreaming) {
+        msgs[lastIdx] = part;
         return;
       }
     }
@@ -164,6 +169,28 @@ export const useSessionsStore = defineStore('sessions', () => {
         });
       }
       _bufferStreamingToken(cardId, (msg.content as string) || '');
+      return;
+    }
+
+    // thinking streaming delta: buffer into a thinking ChatPart
+    if (msg.type === 'assistant' && msg.subtype === 'thinking_streaming') {
+      if (!messages[cardId]) { messages[cardId] = []; }
+      const msgs = messages[cardId];
+      const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      if (!last || last.kind !== 'assistant' || !last.data.thinkingStreaming) {
+        // Create a new streaming thinking ChatPart
+        msgs.push({
+          id: 'thinking-streaming',
+          kind: 'assistant',
+          placement: 'inline',
+          timestamp: Date.now(),
+          data: { content: '', thinking: true, thinkingStreaming: true },
+        });
+      }
+      // Buffer into thinking part directly (reuse same rAF approach)
+      const thinkingMsgs = messages[cardId];
+      const thinkingLast = thinkingMsgs[thinkingMsgs.length - 1];
+      thinkingLast.data.content = (thinkingLast.data.content as string) + ((msg.content as string) || '');
       return;
     }
 

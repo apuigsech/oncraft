@@ -2,30 +2,47 @@
 import type { ChatPart } from '~/types';
 
 const props = defineProps<{ part: ChatPart; cardId: string }>();
-const expanded = ref(false);
 
-const TOOL_INFO: Record<string, { icon: string; label: string }> = {
-  Bash: { icon: '⚡', label: 'Run' },
-  Read: { icon: '📖', label: 'Read' },
-  Write: { icon: '📝', label: 'Write' },
-  Edit: { icon: '✏️', label: 'Edit' },
-  Glob: { icon: '🔍', label: 'Find' },
-  Grep: { icon: '🔎', label: 'Search' },
-  WebFetch: { icon: '🌐', label: 'Fetch' },
-  WebSearch: { icon: '🌐', label: 'Web search' },
-  Agent: { icon: '🤖', label: 'Sub-agent' },
-  AskUserQuestion: { icon: '❓', label: 'Question' },
-  Skill: { icon: '🧩', label: 'Skill' },
-  NotebookEdit: { icon: '📓', label: 'Notebook' },
-  Task: { icon: '📋', label: 'Task' },
-  TodoWrite: { icon: '✅', label: 'Tasks' },
+const TOOL_ICONS: Record<string, string> = {
+  Bash: 'i-lucide-terminal',
+  Read: 'i-lucide-book-open',
+  Write: 'i-lucide-file-pen',
+  Edit: 'i-lucide-pencil',
+  Glob: 'i-lucide-search',
+  Grep: 'i-lucide-scan-search',
+  WebFetch: 'i-lucide-globe',
+  WebSearch: 'i-lucide-globe',
+  Agent: 'i-lucide-bot',
+  AskUserQuestion: 'i-lucide-circle-help',
+  Skill: 'i-lucide-puzzle',
+  NotebookEdit: 'i-lucide-notebook-pen',
+  Task: 'i-lucide-clipboard-list',
+  TodoWrite: 'i-lucide-list-checks',
+};
+
+const TOOL_LABELS: Record<string, string> = {
+  Bash: 'Run',
+  Read: 'Read',
+  Write: 'Write',
+  Edit: 'Edit',
+  Glob: 'Find',
+  Grep: 'Search',
+  WebFetch: 'Fetch',
+  WebSearch: 'Web search',
+  Agent: 'Sub-agent',
+  AskUserQuestion: 'Question',
+  Skill: 'Skill',
+  NotebookEdit: 'Notebook',
+  Task: 'Task',
+  TodoWrite: 'Tasks',
 };
 
 const toolName = computed(() => (props.part.data.toolName as string) || '');
 const toolInput = computed(() => (props.part.data.toolInput as Record<string, unknown>) || {});
 const toolResult = computed(() => props.part.data.toolResult as string | undefined);
 
-const toolInfo = computed(() => TOOL_INFO[toolName.value] || { icon: '🔧', label: toolName.value || 'Tool' });
+const icon = computed(() => TOOL_ICONS[toolName.value] || 'i-lucide-wrench');
+const label = computed(() => TOOL_LABELS[toolName.value] || toolName.value || 'Tool');
 
 const summary = computed(() => {
   const input = toolInput.value;
@@ -46,77 +63,56 @@ const summary = computed(() => {
   }
 });
 
+// loading = waiting for result (spinner icon)
+// streaming = actively running (shimmer animation on text)
+const isLoading = computed(() => !toolResult.value);
+const isStreaming = computed(() => !toolResult.value);
 const isEdit = computed(() => toolName.value === 'Edit');
 const isBash = computed(() => toolName.value === 'Bash');
 </script>
 
 <template>
-  <div class="tool-block">
-    <div class="tool-header" @click="expanded = !expanded">
-      <span class="tool-icon-emoji">{{ toolInfo.icon }}</span>
-      <span class="tool-label">{{ toolInfo.label }}</span>
-      <span class="tool-summary">{{ summary }}</span>
-      <span class="tool-expand">{{ expanded ? '▾' : '▸' }}</span>
-      <span v-if="toolResult" class="tool-badge result">done</span>
+  <UChatTool
+    :text="label"
+    :suffix="isLoading ? summary : summary"
+    :icon="icon"
+    :loading="isLoading"
+    :streaming="isStreaming"
+    variant="card"
+    chevron="leading"
+    :default-open="false"
+  >
+    <!-- Bash: show command and output -->
+    <div v-if="isBash" class="bash-block">
+      <div class="bash-command">$ {{ toolInput.command }}</div>
+      <pre v-if="toolInput.description" class="bash-desc">{{ toolInput.description }}</pre>
     </div>
 
-    <!-- Expanded detail -->
-    <div v-if="expanded" class="tool-detail">
-      <!-- Bash: show command and output -->
-      <div v-if="isBash" class="bash-block">
-        <div class="bash-command">$ {{ toolInput.command }}</div>
-        <pre v-if="toolInput.description" class="bash-desc">{{ toolInput.description }}</pre>
+    <!-- Edit: show diff -->
+    <div v-else-if="isEdit && toolInput" class="edit-diff">
+      <div class="diff-file">{{ toolInput.file_path }}</div>
+      <div v-if="toolInput.old_string" class="diff-removed">
+        <span class="diff-marker">-</span>
+        <pre>{{ toolInput.old_string }}</pre>
       </div>
-
-      <!-- Edit: show diff -->
-      <div v-else-if="isEdit && toolInput" class="edit-diff">
-        <div class="diff-file">{{ toolInput.file_path }}</div>
-        <div v-if="toolInput.old_string" class="diff-removed">
-          <span class="diff-marker">-</span>
-          <pre>{{ toolInput.old_string }}</pre>
-        </div>
-        <div v-if="toolInput.new_string" class="diff-added">
-          <span class="diff-marker">+</span>
-          <pre>{{ toolInput.new_string }}</pre>
-        </div>
-      </div>
-
-      <!-- Generic: show raw input -->
-      <pre v-else-if="toolInput" class="tool-input">{{ JSON.stringify(toolInput, null, 2) }}</pre>
-
-      <!-- Tool result -->
-      <div v-if="toolResult" class="tool-result-block">
-        <div class="result-label">Result:</div>
-        <pre class="tool-result-content">{{ toolResult }}</pre>
+      <div v-if="toolInput.new_string" class="diff-added">
+        <span class="diff-marker">+</span>
+        <pre>{{ toolInput.new_string }}</pre>
       </div>
     </div>
-  </div>
+
+    <!-- Generic: show raw input -->
+    <pre v-else-if="toolInput" class="tool-input">{{ JSON.stringify(toolInput, null, 2) }}</pre>
+
+    <!-- Tool result -->
+    <div v-if="toolResult" class="tool-result-block">
+      <div class="result-label">Result:</div>
+      <pre class="tool-result-content">{{ toolResult }}</pre>
+    </div>
+  </UChatTool>
 </template>
 
 <style scoped>
-.tool-block {
-  background: var(--bg-secondary); border: 1px solid var(--bg-tertiary);
-  border-radius: 6px; font-size: 12px; overflow: hidden;
-}
-.tool-header {
-  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
-  cursor: pointer; transition: background 0.15s;
-}
-.tool-header:hover { background: var(--bg-tertiary); }
-.tool-icon-emoji { font-size: 13px; flex-shrink: 0; }
-.tool-label { color: var(--text-secondary); font-weight: 600; flex-shrink: 0; }
-.tool-summary {
-  color: var(--text-muted); font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
-}
-.tool-expand { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
-.tool-badge {
-  font-size: 9px; padding: 1px 6px; border-radius: 3px; font-weight: 600;
-  flex-shrink: 0;
-}
-.tool-badge.result { background: rgba(34,197,94,0.15); color: var(--success); }
-.tool-detail { padding: 8px 10px; border-top: 1px solid var(--bg-tertiary); }
-
 /* Bash */
 .bash-block { font-family: 'SF Mono', 'Fira Code', monospace; }
 .bash-command {

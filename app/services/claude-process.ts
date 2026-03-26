@@ -148,7 +148,7 @@ export async function spawnSession(
         }
 
         // 3. Intercept streaming deltas — buffer via store
-        if (sidecarMsg.type === 'assistant' && sidecarMsg.subtype === 'streaming') {
+        if (sidecarMsg.type === 'assistant' && (sidecarMsg.subtype === 'streaming' || sidecarMsg.subtype === 'thinking_streaming')) {
           dispatchMeta(cardId, sidecarMsg);
           continue;
         }
@@ -186,7 +186,7 @@ export async function spawnSession(
           dispatchMeta(cardId, raw);
         } else if (raw.type === 'init') {
           dispatchMeta(cardId, raw);
-        } else if (raw.type === 'assistant' && raw.subtype === 'streaming') {
+        } else if (raw.type === 'assistant' && (raw.subtype === 'streaming' || raw.subtype === 'thinking_streaming')) {
           dispatchMeta(cardId, raw);
         } else {
           const part = registryProcess(raw);

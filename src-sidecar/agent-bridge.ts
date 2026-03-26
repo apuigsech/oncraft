@@ -408,7 +408,7 @@ function translateMessage(
     };
   }
 
-  // Streaming partial messages (token-by-token text)
+  // Streaming partial messages (token-by-token text and thinking)
   if (msg.type === "stream_event") {
     const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
     if (event?.type === "content_block_delta") {
@@ -418,6 +418,13 @@ function translateMessage(
           type: "assistant",
           subtype: "streaming",
           content: delta.text,
+        };
+      }
+      if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+        return {
+          type: "assistant",
+          subtype: "thinking_streaming",
+          content: delta.thinking,
         };
       }
     }

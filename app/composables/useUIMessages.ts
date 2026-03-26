@@ -12,6 +12,7 @@ export interface ReasoningUIPart {
   type: 'reasoning';
   reasoning: string;
   state?: 'streaming' | 'done';
+  streaming?: boolean;
 }
 
 export interface ToolInvocationUIPart {
@@ -21,6 +22,8 @@ export interface ToolInvocationUIPart {
   state: 'input-available' | 'output-available' | 'approval-requested';
   input: unknown;
   output?: unknown;
+  streaming?: boolean;
+  loading?: boolean;
 }
 
 export interface ImageUIPart {
@@ -70,7 +73,13 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
         // Map to UIMessagePart based on kind
         if (part.kind === 'assistant') {
           if (part.data.thinking) {
-            currentAssistant.parts.push({ type: 'reasoning', reasoning: (part.data.content as string) || '', state: 'done' });
+            const isThinkingStreaming = !!part.data.thinkingStreaming;
+            currentAssistant.parts.push({
+              type: 'reasoning',
+              reasoning: (part.data.content as string) || '',
+              state: isThinkingStreaming ? 'streaming' : 'done',
+              streaming: isThinkingStreaming,
+            });
           } else {
             currentAssistant.parts.push({
               type: 'text',
@@ -79,13 +88,16 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
             });
           }
         } else if (part.kind === 'tool_use') {
+          const hasResult = !!part.data.toolResult;
           currentAssistant.parts.push({
             type: 'dynamic-tool',
             toolName: (part.data.toolName as string) || 'unknown',
             toolCallId: (part.data.toolUseId as string) || part.id,
-            state: part.data.toolResult ? 'output-available' : 'input-available',
+            state: hasResult ? 'output-available' : 'input-available',
             input: part.data.toolInput || {},
-            ...(part.data.toolResult ? { output: part.data.toolResult } : {}),
+            ...(hasResult ? { output: part.data.toolResult } : {}),
+            streaming: !hasResult,
+            loading: !hasResult,
           });
         }
       } else {

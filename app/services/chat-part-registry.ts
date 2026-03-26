@@ -9,7 +9,7 @@ const registry: Record<string, ChatPartDefinition> = {
     parse: (raw) => ({
       content: raw.content ?? '',
       ...(raw.usage ? { usage: { inputTokens: (raw.usage as any).inputTokens, outputTokens: (raw.usage as any).outputTokens } } : {}),
-      ...(raw.thinking ? { thinking: true } : {}),
+      ...(raw.subtype === 'thinking' ? { thinking: true } : {}),
       ...(raw.streaming ? { streaming: true } : {}),
     }),
   },
