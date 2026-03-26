@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { exists } from '@tauri-apps/plugin-fs'
-import { getProjectCardSummaries, type ProjectCardSummary } from '~/services/database'
+import { getProjectCardSummaries, getActiveCardsAllProjects, type ProjectCardSummary, type ActiveCardRow } from '~/services/database'
 
 const projectsStore = useProjectsStore()
-const { addProject, switchToProject } = useProjectActions()
+const { addProject, switchToProject, navigateToCard } = useProjectActions()
 
 // --- Block 1: Recent Projects ---
 const projectSummaries = ref<Map<string, ProjectCardSummary>>(new Map())
@@ -49,7 +49,22 @@ function formatRelativeTime(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString()
 }
 
-onMounted(() => { loadProjectSummaries() })
+// --- Block 2: Global Activity ---
+const activeCards = ref<ActiveCardRow[]>([])
+
+async function loadActiveCards() {
+  activeCards.value = await getActiveCardsAllProjects()
+}
+
+function getProjectName(projectId: string): string {
+  const p = projectsStore.projects.find(p => p.id === projectId)
+  return p?.name || 'Unknown'
+}
+
+onMounted(() => {
+  loadProjectSummaries()
+  loadActiveCards()
+})
 </script>
 
 <template>
@@ -122,14 +137,41 @@ onMounted(() => { loadProjectSummaries() })
         </div>
       </section>
 
-      <!-- Block 2: Global Activity (Step 4.3) -->
+      <!-- Block 2: Global Activity -->
       <section class="home-block">
         <div class="block-header">
           <UIcon name="i-lucide-activity" class="block-icon" />
           <h2 class="block-title">Activity</h2>
+          <div class="block-header-spacer" />
+          <UButton
+            v-if="activeCards.length > 0"
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            icon="i-lucide-refresh-cw"
+            @click="loadActiveCards"
+          />
         </div>
         <div class="block-content">
+          <div v-if="activeCards.length > 0" class="activity-list">
+            <div
+              v-for="card in activeCards"
+              :key="card.id"
+              class="activity-row"
+              @click="navigateToCard(card.projectId, card.id)"
+            >
+              <div class="activity-indicator" />
+              <div class="activity-info">
+                <span class="activity-name">{{ card.name }}</span>
+                <span class="activity-meta">
+                  {{ getProjectName(card.projectId) }} · {{ card.columnName }}
+                </span>
+              </div>
+              <span class="activity-time">{{ formatRelativeTime(card.lastActivityAt) }}</span>
+            </div>
+          </div>
           <EmptyState
+            v-else
             icon="i-lucide-radio"
             title="No active sessions"
             description="Start a chat on any card to see activity here."
@@ -308,6 +350,59 @@ onMounted(() => { loadProjectSummaries() })
 }
 .stat--time {
   margin-left: auto;
+}
+
+/* Global Activity */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.activity-row:hover { background: var(--bg-tertiary); }
+.activity-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.activity-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.activity-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.activity-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 @media (max-width: 700px) {
