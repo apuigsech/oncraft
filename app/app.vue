@@ -19,6 +19,7 @@ const { activeFile, closeFile } = useFileViewer()
 const { addProject } = useProjectActions()
 
 const appReady = ref(false)
+const showOnboarding = ref(false)
 
 // NAV: activeTab lives in projectsStore so sessions store can derive per-project chat correctly
 const { activeTab, isProjectTab } = storeToRefs(projectsStore)
@@ -84,6 +85,12 @@ onMounted(async () => {
     preloadUtilSidecar()
   }
 
+  // Show onboarding on first launch
+  const s = settingsStore.settings
+  if (!s.onboardingCompleted && !s.onboardingDismissed) {
+    showOnboarding.value = true
+  }
+
   appReady.value = true
 })
 </script>
@@ -143,6 +150,9 @@ onMounted(async () => {
         </Transition>
       </div>
       <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />
+
+      <!-- Onboarding wizard on first launch -->
+      <OnboardingWizard v-if="showOnboarding" @complete="showOnboarding = false" />
     </div>
   </UApp>
 </template>

@@ -62,6 +62,17 @@ function getProjectName(projectId: string): string {
   return p?.name || 'Unknown'
 }
 
+function formatDuration(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const secs = Math.floor(diff / 1000)
+  if (secs < 60) return `${secs}s`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  const remMins = mins % 60
+  return `${hours}h ${remMins}m`
+}
+
 // --- Block 3: Usage Metrics ---
 const usageMetrics = ref<UsageMetrics | null>(null)
 
@@ -205,7 +216,7 @@ onMounted(() => {
                   {{ getProjectName(card.projectId) }} · {{ card.columnName }}
                 </span>
               </div>
-              <span class="activity-time">{{ formatRelativeTime(card.lastActivityAt) }}</span>
+              <span class="activity-time">{{ formatDuration(card.lastActivityAt) }}</span>
             </div>
           </div>
           <EmptyState
@@ -280,6 +291,7 @@ onMounted(() => {
               <div class="health-dot" :class="`health-dot--${item.status}`" />
               <span class="health-label">{{ item.label }}</span>
               <span class="health-detail">{{ item.detail }}</span>
+              <span v-if="item.hint && item.status !== 'green'" class="health-hint">{{ item.hint }}</span>
             </div>
           </div>
           <EmptyState
@@ -519,8 +531,9 @@ onMounted(() => {
 }
 .health-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .health-dot {
   width: 8px;
@@ -540,6 +553,13 @@ onMounted(() => {
 .health-detail {
   font-size: 12px;
   color: var(--text-muted);
+}
+.health-hint {
+  font-size: 11px;
+  color: var(--accent);
+  font-style: italic;
+  width: 100%;
+  padding-left: 18px;
 }
 
 @media (max-width: 700px) {
