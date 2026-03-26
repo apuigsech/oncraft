@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { open } from '@tauri-apps/plugin-dialog'
 import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
 
@@ -23,6 +24,20 @@ const showChat = computed(() => sessionsStore.activeChatCardId !== null)
 const isConsoleMode = computed(() => settingsStore.settings.chatMode === 'console')
 const chatWidth = ref(400)
 const consoleWidth = ref(520)
+
+async function addProject() {
+  try {
+    const selected = await open({ directory: true, multiple: false })
+    if (!selected) return
+    const path = typeof selected === 'string' ? selected : String(selected)
+    const name = path.split('/').filter(Boolean).pop() || 'project'
+    const project = await projectsStore.addProject(name, path)
+    await cardsStore.loadForProject(project.id)
+    await pipelinesStore.loadForProject(project.path)
+  } catch (err) {
+    console.error('[OnCraft] addProject error:', err)
+  }
+}
 
 function startResize(e: MouseEvent) {
   const startX = e.clientX
@@ -93,9 +108,15 @@ onMounted(async () => {
               @close="closeFile()"
             />
             <KanbanBoard v-else-if="projectsStore.activeProject" />
-            <div v-else class="empty-state">
-              <p>Add a project to get started</p>
-            </div>
+            <EmptyState
+              v-else
+              icon="i-lucide-folder-open"
+              title="No project open"
+              description="Open a project folder to start managing your Claude Code sessions."
+              action-label="Open project"
+              action-icon="i-lucide-plus"
+              @action="addProject"
+            />
           </ErrorBoundary>
         </div>
         <div v-if="showChat" class="divider" @mousedown="startResize" />
@@ -116,10 +137,6 @@ onMounted(async () => {
 #app { height: 100vh; display: flex; flex-direction: column; }
 .main-content { flex: 1; display: flex; overflow: hidden; }
 .board-area { flex: 1; overflow-x: auto; overflow-y: hidden; }
-.empty-state {
-  display: flex; align-items: center; justify-content: center;
-  height: 100%; color: var(--text-muted); font-size: 1.1rem;
-}
 .divider { width: 4px; cursor: col-resize; background: var(--border); transition: background 0.15s; }
 .divider:hover { background: var(--accent); }
 </style>
