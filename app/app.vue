@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { open } from '@tauri-apps/plugin-dialog'
 import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
 
@@ -17,28 +16,18 @@ const cardsStore = useCardsStore()
 const pipelinesStore = usePipelinesStore()
 const sessionsStore = useSessionsStore()
 const { activeFile, closeFile } = useFileViewer()
+const { addProject } = useProjectActions()
 
 const appReady = ref(false)
+
+// NAV: activeTab lives in projectsStore so sessions store can derive per-project chat correctly
+const { activeTab, isProjectTab } = storeToRefs(projectsStore)
+
 const showSettings = ref(false)
-const showGlobalSettings = ref(false)
-const showChat = computed(() => sessionsStore.activeChatCardId !== null)
+const showChat = computed(() => isProjectTab.value && sessionsStore.activeChatCardId !== null)
 const isConsoleMode = computed(() => settingsStore.settings.chatMode === 'console')
 const chatWidth = ref(400)
 const consoleWidth = ref(520)
-
-async function addProject() {
-  try {
-    const selected = await open({ directory: true, multiple: false })
-    if (!selected) return
-    const path = typeof selected === 'string' ? selected : String(selected)
-    const name = path.split('/').filter(Boolean).pop() || 'project'
-    const project = await projectsStore.addProject(name, path)
-    await cardsStore.loadForProject(project.id)
-    await pipelinesStore.loadForProject(project.path)
-  } catch (err) {
-    console.error('[OnCraft] addProject error:', err)
-  }
-}
 
 function startResize(e: MouseEvent) {
   const startX = e.clientX
@@ -81,7 +70,9 @@ onMounted(async () => {
     return
   }
 
+  // NAV: Set initial tab to active project or home
   if (projectsStore.activeProject) {
+    projectsStore.activeTab = projectsStore.activeProject.id
     // QW-1: Cards and pipelines are independent — load in parallel
     await Promise.allSettled([
       cardsStore.loadForProject(projectsStore.activeProject.id),
@@ -105,27 +96,46 @@ onMounted(async () => {
     </Transition>
 
     <div v-show="appReady" id="app">
-      <TabBar @open-settings="showSettings = true" @open-global-settings="showGlobalSettings = true" />
+      <TabBar @open-project-settings="showSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
           <ErrorBoundary>
-            <FileViewer
-              v-if="activeFile && projectsStore.activeProject"
-              :label="activeFile.label"
-              :file-path="activeFile.path"
-              :project-path="projectsStore.activeProject.path"
-              @close="closeFile()"
-            />
-            <KanbanBoard v-else-if="projectsStore.activeProject" />
+            <!-- Home tab -->
             <EmptyState
-              v-else
-              icon="i-lucide-folder-open"
-              title="No project open"
+              v-if="activeTab === 'home'"
+              icon="i-lucide-house"
+              title="Welcome to OnCraft"
               description="Open a project folder to start managing your Claude Code sessions."
               action-label="Open project"
               action-icon="i-lucide-plus"
               @action="addProject"
             />
+
+            <!-- Settings tab (full-screen) -->
+            <GlobalSettings
+              v-else-if="activeTab === 'settings'"
+            />
+
+            <!-- Project tab: file viewer, kanban, or empty state -->
+            <template v-else>
+              <FileViewer
+                v-if="activeFile && projectsStore.activeProject"
+                :label="activeFile.label"
+                :file-path="activeFile.path"
+                :project-path="projectsStore.activeProject.path"
+                @close="closeFile()"
+              />
+              <KanbanBoard v-else-if="projectsStore.activeProject" />
+              <EmptyState
+                v-else
+                icon="i-lucide-folder-open"
+                title="No project open"
+                description="Open a project folder to start managing your Claude Code sessions."
+                action-label="Open project"
+                action-icon="i-lucide-plus"
+                @action="addProject"
+              />
+            </template>
           </ErrorBoundary>
         </div>
         <Transition name="chat-slide">
@@ -141,7 +151,6 @@ onMounted(async () => {
         </Transition>
       </div>
       <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />
-      <GlobalSettings v-if="showGlobalSettings" v-model:open="showGlobalSettings" @close="showGlobalSettings = false" />
     </div>
   </UApp>
 </template>

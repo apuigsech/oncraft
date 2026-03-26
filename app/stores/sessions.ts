@@ -10,12 +10,32 @@ import { ensureMarkdownReady } from '~/services/markdown';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, ChatPart[]> = reactive({});
-  const activeChatCardId = ref<string | null>(null);
+
+  // NAV: Per-project active chat — each project remembers which card's chat was open
+  const activeChatCardByProject = reactive(new Map<string, string>());
+  const activeChatCardId = computed<string | null>(() => {
+    const projectsStore = useProjectsStore();
+    if (!projectsStore.isProjectTab) return null;
+    const projectId = projectsStore.activeProjectId;
+    if (!projectId) return null;
+    return activeChatCardByProject.get(projectId) ?? null;
+  });
+
   const historyLoaded = new Set<string>();
   const _loadingHistory = ref(new Set<string>());
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
+
+  // NAV: Track cardId → projectId for cross-project activity indicators
+  const cardProjectMap = reactive(new Map<string, string>());
+
+  function hasActiveCards(projectId: string): boolean {
+    for (const [cardId, pid] of cardProjectMap) {
+      if (pid === projectId && isQueryActive(cardId)) return true;
+    }
+    return false;
+  }
 
   // Track active sub-agents per card (task_started adds, result/notification removes)
   const activeSubAgents: Record<string, Set<string>> = reactive({});
@@ -285,6 +305,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     const project = useProjectsStore().activeProject;
     if (!project) return;
 
+    // NAV: Register card-project association for cross-project activity indicators
+    cardProjectMap.set(cardId, project.id);
+
     await cardsStore.updateCardState(cardId, 'active');
 
     // Determine session ID for resume
@@ -404,7 +427,12 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function openChat(cardId: string): Promise<void> {
-    activeChatCardId.value = cardId;
+    const projectId = useProjectsStore().activeProjectId;
+    if (projectId) {
+      activeChatCardByProject.set(projectId, cardId);
+      // NAV: Register card-project association for cross-project activity indicators
+      cardProjectMap.set(cardId, projectId);
+    }
 
     // Seed session metrics from persisted card data (survives app restart)
     const cardsStore = useCardsStore();
@@ -452,7 +480,10 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
   }
-  function closeChat(): void { activeChatCardId.value = null; }
+  function closeChat(): void {
+    const projectId = useProjectsStore().activeProjectId;
+    if (projectId) activeChatCardByProject.delete(projectId);
+  }
   function isActive(cardId: string): boolean { return isQueryActive(cardId); }
   function isLoadingHistory(cardId: string): boolean { return _loadingHistory.value.has(cardId); }
 
@@ -488,6 +519,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
+    // NAV: Clean up per-project active chat if this card was open
+    const pid = cardProjectMap.get(cardId);
+    if (pid && activeChatCardByProject.get(pid) === cardId) {
+      activeChatCardByProject.delete(pid);
+    }
+    cardProjectMap.delete(cardId);
   }
 
   return {
@@ -496,5 +533,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, isLoadingHistory, purgeCard,
+    hasActiveCards,
   };
 });

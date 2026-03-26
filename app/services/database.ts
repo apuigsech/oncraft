@@ -77,6 +77,10 @@ async function runMigrations(db: Database): Promise<void> {
   try {
     await db.execute("ALTER TABLE cards ADD COLUMN forked_from_id TEXT DEFAULT ''");
   } catch { /* column already exists */ }
+  // Migration: add tab_order for persistent project tab ordering
+  try {
+    await db.execute('ALTER TABLE projects ADD COLUMN tab_order INTEGER DEFAULT 0');
+  } catch { /* column already exists */ }
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -91,12 +95,24 @@ export async function getAllProjects(): Promise<Project[]> {
   const d = await getDb();
   const rows = await d.select<Array<{
     id: string; name: string; path: string;
-    created_at: string; last_opened_at: string;
-  }>>('SELECT * FROM projects ORDER BY last_opened_at DESC');
+    created_at: string; last_opened_at: string; tab_order: number;
+  }>>('SELECT * FROM projects ORDER BY tab_order ASC, last_opened_at DESC');
   return rows.map(r => ({
     id: r.id, name: r.name, path: r.path,
     createdAt: r.created_at, lastOpenedAt: r.last_opened_at,
   }));
+}
+
+export async function updateProjectTabOrder(orderedIds: string[]): Promise<void> {
+  if (orderedIds.length === 0) return;
+  const d = await getDb();
+  // Single UPDATE with CASE to avoid N round-trips
+  const whenClauses = orderedIds.map((_, i) => `WHEN $${i + 1} THEN ${i}`).join(' ');
+  const placeholders = orderedIds.map((_, i) => `$${i + 1}`).join(', ');
+  await d.execute(
+    `UPDATE projects SET tab_order = CASE id ${whenClauses} END WHERE id IN (${placeholders})`,
+    orderedIds,
+  );
 }
 
 export async function updateProjectLastOpened(id: string): Promise<void> {
