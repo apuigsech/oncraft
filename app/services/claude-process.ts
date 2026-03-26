@@ -2,6 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
 import { writeFile, mkdir } from '@tauri-apps/plugin-fs';
 import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
+import { reactive } from 'vue';
 import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
 import { process as registryProcess } from './chat-part-registry';
@@ -66,8 +67,9 @@ type MetaCallback = (msg: SidecarMessage) => void;
 const messageCallbacks = new Map<string, PartCallback>();
 const metaCallbacks = new Map<string, MetaCallback>();
 
-// Track whether a query is actively running (vs sidecar idle between queries)
-const activeQueries = new Set<string>();
+// Track whether a query is actively running (vs sidecar idle between queries).
+// Uses Vue reactive() so that isQueryActive() triggers reactivity in computed properties.
+const activeQueries = reactive(new Set<string>());
 
 export function onMessage(cardId: string, callback: PartCallback): void {
   messageCallbacks.set(cardId, callback);
@@ -224,6 +226,7 @@ export async function spawnSession(
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
+    activeQueries.delete(cardId);
   });
 
   const proc: SidecarProcess = {

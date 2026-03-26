@@ -352,6 +352,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           timestamp: Date.now(),
           data: { message: `Error: ${err}` },
         });
+        markQueryComplete(cardId);
         await cardsStore.updateCardState(cardId, 'idle');
       }
     } else {
@@ -367,6 +368,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           timestamp: Date.now(),
           data: { message: `Error: ${err}` },
         });
+        markQueryComplete(cardId);
         await cardsStore.updateCardState(cardId, 'idle');
         offMessage(cardId);
         offMeta(cardId);
