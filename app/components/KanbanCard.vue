@@ -125,6 +125,17 @@ async function confirmDelete() {
   }
 }
 
+// Effective project path (worktree-aware)
+const effectiveProjectPath = computed(() => {
+  const project = projectsStore.activeProject;
+  if (!project) return '';
+  const config = sessionsStore.getSessionConfig(props.card.id);
+  return config.worktreePath
+    || (props.card.useWorktree && props.card.worktreeName
+      ? `${project.path}/.claude/worktrees/${props.card.worktreeName}`
+      : project.path);
+});
+
 // File viewer integration
 const linkedFilesEntries = computed(() => Object.entries(props.card.linkedFiles || {}));
 
@@ -134,14 +145,8 @@ function isFileActive(label: string): boolean {
 
 function onFileClick(e: MouseEvent, label: string, filePath: string) {
   e.stopPropagation();
-  const project = projectsStore.activeProject;
-  if (!project) return;
-  const config = sessionsStore.getSessionConfig(props.card.id);
-  // Worktrees live at <project>/.claude/worktrees/<worktreeName>/
-  const basePath = config.worktreePath
-    || (props.card.useWorktree && props.card.worktreeName
-      ? `${project.path}/.claude/worktrees/${props.card.worktreeName}`
-      : project.path);
+  const basePath = effectiveProjectPath.value;
+  if (!basePath) return;
   openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${basePath}/${filePath}`);
 }
 </script>
@@ -264,6 +269,7 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
     :linked-files="card.linkedFiles"
     :linked-issues="card.linkedIssues"
     :github-repo="githubRepo"
+    :project-path="effectiveProjectPath"
     @save="saveEdit"
     @cancel="showEdit = false"
   />
