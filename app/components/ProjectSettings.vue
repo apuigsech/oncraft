@@ -76,23 +76,27 @@ function close() {
             <div class="field">
               <span class="field-label">States</span>
               <div class="states-list">
-                <span
+                <UBadge
                   v-for="slug in flowStore.stateOrder"
                   :key="slug"
-                  class="state-chip"
-                  :style="{ borderColor: flowStore.getFlowState(slug)?.color }"
+                  variant="subtle"
+                  color="neutral"
+                  size="sm"
+                  :style="{ borderColor: flowStore.getFlowState(slug)?.color, borderWidth: '1px', borderStyle: 'solid' }"
                 >
                   {{ flowStore.getFlowState(slug)?.name ?? slug }}
-                </span>
+                </UBadge>
               </div>
             </div>
             <div v-if="flowStore.flowWarnings.length" class="field">
               <span class="field-label warnings-label">
                 <UIcon name="i-lucide-alert-triangle" /> Warnings
               </span>
-              <ul class="warnings-list">
-                <li v-for="w in flowStore.flowWarnings" :key="w.message">{{ w.message }}</li>
-              </ul>
+              <div class="warnings-list">
+                <UBadge v-for="w in flowStore.flowWarnings" :key="w.message" variant="subtle" color="warning" size="sm">
+                  {{ w.message }}
+                </UBadge>
+              </div>
             </div>
           </div>
           <div v-else class="field-value muted">Loading flow…</div>
@@ -108,16 +112,18 @@ function close() {
           <div class="gh-section">
             <div class="field">
               <span class="field-label">Status</span>
-              <span v-if="ghStatusLoading" class="field-value muted">Checking...</span>
-              <span v-else-if="!ghStatus.installed" class="field-value gh-warning">
-                <UIcon name="i-lucide-alert-triangle" /> gh CLI not found. Install from cli.github.com
-              </span>
-              <span v-else-if="!ghStatus.authenticated" class="field-value gh-warning">
-                <UIcon name="i-lucide-alert-triangle" /> Not authenticated. Run: gh auth login
-              </span>
-              <span v-else class="field-value gh-ok">
-                <UIcon name="i-lucide-check-circle" /> Connected
-              </span>
+              <UBadge v-if="ghStatusLoading" variant="subtle" color="neutral" size="sm">
+                Checking...
+              </UBadge>
+              <UBadge v-else-if="!ghStatus.installed" variant="subtle" color="warning" size="sm">
+                <UIcon name="i-lucide-alert-triangle" class="gh-status-icon" /> gh CLI not found. Install from cli.github.com
+              </UBadge>
+              <UBadge v-else-if="!ghStatus.authenticated" variant="subtle" color="warning" size="sm">
+                <UIcon name="i-lucide-alert-triangle" class="gh-status-icon" /> Not authenticated. Run: gh auth login
+              </UBadge>
+              <UBadge v-else variant="subtle" color="success" size="sm">
+                <UIcon name="i-lucide-check-circle" class="gh-status-icon" /> Connected
+              </UBadge>
             </div>
 
             <div v-if="flowStore.githubDetectedRepo" class="field">
@@ -157,7 +163,7 @@ function close() {
 <style scoped>
 .settings-content { display: flex; flex-direction: column; gap: 16px; }
 .settings-section { display: flex; flex-direction: column; gap: 8px; }
-.settings-section h4 { font-size: 14px; color: var(--text-primary); margin: 0 0 4px 0; }
+.settings-section h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .field-value { font-size: 13px; color: var(--text-secondary); }
@@ -165,16 +171,9 @@ function close() {
 .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; background: var(--bg-primary); padding: 4px 8px; border-radius: 4px; }
 .flow-summary { display: flex; flex-direction: column; gap: 10px; }
 .states-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-.state-chip {
-  font-size: 11px; padding: 2px 8px; border-radius: 12px;
-  border: 1px solid; background: var(--bg-primary); color: var(--text-secondary);
-}
 .warnings-label { display: flex; align-items: center; gap: 4px; color: #fbbf24; }
-.warnings-list { margin: 0; padding-left: 16px; font-size: 12px; color: #fbbf24; }
-.warnings-list li { margin-bottom: 2px; }
+.warnings-list { display: flex; flex-direction: column; gap: 4px; }
 .field-hint { font-size: 10px; color: var(--text-muted); }
-
 .gh-section { display: flex; flex-direction: column; gap: 10px; }
-.gh-warning { display: flex; align-items: center; gap: 4px; color: #fbbf24; font-size: 12px; }
-.gh-ok { display: flex; align-items: center; gap: 4px; color: var(--success); font-size: 12px; }
+.gh-status-icon { width: 14px; height: 14px; }
 </style>

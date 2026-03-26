@@ -8,7 +8,7 @@ import { installBundledPresets } from '~/services/flow-loader'
 const ChatPanel = defineAsyncComponent(() => import('~/components/ChatPanel.vue'))
 const ConsolePanel = defineAsyncComponent(() => import('~/components/ConsolePanel.vue'))
 const ProjectSettings = defineAsyncComponent(() => import('~/components/ProjectSettings.vue'))
-const GlobalSettings = defineAsyncComponent(() => import('~/components/GlobalSettings.vue'))
+const GlobalSettingsPage = defineAsyncComponent(() => import('~/components/GlobalSettingsPage.vue'))
 
 const projectsStore = useProjectsStore()
 const settingsStore = useSettingsStore()
@@ -111,7 +111,7 @@ onMounted(async () => {
             <HomeScreen v-if="activeTab === 'home'" />
 
             <!-- Settings tab (full-screen) -->
-            <GlobalSettings
+            <GlobalSettingsPage
               v-else-if="activeTab === 'settings'"
             />
 

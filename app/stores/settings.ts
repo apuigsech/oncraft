@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     { name: 'Done', color: '#22c55e' },
   ],
   chatMode: 'integrated',
+  defaultModel: 'sonnet',
+  defaultEffort: 'high',
 };
 
 export const useSettingsStore = defineStore('settings', () => {
