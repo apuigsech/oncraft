@@ -1,0 +1,127 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install
+      - run: pnpm test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            sidecar-triple: aarch64-apple-darwin
+            bundles: dmg
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            sidecar-triple: x86_64-apple-darwin
+            bundles: dmg
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            sidecar-triple: x86_64-unknown-linux-gnu
+            bundles: deb
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar-triple: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- System dependencies (Linux) ---
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libfuse2
+
+      # --- Toolchains ---
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --- Rust cache ---
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # --- Install frontend deps ---
+      - run: pnpm install
+
+      # --- Build sidecar for this platform ---
+      - name: Build sidecar
+        shell: bash
+        run: |
+          cd src-sidecar
+          bun install
+          bun build --compile --target=bun agent-bridge.ts \
+            --outfile ../src-tauri/binaries/agent-bridge-${{ matrix.sidecar-triple }}
+
+      # --- Build Nuxt frontend ---
+      - run: pnpm build
+
+      # --- Build Tauri app (skip beforeBuildCommand — sidecar + frontend already built) ---
+      - name: Disable beforeBuildCommand for CI
+        shell: bash
+        run: node -e "const f='src-tauri/tauri.conf.json';const c=JSON.parse(require('fs').readFileSync(f));c.build.beforeBuildCommand='';require('fs').writeFileSync(f,JSON.stringify(c,null,2));"
+
+      - name: Build Tauri app
+        shell: bash
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # --- Upload artifacts ---
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: oncraft-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+          if-no-files-found: warn
