@@ -137,11 +137,19 @@ const pendingSessionRequests = new Map<string, (data: Record<string, unknown>) =
 function requestFromFrontend(
   action: string,
   payload: Record<string, unknown> = {},
+  timeoutMs = 30_000,
 ): Promise<Record<string, unknown>> {
   const requestId = randomUUID();
   emit({ type: "session_request", requestId, action, ...payload });
-  return new Promise((resolve) => {
-    pendingSessionRequests.set(requestId, resolve);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingSessionRequests.delete(requestId);
+      reject(new Error(`Frontend request "${action}" timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    pendingSessionRequests.set(requestId, (data) => {
+      clearTimeout(timer);
+      resolve(data);
+    });
   });
 }
 
@@ -800,146 +808,7 @@ rl.on("line", async (line: string) => {
     return;
   }
 
-  // Handle listCommands — scan filesystem for available commands and skills
-  if (cmd.cmd === "listCommands") {
-    const projectDir = cmd.projectPath as string | undefined;
-    const commands: { name: string; desc: string; source: string }[] = [];
-
-    function scanCommandDir(dir: string, prefix: string, source: string): void {
-      try {
-        if (!existsSync(dir)) return;
-        const entries = readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = join(dir, entry.name);
-          if (entry.isDirectory()) {
-            scanCommandDir(fullPath, prefix ? `${prefix}:${entry.name}` : entry.name, source);
-          } else if (entry.name.endsWith(".md")) {
-            const name = entry.name.replace(/\.md$/, "");
-            const cmdName = prefix ? `/${prefix}:${name}` : `/${name}`;
-            // Try to extract description from frontmatter
-            let desc = source;
-            try {
-              const content = readFileSync(fullPath, "utf-8");
-              const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
-              if (match) desc = match[1].trim();
-            } catch { /* ignore */ }
-            commands.push({ name: cmdName, desc, source });
-          }
-        }
-      } catch { /* ignore unreadable dirs */ }
-    }
-
-    function scanSkillDir(dir: string, source: string): void {
-      try {
-        if (!existsSync(dir)) return;
-        const entries = readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const skillMd = join(dir, entry.name, "SKILL.md");
-            if (existsSync(skillMd)) {
-              let desc = source;
-              try {
-                const content = readFileSync(skillMd, "utf-8");
-                const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
-                if (match) desc = match[1].trim();
-              } catch { /* ignore */ }
-              commands.push({ name: `/${entry.name}`, desc, source });
-            }
-          }
-        }
-      } catch { /* ignore */ }
-    }
-
-    // Scan user-level commands and skills
-    const home = homedir();
-    scanCommandDir(join(home, ".claude", "commands"), "", "user command");
-    scanSkillDir(join(home, ".claude", "skills"), "user skill");
-
-    // Scan project-level commands and skills
-    if (projectDir) {
-      scanCommandDir(join(projectDir, ".claude", "commands"), "", "project command");
-      scanSkillDir(join(projectDir, ".claude", "skills"), "project skill");
-    }
-
-    // Scan plugin cache for both commands/ and skills/
-    try {
-      const cacheDir = join(home, ".claude", "plugins", "cache");
-      if (existsSync(cacheDir)) {
-        const vendors = readdirSync(cacheDir, { withFileTypes: true });
-        for (const vendor of vendors) {
-          if (!vendor.isDirectory()) continue;
-          const plugins = readdirSync(join(cacheDir, vendor.name), { withFileTypes: true });
-          for (const plugin of plugins) {
-            if (!plugin.isDirectory()) continue;
-            // Find latest version
-            const versions = readdirSync(join(cacheDir, vendor.name, plugin.name), { withFileTypes: true })
-              .filter(v => v.isDirectory())
-              .map(v => v.name)
-              .sort()
-              .reverse();
-            if (versions.length === 0) continue;
-            const latestDir = join(cacheDir, vendor.name, plugin.name, versions[0]);
-            const pluginName = plugin.name;
-            const pluginLabel = `plugin: ${pluginName}`;
-
-            // Scan commands/ (e.g. speckit-specify.md -> /spec-kit:speckit-specify)
-            const commandsDir = join(latestDir, "commands");
-            if (existsSync(commandsDir)) {
-              try {
-                const entries = readdirSync(commandsDir, { withFileTypes: true });
-                for (const entry of entries) {
-                  if (entry.name.endsWith(".md")) {
-                    const cmdBase = entry.name.replace(/\.md$/, "");
-                    const cmdName = `/${pluginName}:${cmdBase}`;
-                    let desc = pluginLabel;
-                    try {
-                      const content = readFileSync(join(commandsDir, entry.name), "utf-8");
-                      const match = content.match(/^---\n[\s\S]*?description:\s*(.+)\n[\s\S]*?---/);
-                      if (match) desc = match[1].trim().replace(/^['"]|['"]$/g, "");
-                    } catch { /* ignore */ }
-                    commands.push({ name: cmdName, desc, source: pluginLabel });
-                  }
-                }
-              } catch { /* ignore */ }
-            }
-
-            // Scan skills/ (e.g. spec-writing/SKILL.md -> /spec-kit:spec-writing)
-            const skillsDir = join(latestDir, "skills");
-            if (existsSync(skillsDir)) {
-              try {
-                const entries = readdirSync(skillsDir, { withFileTypes: true });
-                for (const entry of entries) {
-                  if (entry.isDirectory()) {
-                    const skillMd = join(skillsDir, entry.name, "SKILL.md");
-                    if (existsSync(skillMd)) {
-                      let desc = pluginLabel;
-                      try {
-                        const content = readFileSync(skillMd, "utf-8");
-                        const match = content.match(/^---\n[\s\S]*?description:\s*['"]*(.+?)['"]*\n/);
-                        if (match) desc = match[1].trim();
-                      } catch { /* ignore */ }
-                      commands.push({ name: `/${pluginName}:${entry.name}`, desc, source: pluginLabel });
-                    }
-                  }
-                }
-              } catch { /* ignore */ }
-            }
-          }
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Deduplicate by name (keep first occurrence which has better description)
-    const seen = new Set<string>();
-    const dedupedCommands = commands.filter(c => {
-      if (seen.has(c.name)) return false;
-      seen.add(c.name);
-      return true;
-    });
-
-    emit({ type: "commands", commands: dedupedCommands });
-    return;
-  }
+  // listCommands: superseded by native Rust implementation (commands.rs list_commands)
 
   // Handle listSessions — get all Claude sessions for a project
   if (cmd.cmd === "listSessions") {
@@ -965,35 +834,7 @@ rl.on("line", async (line: string) => {
     return;
   }
 
-  // Handle deleteSession — remove Claude session JSONL files
-  if (cmd.cmd === "deleteSession") {
-    const sessionId = cmd.sessionId as string;
-    const projectPath = cmd.projectPath as string | undefined;
-    let deleted = false;
-
-    try {
-      const home = homedir();
-      const projectsDir = join(home, ".claude", "projects");
-      if (existsSync(projectsDir)) {
-        // Search all project dirs for this session
-        const dirs = readdirSync(projectsDir, { withFileTypes: true });
-        for (const dir of dirs) {
-          if (!dir.isDirectory()) continue;
-          const jsonlPath = join(projectsDir, dir.name, `${sessionId}.jsonl`);
-          if (existsSync(jsonlPath)) {
-            unlinkSync(jsonlPath);
-            deleted = true;
-            process.stderr.write(`[agent-bridge] deleted session file: ${jsonlPath}\n`);
-          }
-        }
-      }
-    } catch (err) {
-      process.stderr.write(`[agent-bridge] delete session error: ${err}\n`);
-    }
-
-    emit({ type: "sessionDeleted", sessionId, deleted });
-    return;
-  }
+  // deleteSession: superseded by native Rust implementation (commands.rs delete_session)
 
   emitError(`Unknown command: ${cmd.cmd}`);
 });
