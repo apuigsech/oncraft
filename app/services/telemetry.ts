@@ -1,55 +1,53 @@
 /**
- * Anonymous telemetry service.
+ * Anonymous telemetry service powered by Aptabase.
  * Opt-in only. Collects anonymous usage data per REQ-TEL-R1 through REQ-TEL-R5.
  *
  * PRIVACY (REQ-TEL-R2): NEVER collects project names, paths, file contents,
  * card names, chat content, API keys, IPs, or any PII.
+ *
+ * Uses the Aptabase API directly (no SDK dependency).
+ * Docs: https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK
  */
 
-// ── Event types ──
+// ── Aptabase config ──
 
-interface AdoptionEvent {
-  type: 'adoption';
-  action: 'launch' | 'session_start' | 'session_end';
-  installId: string;
-  appVersion: string;
-  os: string;
-  timestamp: number;
-  durationMs?: number;
+const APTABASE_KEY = 'A-EU-7005477805';
+const APTABASE_HOST = 'https://eu.aptabase.com';
+const APTABASE_URL = `${APTABASE_HOST}/api/v0/events`;
+const SDK_VERSION = 'oncraft-telemetry/1.0.0';
+const MAX_QUEUE_SIZE = 25; // Aptabase max batch size
+const FLUSH_INTERVAL_MS = 60 * 1000; // 1 minute
+
+// ── Aptabase event shape ──
+
+interface AptabaseEvent {
+  timestamp: string;
+  sessionId: string;
+  eventName: string;
+  systemProps: {
+    locale?: string;
+    osName?: string;
+    osVersion?: string;
+    isDebug: boolean;
+    appVersion: string;
+    sdkVersion: string;
+  };
+  props?: Record<string, string | number | boolean>;
 }
 
-interface FeatureUsageEvent {
-  type: 'feature';
-  feature: string;
-  value: string | boolean | number;
-  installId: string;
-  appVersion: string;
-  timestamp: number;
+// Public type for "View Telemetry Data" UI
+export interface TelemetryEvent {
+  eventName: string;
+  props?: Record<string, string | number | boolean>;
+  timestamp: string;
 }
-
-interface ErrorEvent {
-  type: 'error';
-  errorType: string;
-  message: string;
-  context: string;
-  installId: string;
-  appVersion: string;
-  timestamp: number;
-}
-
-export type TelemetryEvent = AdoptionEvent | FeatureUsageEvent | ErrorEvent;
-
-// ── Constants ──
-
-const TELEMETRY_ENDPOINT = 'https://telemetry.oncraft.dev/v1/events';
-const MAX_QUEUE_SIZE = 100;
-const FLUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── State ──
 
-let eventQueue: TelemetryEvent[] = [];
+let eventQueue: AptabaseEvent[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let initialized = false;
+let sessionId = '';
 
 // ── Sanitization (REQ-TEL-R2) ──
 
@@ -72,21 +70,7 @@ export function sanitizeErrorMessage(msg: string): string {
     .slice(0, 200);
 }
 
-export function sanitizeStackTrace(stack: string): string {
-  // Keep only "at FunctionName (line:col)" patterns, strip file paths
-  return stack
-    .split('\n')
-    .map(line => {
-      const match = line.match(/at\s+([\w.<>[\]]+)/);
-      return match ? `at ${match[1]}` : null;
-    })
-    .filter(Boolean)
-    .slice(0, 10)
-    .join('\n');
-}
-
 // ── Settings access ──
-// Uses Nuxt auto-imported useSettingsStore() — same pattern as claude-process.ts
 // Wrapped in try-catch to handle very early errors before Pinia is initialized.
 
 function getSettings() {
@@ -101,7 +85,7 @@ function getAppVersion(): string {
   return (import.meta.env?.PACKAGE_VERSION as string) ?? 'dev';
 }
 
-function getOS(): string {
+function getOSName(): string {
   if (typeof navigator !== 'undefined') {
     const ua = navigator.userAgent;
     if (ua.includes('Mac')) return 'macOS';
@@ -109,6 +93,29 @@ function getOS(): string {
     if (ua.includes('Linux')) return 'Linux';
   }
   return 'unknown';
+}
+
+function getLocale(): string {
+  if (typeof navigator !== 'undefined') {
+    return navigator.language || 'en';
+  }
+  return 'en';
+}
+
+function generateSessionId(): string {
+  const epoch = Math.floor(Date.now() / 1000);
+  const rand = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
+  return `${epoch}${rand}`;
+}
+
+function getSystemProps(): AptabaseEvent['systemProps'] {
+  return {
+    locale: getLocale(),
+    osName: getOSName(),
+    isDebug: import.meta.dev ?? false,
+    appVersion: getAppVersion(),
+    sdkVersion: SDK_VERSION,
+  };
 }
 
 // ── Install ID management ──
@@ -149,11 +156,21 @@ export function setEnabled(enabled: boolean): void {
 
 // ── Core tracking ──
 
-function track(event: TelemetryEvent): void {
+function track(eventName: string, props?: Record<string, string | number | boolean>): void {
   if (!isEnabled()) return;
+  if (!sessionId) sessionId = generateSessionId();
+
+  const event: AptabaseEvent = {
+    timestamp: new Date().toISOString(),
+    sessionId,
+    eventName,
+    systemProps: getSystemProps(),
+    props,
+  };
+
   eventQueue.push(event);
-  if (eventQueue.length > MAX_QUEUE_SIZE) {
-    eventQueue = eventQueue.slice(-MAX_QUEUE_SIZE);
+  if (eventQueue.length >= MAX_QUEUE_SIZE) {
+    flush();
   }
 }
 
@@ -178,20 +195,24 @@ let flushing = false;
 export async function flush(): Promise<void> {
   if (eventQueue.length === 0 || flushing) return;
   flushing = true;
-  const batch = [...eventQueue];
+  const batch = eventQueue.splice(0, MAX_QUEUE_SIZE);
   try {
-    const response = await fetch(TELEMETRY_ENDPOINT, {
+    const response = await fetch(APTABASE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ events: batch }),
+      headers: {
+        'Content-Type': 'application/json',
+        'App-Key': APTABASE_KEY,
+      },
+      credentials: 'omit',
+      body: JSON.stringify(batch),
     });
-    if (response.ok) {
-      // Remove only the events we sent (new ones may have arrived during flush)
-      eventQueue = eventQueue.slice(batch.length);
+    if (!response.ok) {
+      // Put events back for retry
+      eventQueue.unshift(...batch);
     }
-    // On non-ok response, keep events for retry
   } catch {
-    // Offline or endpoint not available — keep events for next flush
+    // Offline — put events back for retry
+    eventQueue.unshift(...batch);
   } finally {
     flushing = false;
   }
@@ -200,48 +221,19 @@ export async function flush(): Promise<void> {
 // ── Convenience methods ──
 
 export function trackLaunch(): void {
-  track({
-    type: 'adoption',
-    action: 'launch',
-    installId: getOrCreateInstallId(),
-    appVersion: getAppVersion(),
-    os: getOS(),
-    timestamp: Date.now(),
-  });
+  track('app_launched');
 }
 
 export function trackSessionStart(): void {
-  track({
-    type: 'adoption',
-    action: 'session_start',
-    installId: getOrCreateInstallId(),
-    appVersion: getAppVersion(),
-    os: getOS(),
-    timestamp: Date.now(),
-  });
+  track('session_started');
 }
 
 export function trackSessionEnd(durationMs: number): void {
-  track({
-    type: 'adoption',
-    action: 'session_end',
-    installId: getOrCreateInstallId(),
-    appVersion: getAppVersion(),
-    os: getOS(),
-    timestamp: Date.now(),
-    durationMs,
-  });
+  track('session_ended', { duration_ms: durationMs });
 }
 
 export function trackFeature(feature: string, value: string | boolean | number): void {
-  track({
-    type: 'feature',
-    feature,
-    value,
-    installId: getOrCreateInstallId(),
-    appVersion: getAppVersion(),
-    timestamp: Date.now(),
-  });
+  track('feature_used', { feature, value });
 }
 
 export function trackError(error: unknown, context: string): void {
@@ -260,15 +252,7 @@ export function trackError(error: unknown, context: string): void {
     message = sanitizeErrorMessage(String(error));
   }
 
-  track({
-    type: 'error',
-    errorType,
-    message,
-    context,
-    installId: getOrCreateInstallId(),
-    appVersion: getAppVersion(),
-    timestamp: Date.now(),
-  });
+  track('error_occurred', { error_type: errorType, message, context });
 }
 
 // ── Lifecycle ──
@@ -279,6 +263,7 @@ export function initTelemetry(): void {
   if (!isEnabled()) return;
 
   initialized = true;
+  sessionId = generateSessionId();
   getOrCreateInstallId();
   trackLaunch();
   startFlushTimer();
@@ -293,7 +278,11 @@ export function shutdownTelemetry(): void {
 // ── Queue access (for "View Telemetry Data" UI) ──
 
 export function getEventQueue(): readonly TelemetryEvent[] {
-  return eventQueue;
+  return eventQueue.map(e => ({
+    eventName: e.eventName,
+    props: e.props,
+    timestamp: e.timestamp,
+  }));
 }
 
 export function getInstallId(): string | undefined {
