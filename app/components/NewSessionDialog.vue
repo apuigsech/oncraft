@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CardLinkedIssue, GitHubIssue } from '~/types';
+import type { TabsItem } from '@nuxt/ui'
 
 const props = defineProps<{
   initialName?: string;
@@ -18,6 +19,11 @@ const description = ref(props.initialDescription || '');
 const useWorktree = ref(false);
 const mode = ref<'blank' | 'issue'>('blank');
 const linkedIssue = ref<CardLinkedIssue | undefined>(undefined);
+
+const tabItems: TabsItem[] = [
+  { label: 'Blank', value: 'blank' },
+  { label: 'From Issue', value: 'issue' }
+]
 
 function onIssueSelect(issue: GitHubIssue) {
   name.value = issue.title;
@@ -44,26 +50,18 @@ function cancel() {
 </script>
 
 <template>
-  <UModal v-model:open="open" title="New Session" :ui="{ width: 'sm:max-w-[360px]' }" @update:open="(val: boolean) => { if (!val) cancel() }">
+  <UModal v-model:open="open" title="New Session" :ui="{ content: 'sm:max-w-[440px]', footer: 'justify-end' }" @update:open="(val: boolean) => { if (!val) cancel() }">
     <template #body>
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-4">
         <!-- Mode toggle (only when GitHub is configured) -->
-        <div v-if="githubRepo" class="mode-toggle">
-          <UButton
-            :variant="mode === 'blank' ? 'solid' : 'ghost'"
-            :color="mode === 'blank' ? 'primary' : 'neutral'"
-            size="xs"
-            class="flex-1"
-            @click="mode = 'blank'"
-          >Blank</UButton>
-          <UButton
-            :variant="mode === 'issue' ? 'solid' : 'ghost'"
-            :color="mode === 'issue' ? 'primary' : 'neutral'"
-            size="xs"
-            class="flex-1"
-            @click="mode = 'issue'"
-          >From Issue</UButton>
-        </div>
+        <UTabs
+          v-if="githubRepo"
+          v-model="mode"
+          variant="pill"
+          :items="tabItems"
+          :content="false"
+          class="w-full"
+        />
 
         <!-- Issue selector (From Issue mode) -->
         <div v-if="mode === 'issue' && githubRepo" class="flex flex-col gap-2">
@@ -75,26 +73,25 @@ function cancel() {
         </div>
 
         <UFormField label="Name">
-          <UInput v-model="name" placeholder="e.g. Auth Feature" autofocus @keydown.enter="submit" />
+          <UInput v-model="name" class="w-full" placeholder="e.g. Auth Feature" autofocus @keydown.enter="submit" />
         </UFormField>
         <UFormField label="Description (optional)">
-          <UInput v-model="description" placeholder="Brief description..." @keydown.enter="submit" />
+          <UTextarea v-model="description" :rows="3" placeholder="Brief description..." class="w-full" />
         </UFormField>
-        <UCheckbox v-model="useWorktree" label="Isolated workspace (git worktree)" />
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-[var(--text-secondary)]">Create git worktree</span>
+          <USwitch v-model="useWorktree" />
+        </div>
       </div>
     </template>
     <template #footer>
-      <div class="flex justify-end gap-2">
-        <UButton variant="ghost" color="neutral" @click="cancel">Cancel</UButton>
-        <UButton :disabled="!name.trim()" @click="submit">Create</UButton>
-      </div>
+      <UButton variant="ghost" color="neutral" @click="cancel">Cancel</UButton>
+      <UButton :disabled="!name.trim()" @click="submit">Create</UButton>
     </template>
   </UModal>
 </template>
 
 <style scoped>
-.mode-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-
 .issue-selected { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: rgba(99, 102, 241, 0.08); border: 1px solid var(--accent); border-radius: 4px; }
 .issue-selected-tag { font-size: 12px; font-weight: 600; color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; }
 .issue-selected-title { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

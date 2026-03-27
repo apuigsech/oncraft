@@ -34,9 +34,9 @@ function truncateName(name: string, max = 20): string {
       <UButton
         variant="ghost"
         color="neutral"
-        size="2xs"
+        size="xs"
         icon="i-lucide-x"
-        :padded="false"
+        square
         @click="emit('remove', att.id)"
       />
     </div>

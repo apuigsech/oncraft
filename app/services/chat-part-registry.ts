@@ -351,7 +351,7 @@ function resolve(msg: SidecarMessage): ChatPartDefinition {
     const generic = registry[`tool:${msg.toolName}`];
     if (generic) return generic;
   }
-  return registry[msg.type] || registry['_default'];
+  return registry[msg.type] || registry['_default']!;
 }
 
 /**

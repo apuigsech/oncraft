@@ -50,7 +50,7 @@ async function _initMarkdownEngine(): Promise<void> {
       ['markdown', 10], ['md', 10],
     ];
     for (const [name, idx] of names) {
-      _hljs!.registerLanguage(name, langs[idx].default);
+      _hljs!.registerLanguage(name, langs[idx]!.default);
     }
 
     // Configure marked renderer

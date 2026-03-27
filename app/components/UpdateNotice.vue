@@ -11,8 +11,8 @@ const truncatedChangelog = computed(() => {
 })
 
 async function openRelease() {
-  const { open } = await import('@tauri-apps/plugin-opener')
-  open(props.updateInfo.htmlUrl)
+  const { openUrl } = await import('@tauri-apps/plugin-opener')
+  openUrl(props.updateInfo.htmlUrl)
 }
 </script>
 

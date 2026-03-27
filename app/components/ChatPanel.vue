@@ -143,7 +143,7 @@ const metrics = computed(() => {
 });
 
 const sessionConfig = computed(() => {
-  if (!sessionsStore.activeChatCardId) return { model: 'sonnet' as const, effort: 'high' as const, permissionMode: 'default' as const };
+  if (!sessionsStore.activeChatCardId) return { model: 'sonnet' as const, effort: 'high' as const, permissionMode: 'default' as const, gitBranch: undefined, worktreePath: undefined, worktreeBranch: undefined };
   return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
@@ -311,7 +311,7 @@ onUnmounted(() => {
         color="neutral"
         size="sm"
         icon="i-lucide-x"
-        :padded="false"
+        square
         @click="sessionsStore.closeChat()"
       />
     </div>
@@ -349,7 +349,7 @@ onUnmounted(() => {
         }"
       >
         <!-- Custom content rendering per message -->
-        <template #content="{ role, parts }">
+        <template #content="{ message: { role, parts } }">
           <template v-for="(part, idx) in parts" :key="idx">
             <!-- Image parts -->
             <template v-if="part.type === 'image'">
@@ -471,7 +471,7 @@ onUnmounted(() => {
           color="neutral"
           size="sm"
           icon="i-lucide-paperclip"
-          :padded="false"
+          square
           :disabled="isActive"
           @click="openFilePicker"
         />

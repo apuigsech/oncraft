@@ -58,14 +58,14 @@ function cancel() {
 </script>
 
 <template>
-  <UModal v-model:open="open" title="Edit Card" :ui="{ width: 'sm:max-w-[420px]' }" @update:open="(val: boolean) => { if (!val) cancel() }">
+  <UModal v-model:open="open" title="Edit Card" :ui="{ content: 'sm:max-w-[440px]', footer: 'justify-end' }" @update:open="(val: boolean) => { if (!val) cancel() }">
     <template #body>
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-4">
         <UFormField label="Title">
-          <UInput v-model="editName" autofocus @keydown.enter="save" />
+          <UInput v-model="editName" class="w-full" autofocus @keydown.enter="save" />
         </UFormField>
         <UFormField label="Description">
-          <UTextarea v-model="editDesc" :rows="3" placeholder="Optional description..." />
+          <UTextarea v-model="editDesc" :rows="3" placeholder="Optional description..." class="w-full" />
         </UFormField>
 
         <!-- Linked Files -->
@@ -102,10 +102,8 @@ function cancel() {
       </div>
     </template>
     <template #footer>
-      <div class="flex justify-end gap-2">
-        <UButton variant="ghost" color="neutral" @click="cancel">Cancel</UButton>
-        <UButton :disabled="!editName.trim()" @click="save">Save</UButton>
-      </div>
+      <UButton variant="ghost" color="neutral" @click="cancel">Cancel</UButton>
+      <UButton :disabled="!editName.trim()" @click="save">Save</UButton>
     </template>
   </UModal>
 </template>

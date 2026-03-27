@@ -278,7 +278,7 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
         </div>
         <div v-if="card.costUsd && card.costUsd > 0" class="card-cost-footer">
           <span class="cost-amount">${{ card.costUsd.toFixed(4) }}</span>
-          <span class="cost-tokens">&uarr;{{ formatTokens(card.inputTokens) }} &darr;{{ formatTokens(card.outputTokens) }}</span>
+          <span class="cost-tokens">&uarr;{{ formatTokens(card.inputTokens ?? 0) }} &darr;{{ formatTokens(card.outputTokens ?? 0) }}</span>
         </div>
       </div>
     </div>

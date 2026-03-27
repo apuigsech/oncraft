@@ -134,12 +134,12 @@ export const useSessionsStore = defineStore('sessions', () => {
       _flushStreamingBuffer(cardId);
       const msgs = messages[cardId];
       const lastIdx = msgs.length - 1;
-      if (lastIdx >= 0 && msgs[lastIdx].kind === 'assistant' && msgs[lastIdx].data.streaming) {
+      if (lastIdx >= 0 && msgs[lastIdx]!.kind === 'assistant' && msgs[lastIdx]!.data.streaming) {
         msgs[lastIdx] = part; // Replace text streaming with final
         return;
       }
       // Replace thinking streaming part with complete thinking block
-      if (part.data.thinking && lastIdx >= 0 && msgs[lastIdx].kind === 'assistant' && msgs[lastIdx].data.thinkingStreaming) {
+      if (part.data.thinking && lastIdx >= 0 && msgs[lastIdx]!.kind === 'assistant' && msgs[lastIdx]!.data.thinkingStreaming) {
         msgs[lastIdx] = part;
         return;
       }
@@ -246,7 +246,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       // Buffer into thinking part directly (reuse same rAF approach)
       const thinkingMsgs = messages[cardId];
-      const thinkingLast = thinkingMsgs[thinkingMsgs.length - 1];
+      const thinkingLast = thinkingMsgs[thinkingMsgs.length - 1]!;
       thinkingLast.data.content = (thinkingLast.data.content as string) + ((msg.content as string) || '');
       return;
     }
@@ -256,8 +256,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       const parts = messages[cardId];
       if (!parts) return;
       for (let i = parts.length - 1; i >= 0; i--) {
-        if (parts[i].kind === 'tool_use' && parts[i].data.toolUseId === msg.toolUseId) {
-          parts[i].data.toolResult = (msg.content as string) || (msg.toolResult as string) || '';
+        if (parts[i]!.kind === 'tool_use' && parts[i]!.data.toolUseId === msg.toolUseId) {
+          parts[i]!.data.toolResult = (msg.content as string) || (msg.toolResult as string) || '';
           return;
         }
       }

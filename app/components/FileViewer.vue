@@ -20,7 +20,7 @@ const isMarkdown = computed(() => /\.(md|mdx|markdown)$/i.test(props.filePath));
 // Detect language from extension for syntax highlighting label
 const fileExtension = computed(() => {
   const m = props.filePath.match(/\.([^.]+)$/);
-  return m ? m[1].toLowerCase() : '';
+  return m ? m[1]!.toLowerCase() : '';
 });
 
 const renderedHtml = computed(() => {

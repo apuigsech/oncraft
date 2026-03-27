@@ -16,7 +16,7 @@ const issues = ref<GitHubIssue[]>([]);
 const loading = ref(false);
 const error = ref('');
 const open = ref(false);
-const triggerEl = ref<InstanceType<typeof UButton> | null>(null);
+const triggerEl = ref<{ $el: HTMLElement } | null>(null);
 const dropdownStyle = ref<Record<string, string>>({});
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;

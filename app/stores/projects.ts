@@ -18,7 +18,7 @@ export const useProjectsStore = defineStore('projects', () => {
   async function load(): Promise<void> {
     projects.value = await db.getAllProjects();
     if (projects.value.length > 0 && !activeProjectId.value) {
-      activeProjectId.value = projects.value[0].id;
+      activeProjectId.value = projects.value[0]!.id;
     }
   }
 

@@ -5,15 +5,19 @@ export default defineAppConfig({
       neutral: 'slate',
     },
     button: {
-      defaultVariant: 'soft',
+      defaultVariants: {
+        variant: 'soft',
+      },
     },
     modal: {
-      overlay: {
-        background: 'bg-black/60',
+      slots: {
+        overlay: 'bg-black/60',
       },
     },
     toast: {
-      defaultCloseButton: true,
+      slots: {
+        close: '',
+      },
     },
   },
 })

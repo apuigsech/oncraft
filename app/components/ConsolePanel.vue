@@ -237,8 +237,8 @@ onMounted(async () => {
         const uuidMatch = clean.match(/session:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
         if (uuidMatch) {
           sessionIdCaptured = true;
-          const capturedId = uuidMatch[1];
-          cardsStore.updateCardConsoleSessionId(sessionsStore.activeChatCardId, capturedId);
+          const capturedId = uuidMatch[1]!;
+          cardsStore.updateCardConsoleSessionId(sessionsStore.activeChatCardId!, capturedId);
         }
         // Stop buffering after a reasonable amount
         if (outputBuffer.length > 4096) {
@@ -313,7 +313,7 @@ watch(() => sessionsStore.activeChatCardId, async (newId, oldId) => {
           color="neutral"
           size="sm"
           icon="i-lucide-x"
-          :padded="false"
+          square
           @click="sessionsStore.closeChat()"
         />
       </div>
