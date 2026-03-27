@@ -10,13 +10,20 @@ const emit = defineEmits<{ 'open-project-settings': [] }>();
 
 // Local mutable copy for vue-draggable-plus (it needs to mutate the array during drag)
 const draggableProjects = ref<Project[]>([]);
+let syncing = false;
 watch(() => projectsStore.projects, (newProjects) => {
+  if (syncing) return;
   draggableProjects.value = [...newProjects];
 }, { immediate: true });
 
-function onDragEnd() {
-  const orderedIds = draggableProjects.value.map(p => p.id);
-  projectsStore.reorderProjects(orderedIds);
+async function onDragEnd() {
+  syncing = true;
+  try {
+    const orderedIds = draggableProjects.value.map(p => p.id);
+    await projectsStore.reorderProjects(orderedIds);
+  } finally {
+    syncing = false;
+  }
 }
 </script>
 

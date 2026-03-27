@@ -18,7 +18,3 @@
 ::-webkit-scrollbar-thumb { background: var(--ui-border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ui-border-accented); }
 
-/* Smooth transitions for all interactive elements */
-button, a, input, select, textarea {
-  transition: all 0.15s ease;
-}

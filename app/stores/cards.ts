@@ -5,6 +5,8 @@ import * as db from '~/services/database';
 export const useCardsStore = defineStore('cards', () => {
   const cards = ref<Card[]>([]);
   const loadedProjectId = ref<string | null>(null);
+  // Shared flag: suppress column watchers during cross-column drag operations
+  const isDragging = ref(false);
 
   // N-2: Debounce DB writes for card updates.
   // During streaming, updateCardState and updateCardSessionId can fire
@@ -44,8 +46,10 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function loadForProject(projectId: string): Promise<void> {
-    cards.value = await db.getCardsByProject(projectId);
+    // Clear immediately to prevent stale cards from the previous project showing
+    cards.value = [];
     loadedProjectId.value = projectId;
+    cards.value = await db.getCardsByProject(projectId);
   }
 
   async function addCard(
@@ -204,7 +208,7 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   return {
-    cards, loadedProjectId, cardsByColumn, loadForProject,
+    cards, loadedProjectId, isDragging, cardsByColumn, loadForProject,
     addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
     updateCardMetrics, updateCardInfo,
     updateCardLinkedFiles, updateCardLinkedIssues,

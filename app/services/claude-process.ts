@@ -446,15 +446,27 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
           }
         }
 
-        // Apply remaining non-column fields
-        const allowed = ['name', 'description', 'state', 'tags', 'archived', 'linkedFiles', 'linkedIssues'] as const;
-        for (const field of allowed) {
+        // Apply remaining non-column fields via store actions for proper reactivity
+        if (req.linkedFiles !== undefined) {
+          await cardsStore.updateCardLinkedFiles(card.id, req.linkedFiles as Record<string, string>);
+        }
+        if (req.linkedIssues !== undefined) {
+          await cardsStore.updateCardLinkedIssues(card.id, req.linkedIssues as import('~/types').CardLinkedIssue[]);
+        }
+
+        // Apply simple scalar fields directly on the reactive proxy
+        const simpleFields = ['name', 'description', 'state', 'tags', 'archived'] as const;
+        let hasSimpleChanges = false;
+        for (const field of simpleFields) {
           if (req[field] !== undefined) {
             (card as any)[field] = req[field];
+            hasSimpleChanges = true;
           }
         }
-        card.lastActivityAt = new Date().toISOString();
-        await db.updateCard(card);
+        if (hasSimpleChanges) {
+          card.lastActivityAt = new Date().toISOString();
+          await db.updateCard(card);
+        }
         responseData = { success: true, card: { ...card } };
       } else {
         responseData = { success: false, error: `Card ${cardId} not found for update (store size: ${cardsStore.cards.length}, has process: ${processes.has(cardId)})` };

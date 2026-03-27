@@ -31,12 +31,10 @@ const storeCards = computed(() => cardsStore.cardsByColumn(props.flowState.slug)
 // Local mutable ref that vue-draggable-plus can freely mutate during drag
 const dragCards = ref<Card[]>([...storeCards.value]);
 
-// Track whether we're mid-drag to avoid the watch reverting draggable's DOM changes
-let syncing = false;
-
 // Sync store -> local ref when store changes externally (card added, archived, etc.)
+// Uses shared isDragging flag so ALL columns (source + destination) skip sync during drag
 watch(storeCards, (newCards) => {
-  if (syncing) return;
+  if (cardsStore.isDragging) return;
   dragCards.value = [...newCards];
 }, { deep: true });
 
@@ -50,7 +48,7 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
   const newIndex = evt.newIndex ?? 0;
   if (!card) return;
 
-  syncing = true;
+  cardsStore.isDragging = true;
   try {
     if (fromSlug !== toSlug) {
       const result = await cardsStore.moveCardToColumn(card.id, toSlug, newIndex);
@@ -72,8 +70,8 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
       await cardsStore.applyColumnOrder(props.flowState.slug, dragCards.value);
     }
   } finally {
+    cardsStore.isDragging = false;
     dragCards.value = [...storeCards.value];
-    syncing = false;
   }
 }
 
