@@ -11,7 +11,8 @@
     "postinstall": "nuxt prepare",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "version:sync": "node -e \"const v=require('./package.json').version;const f='src-tauri/Cargo.toml';let t=require('fs').readFileSync(f,'utf8');t=t.replace(/^version = \\\".*\\\"/m,'version = \\\"'+v+'\\\"');require('fs').writeFileSync(f,t);console.log('Synced version '+v+' to Cargo.toml');\""
   },
   "dependencies": {
     "@nuxt/ui": "^4.6.0",
