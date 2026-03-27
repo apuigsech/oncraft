@@ -16,6 +16,11 @@ export default defineNuxtConfig({
       colors: ['primary', 'success', 'warning', 'error', 'neutral'],
     },
   },
+  icon: {
+    clientBundle: {
+      scan: true,
+    },
+  },
   colorMode: {
     preference: 'dark',
   },

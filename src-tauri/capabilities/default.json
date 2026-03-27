@@ -47,9 +47,7 @@
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
@@ -58,9 +56,7 @@
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
@@ -69,10 +65,8 @@
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" },
-        { "path": "$RESOURCE/**" }
+        { "path": "$RESOURCE/**" },
+        { "path": "$TEMP/**" }
       ]
     },
     {
@@ -81,56 +75,48 @@
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [
-        { "path": "$HOME/**" },
+        { "path": "$HOME/.oncraft/**" },
+        { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
       "identifier": "fs:allow-mkdir",
       "allow": [
-        { "path": "$HOME/**" },
+        { "path": "$HOME/.oncraft/**" },
+        { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "$TEMP/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" },
         { "path": "/var/folders/**" }
       ]
     },
     {
       "identifier": "fs:allow-write",
       "allow": [
-        { "path": "$HOME/**" },
+        { "path": "$HOME/.oncraft/**" },
+        { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
       "identifier": "fs:allow-write-file",
       "allow": [
-        { "path": "$HOME/**" },
+        { "path": "$HOME/.oncraft/**" },
+        { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
         { "path": "$TEMP/**" },
-        { "path": "/Users/**" },
-        { "path": "/tmp/**" },
-        { "path": "/private/**" },
         { "path": "/var/folders/**" }
       ]
     }

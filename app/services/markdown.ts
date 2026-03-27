@@ -2,6 +2,8 @@
 // These are large dependencies (~400KB hljs, ~80KB marked) that are not needed
 // until the user actually opens a chat panel with assistant messages.
 
+import DOMPurify from 'dompurify';
+
 type MarkedModule = typeof import('marked');
 type HljsModule = typeof import('highlight.js/lib/core');
 
@@ -88,7 +90,7 @@ export function renderMarkdown(text: string): string {
     _initMarkdownEngine();
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-  return _marked.parse(text, { async: false }) as string;
+  return DOMPurify.sanitize(_marked.parse(text, { async: false }) as string);
 }
 
 // Eagerly trigger initialization (call this when chat opens, not at app startup)
