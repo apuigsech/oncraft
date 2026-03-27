@@ -20,7 +20,7 @@ export function useChatParts(cardId: Ref<string | null>) {
 
   // Filter parts by verbosity: only show parts whose definition verbosity <= current level
   function isVisible(part: ChatPart): boolean {
-    const def = registry[part.kind] || registry['_default'];
+    const def = registry[part.kind] || registry['_default']!;
     return VERBOSITY_ORDER[def.verbosity] <= verbosityLevel.value;
   }
 

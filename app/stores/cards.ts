@@ -153,7 +153,7 @@ export const useCardsStore = defineStore('cards', () => {
   async function applyColumnOrder(columnName: string, orderedCards: Card[]): Promise<void> {
     const updates: { id: string; columnName: string; columnOrder: number }[] = [];
     for (let i = 0; i < orderedCards.length; i++) {
-      const card = cards.value.find(c => c.id === orderedCards[i].id);
+      const card = cards.value.find(c => c.id === orderedCards[i]!.id);
       if (card) {
         card.columnName = columnName;
         card.columnOrder = i;

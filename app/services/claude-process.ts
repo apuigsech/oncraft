@@ -690,7 +690,7 @@ export async function loadHistoryViaSidecar(sessionId: string): Promise<ChatPart
     if (msg.type === 'tool_result' && msg.toolUseId) {
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
-        if (p.data.toolUseId === msg.toolUseId && (p.kind === 'tool_use' || p.kind.startsWith('tool_confirmation:'))) {
+        if (p && p.data.toolUseId === msg.toolUseId && (p.kind === 'tool_use' || p.kind.startsWith('tool_confirmation:'))) {
           const resultContent = (msg.content || (msg as any).toolResult || '') as string;
           p.data.toolResult = resultContent;
           // For AskUserQuestion: extract the answer from the tool_result content
