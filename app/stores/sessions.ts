@@ -83,7 +83,13 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function getSessionConfig(cardId: string): SessionConfig {
     if (!sessionConfigs[cardId]) {
-      sessionConfigs[cardId] = { model: 'sonnet', effort: 'high', permissionMode: 'default', verbosity: 'normal' };
+      const settingsStore = useSettingsStore();
+      sessionConfigs[cardId] = {
+        model: settingsStore.settings.defaultModel || 'sonnet',
+        effort: settingsStore.settings.defaultEffort || 'high',
+        permissionMode: settingsStore.settings.defaultPermissionMode || 'default',
+        verbosity: 'normal',
+      };
     }
     return sessionConfigs[cardId];
   }

@@ -135,6 +135,7 @@ export interface GlobalSettings {
   chatMode: ChatMode;
   defaultModel?: ModelAlias;
   defaultEffort?: EffortLevel;
+  defaultPermissionMode?: PermissionMode;
   onboardingCompleted?: boolean;
   onboardingDismissed?: boolean;
   telemetryEnabled?: boolean;

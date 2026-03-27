@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMode, ModelAlias, EffortLevel } from '~/types';
+import type { ChatMode, ModelAlias, EffortLevel, PermissionMode } from '~/types';
 import type { HealthCheckItem } from '~/services/health-check';
 import { setEnabled as telemetrySetEnabled, getEventQueue, getInstallId, type TelemetryEvent } from '~/services/telemetry';
 
@@ -31,16 +31,19 @@ const chatModeOptions = [
 ];
 
 const modelOptions = [
-  { label: 'Opus', value: 'opus' as ModelAlias },
-  { label: 'Sonnet', value: 'sonnet' as ModelAlias },
-  { label: 'Haiku', value: 'haiku' as ModelAlias },
+  { label: 'Opus',   value: 'opus' as ModelAlias,   icon: 'i-simple-icons-anthropic' },
+  { label: 'Sonnet', value: 'sonnet' as ModelAlias, icon: 'i-simple-icons-anthropic' },
+  { label: 'Haiku',  value: 'haiku' as ModelAlias,  icon: 'i-simple-icons-anthropic' },
 ];
 
-const effortOptions = [
-  { label: 'Low', value: 'low' as EffortLevel },
-  { label: 'Medium', value: 'medium' as EffortLevel },
-  { label: 'High', value: 'high' as EffortLevel },
-  { label: 'Max', value: 'max' as EffortLevel },
+const effortLevels: EffortLevel[] = ['low', 'medium', 'high', 'max'];
+const effortLabels: Record<EffortLevel, string> = { low: 'Lo', medium: 'Med', high: 'Hi', max: 'Max' };
+
+const modeOptions = [
+  { label: 'Default',   value: 'default' as PermissionMode,           icon: 'i-lucide-lock' },
+  { label: 'Auto-edit', value: 'acceptEdits' as PermissionMode,       icon: 'i-lucide-pencil',         class: 'text-primary', ui: { itemLeadingIcon: 'text-primary' } },
+  { label: 'Plan',      value: 'plan' as PermissionMode,              icon: 'i-lucide-clipboard-list', class: 'text-warning', ui: { itemLeadingIcon: 'text-warning' } },
+  { label: 'YOLO',      value: 'bypassPermissions' as PermissionMode, icon: 'i-lucide-zap',            class: 'text-error', ui: { itemLeadingIcon: 'text-error' } },
 ];
 
 const selectedChatMode = computed({
@@ -65,6 +68,28 @@ const selectedEffort = computed({
     settingsStore.settings.defaultEffort = val;
     settingsStore.save();
   },
+});
+
+const effortIndex = computed(() => effortLevels.indexOf(selectedEffort.value));
+
+const selectedPermissionMode = computed({
+  get: () => settingsStore.settings.defaultPermissionMode || 'default',
+  set: (val: PermissionMode) => {
+    settingsStore.settings.defaultPermissionMode = val;
+    settingsStore.save();
+  },
+});
+
+const currentModeIcon = computed(() => modeOptions.find(m => m.value === selectedPermissionMode.value)?.icon);
+const currentModelIcon = computed(() => modelOptions.find(m => m.value === selectedModel.value)?.icon);
+
+const modeColorClass = computed(() => {
+  switch (selectedPermissionMode.value) {
+    case 'acceptEdits': return 'text-primary';
+    case 'plan': return 'text-warning';
+    case 'bypassPermissions': return 'text-error';
+    default: return '';
+  }
 });
 
 // ── Telemetry section ──
@@ -193,40 +218,55 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
             <p class="hint">Claude agent is bundled with the application. Console mode requires the Claude CLI to be installed.</p>
           </div>
 
-          <!-- Default Model -->
+          <!-- Session Defaults -->
           <div class="setting-group">
-            <span class="setting-label">Default Model</span>
-            <div class="option-pills">
-              <UButton
-                v-for="opt in modelOptions"
-                :key="opt.value"
+            <span class="setting-label">Session Defaults</span>
+            <p class="hint">Defaults for new sessions. Can be overridden per card.</p>
+            <div class="session-defaults-bar">
+              <!-- Permission mode -->
+              <USelectMenu
+                v-model="selectedPermissionMode"
+                :items="modeOptions"
+                :icon="currentModeIcon"
                 size="sm"
-                :variant="selectedModel === opt.value ? 'solid' : 'ghost'"
-                :color="selectedModel === opt.value ? 'primary' : 'neutral'"
-                @click="selectedModel = opt.value"
-              >
-                {{ opt.label }}
-              </UButton>
-            </div>
-            <p class="hint">Default model for new sessions. Can be overridden per card.</p>
-          </div>
+                variant="ghost"
+                value-key="value"
+                :search-input="false"
+                :class="['data-[state=open]:bg-elevated', modeColorClass]"
+                :ui="{
+                  trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200',
+                  leadingIcon: modeColorClass,
+                  value: modeColorClass
+                }"
+              />
 
-          <!-- Default Effort -->
-          <div class="setting-group">
-            <span class="setting-label">Default Effort Level</span>
-            <div class="option-pills">
-              <UButton
-                v-for="opt in effortOptions"
-                :key="opt.value"
+              <!-- Model selector -->
+              <USelectMenu
+                v-model="selectedModel"
+                :items="modelOptions"
+                :icon="currentModelIcon"
                 size="sm"
-                :variant="selectedEffort === opt.value ? 'solid' : 'ghost'"
-                :color="selectedEffort === opt.value ? 'primary' : 'neutral'"
-                @click="selectedEffort = opt.value"
-              >
-                {{ opt.label }}
-              </UButton>
+                variant="ghost"
+                value-key="value"
+                :search-input="false"
+                class="data-[state=open]:bg-elevated"
+                :ui="{
+                  trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200'
+                }"
+              />
+
+              <!-- Effort level -->
+              <div class="effort-bars" :title="'Effort: ' + selectedEffort">
+                <div
+                  v-for="(level, i) in effortLevels"
+                  :key="level"
+                  class="effort-bar"
+                  :class="{ active: i <= effortIndex }"
+                  @click="selectedEffort = level"
+                />
+                <span class="effort-label">{{ effortLabels[selectedEffort] }}</span>
+              </div>
             </div>
-            <p class="hint">Default effort level for new sessions. Can be overridden per card.</p>
           </div>
         </section>
 
@@ -474,6 +514,42 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
 
 /* Option pills */
 .option-pills { display: flex; gap: 6px; }
+
+/* Session defaults bar — mirrors InputToolbar */
+.session-defaults-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.effort-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.effort-bar {
+  width: 6px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s;
+  opacity: 0.35;
+}
+.effort-bar.active {
+  background: #f97316;
+  opacity: 1;
+}
+.effort-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ui-text-muted);
+  margin-left: 4px;
+}
 
 /* Toggle row */
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
