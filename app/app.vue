@@ -15,7 +15,7 @@ const GlobalSettingsPage = defineAsyncComponent(() => import('~/components/Globa
 const projectsStore = useProjectsStore()
 const settingsStore = useSettingsStore()
 const cardsStore = useCardsStore()
-const pipelinesStore = usePipelinesStore()
+const flowStore = useFlowStore()
 const sessionsStore = useSessionsStore()
 const { activeFile, closeFile } = useFileViewer()
 const { addProject } = useProjectActions()
@@ -80,7 +80,7 @@ onMounted(async () => {
     // QW-1: Cards and pipelines are independent — load in parallel
     await Promise.allSettled([
       cardsStore.loadForProject(projectsStore.activeProject.id),
-      pipelinesStore.loadForProject(projectsStore.activeProject.path),
+      flowStore.loadForProject(projectsStore.activeProject.path),
     ])
     // QW-2: loadAvailableCommands deferred — will load on first chat open
     // Preload utility sidecar in background so history loads are fast
