@@ -31,34 +31,40 @@ const storeCards = computed(() => cardsStore.cardsByColumn(props.flowState.slug)
 // Local mutable ref that vue-draggable-plus can freely mutate during drag
 const dragCards = ref<Card[]>([...storeCards.value]);
 
-// Track whether we're mid-drag to avoid the watch reverting draggable's DOM changes
-let syncing = false;
-
 // Sync store -> local ref when store changes externally (card added, archived, etc.)
+// Uses shared isDragging flag so ALL columns (source + destination) skip sync during drag
 watch(storeCards, (newCards) => {
-  if (syncing) return;
+  if (cardsStore.isDragging) return;
   dragCards.value = [...newCards];
 }, { deep: true });
 
-async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: number; newIndex?: number; data: Card }) {
+// Capture the card being dragged at start (before onRemove mutates dragCards)
+let draggedCard: Card | null = null;
+
+function onDragStart(evt: { oldIndex?: number }) {
+  cardsStore.isDragging = true;
+  draggedCard = evt.oldIndex != null ? dragCards.value[evt.oldIndex] ?? null : null;
+}
+
+async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: number; newIndex?: number }) {
   const fromSlug = evt.from.dataset.columnName;
   const toSlug   = evt.to.dataset.columnName;
-
-  if (!fromSlug || !toSlug) return;
-
-  const card     = evt.data;
+  const card     = draggedCard;
   const newIndex = evt.newIndex ?? 0;
-  if (!card) return;
+  draggedCard = null;
 
-  syncing = true;
+  if (!fromSlug || !toSlug || !card) {
+    cardsStore.isDragging = false;
+    dragCards.value = [...storeCards.value];
+    return;
+  }
+
   try {
     if (fromSlug !== toSlug) {
       const result = await cardsStore.moveCardToColumn(card.id, toSlug, newIndex);
       if (!result.success && result.missingFiles) {
-        evt.from.appendChild(evt.to.children[newIndex] ?? evt.data as unknown as Node);
         missingFiles.value            = result.missingFiles;
         showRequiredFilesDialog.value = true;
-        dragCards.value = [...storeCards.value];
         return;
       }
 
@@ -72,8 +78,23 @@ async function onDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: n
       await cardsStore.applyColumnOrder(props.flowState.slug, dragCards.value);
     }
   } finally {
+    cardsStore.isDragging = false;
     dragCards.value = [...storeCards.value];
-    syncing = false;
+    // vue-draggable-plus restores DOM nodes via insertBefore in onRemove,
+    // but Vue's VDOM reconciliation may not clean them up. Force cleanup.
+    nextTick(() => {
+      for (const container of [evt.from, evt.to]) {
+        if (!container) continue;
+        const expected = new Set(
+          cardsStore.cardsByColumn(container.dataset.columnName ?? '')
+            .map(c => c.id)
+        );
+        container.querySelectorAll('.kanban-card').forEach(el => {
+          const cardId = el.getAttribute('data-card-id');
+          if (cardId && !expected.has(cardId)) el.remove();
+        });
+      }
+    });
   }
 }
 
@@ -164,6 +185,7 @@ async function createForkedSession(name: string, description: string, useWorktre
       :delay-on-touch-only="false"
       :data-column-name="flowState.slug"
       class="column-body"
+      @start="onDragStart"
       @end="onDragEnd"
     >
       <KanbanCard

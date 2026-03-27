@@ -166,7 +166,7 @@ const oncraftTools = [
       state: z.enum(["active", "idle", "error", "completed"]).optional().describe("Card state"),
       tags: z.array(z.string()).optional().describe("Tag list"),
       archived: z.boolean().optional().describe("Archive or unarchive the card"),
-      linkedFiles: z.record(z.string(), z.string()).optional().describe('Files linked to this card as { label: relativePath }, e.g. { "plan": "docs/plan.md" }'),
+      linkedFiles: z.record(z.string(), z.string()).optional().describe('Files linked to this card as { label: relativePath }. Merged with existing entries. Set a label to "" to remove it. e.g. { "plan": "docs/plan.md" }'),
       linkedIssues: z.array(z.object({ number: z.number(), title: z.string().optional() })).optional().describe("GitHub issues linked to this card"),
     },
     async (args) => {

@@ -5,6 +5,10 @@ import * as db from '~/services/database';
 export const useCardsStore = defineStore('cards', () => {
   const cards = ref<Card[]>([]);
   const loadedProjectId = ref<string | null>(null);
+  // Shared flag: suppress column watchers during cross-column drag operations
+  const isDragging = ref(false);
+  // Guard against stale async loads when rapidly switching projects
+  let _loadGeneration = 0;
 
   // N-2: Debounce DB writes for card updates.
   // During streaming, updateCardState and updateCardSessionId can fire
@@ -44,8 +48,13 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function loadForProject(projectId: string): Promise<void> {
-    cards.value = await db.getCardsByProject(projectId);
+    const gen = ++_loadGeneration;
     loadedProjectId.value = projectId;
+    const loaded = await db.getCardsByProject(projectId);
+    // Only apply if this is still the most recent load (prevents stale overwrite on rapid switch)
+    if (gen === _loadGeneration) {
+      cards.value = loaded;
+    }
   }
 
   async function addCard(
@@ -167,7 +176,12 @@ export const useCardsStore = defineStore('cards', () => {
   async function updateCardLinkedFiles(cardId: string, linkedFiles: Record<string, string>): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
-    card.linkedFiles = Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined;
+    // Merge incoming entries with existing (allows partial updates from MCP)
+    const merged = { ...(card.linkedFiles || {}), ...linkedFiles };
+    // Remove entries explicitly set to empty string (allows deletion)
+    const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== ''));
+    card.linkedFiles = Object.keys(cleaned).length > 0 ? cleaned : undefined;
+    card.lastActivityAt = new Date().toISOString();
     await db.updateCard(card);
   }
 
@@ -204,7 +218,7 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   return {
-    cards, loadedProjectId, cardsByColumn, loadForProject,
+    cards, loadedProjectId, isDragging, cardsByColumn, loadForProject,
     addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
     updateCardMetrics, updateCardInfo,
     updateCardLinkedFiles, updateCardLinkedIssues,

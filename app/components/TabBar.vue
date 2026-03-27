@@ -10,13 +10,21 @@ const emit = defineEmits<{ 'open-project-settings': [] }>();
 
 // Local mutable copy for vue-draggable-plus (it needs to mutate the array during drag)
 const draggableProjects = ref<Project[]>([]);
+let syncing = false;
 watch(() => projectsStore.projects, (newProjects) => {
+  if (syncing) return;
   draggableProjects.value = [...newProjects];
 }, { immediate: true });
 
-function onDragEnd() {
-  const orderedIds = draggableProjects.value.map(p => p.id);
-  projectsStore.reorderProjects(orderedIds);
+async function onDragEnd() {
+  syncing = true;
+  try {
+    const orderedIds = draggableProjects.value.map(p => p.id);
+    await projectsStore.reorderProjects(orderedIds);
+  } finally {
+    syncing = false;
+    draggableProjects.value = [...projectsStore.projects];
+  }
 }
 </script>
 
@@ -47,7 +55,9 @@ function onDragEnd() {
       v-model="draggableProjects"
       class="project-tabs"
       :animation="150"
-      item-key="id"
+      :force-fallback="true"
+      :delay="60"
+      :delay-on-touch-only="false"
       @end="onDragEnd"
     >
       <div
@@ -134,7 +144,7 @@ function onDragEnd() {
 }
 .tab-icon { font-size: 16px; }
 
-.project-tabs { display: flex; gap: 2px; align-items: flex-end; }
+.project-tabs { display: flex; gap: 2px; align-items: flex-end; -webkit-app-region: no-drag; }
 .tab--project { padding: 6px 12px 6px 16px; }
 .activity-dot {
   width: 6px;

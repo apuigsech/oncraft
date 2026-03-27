@@ -12,8 +12,10 @@ export function useProjectActions() {
     const name = path.split('/').filter(Boolean).pop() || 'project';
     const project = await projectsStore.addProject(name, path);
     projectsStore.activeTab = project.id;
-    await cardsStore.loadForProject(project.id);
-    await pipelinesStore.loadForProject(project.path);
+    await Promise.all([
+      cardsStore.loadForProject(project.id),
+      pipelinesStore.loadForProject(project.path),
+    ]);
   }
 
   async function switchToProject(projectId: string): Promise<void> {
@@ -21,8 +23,10 @@ export function useProjectActions() {
     projectsStore.activeTab = projectId;
     const project = projectsStore.activeProject;
     if (project) {
-      await cardsStore.loadForProject(project.id);
-      await pipelinesStore.loadForProject(project.path);
+      await Promise.all([
+        cardsStore.loadForProject(project.id),
+        pipelinesStore.loadForProject(project.path),
+      ]);
     }
   }
 
@@ -31,8 +35,10 @@ export function useProjectActions() {
     const active = projectsStore.activeProject;
     if (active) {
       projectsStore.activeTab = active.id;
-      await cardsStore.loadForProject(active.id);
-      await pipelinesStore.loadForProject(active.path);
+      await Promise.all([
+        cardsStore.loadForProject(active.id),
+        pipelinesStore.loadForProject(active.path),
+      ]);
     } else {
       projectsStore.activeTab = 'home';
     }

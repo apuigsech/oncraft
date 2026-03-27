@@ -2,6 +2,7 @@
 import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
 import { initTelemetry, shutdownTelemetry } from '~/services/telemetry'
+import { checkForUpdate, type UpdateInfo } from '~/services/version-check'
 
 // ME-5: Lazy-load heavy components that are not needed at startup.
 // ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
@@ -21,6 +22,7 @@ const { addProject } = useProjectActions()
 
 const appReady = ref(false)
 const showOnboarding = ref(false)
+const updateInfo = ref<UpdateInfo | null>(null)
 
 // NAV: activeTab lives in projectsStore so sessions store can derive per-project chat correctly
 const { activeTab, isProjectTab } = storeToRefs(projectsStore)
@@ -96,6 +98,9 @@ onMounted(async () => {
   }
 
   appReady.value = true
+
+  // Check for updates in background (non-blocking)
+  checkForUpdate().then(info => { updateInfo.value = info })
 })
 
 onUnmounted(() => {
@@ -111,6 +116,7 @@ onUnmounted(() => {
     </Transition>
 
     <div v-show="appReady" id="app">
+      <UpdateNotice v-if="updateInfo" :update-info="updateInfo" @dismiss="updateInfo = null" />
       <TabBar @open-project-settings="showSettings = true" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
@@ -145,17 +151,15 @@ onUnmounted(() => {
             </template>
           </ErrorBoundary>
         </div>
-        <Transition name="chat-slide">
-          <div v-if="showChat" class="chat-side">
-            <div class="divider" @mousedown="startResize" />
-            <ErrorBoundary v-if="isConsoleMode">
-              <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
-            </ErrorBoundary>
-            <ErrorBoundary v-else>
-              <ChatPanel :style="{ width: chatWidth + 'px' }" />
-            </ErrorBoundary>
-          </div>
-        </Transition>
+        <div v-if="showChat" class="chat-side">
+          <div class="divider" @mousedown="startResize" />
+          <ErrorBoundary v-if="isConsoleMode">
+            <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
+          </ErrorBoundary>
+          <ErrorBoundary v-else>
+            <ChatPanel :style="{ width: chatWidth + 'px' }" />
+          </ErrorBoundary>
+        </div>
       </div>
       <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />
 
@@ -177,9 +181,4 @@ onUnmounted(() => {
 .splash-fade-leave-active { transition: opacity 0.3s ease; }
 .splash-fade-leave-to { opacity: 0; }
 
-/* Chat panel slide-in/out transition */
-.chat-slide-enter-active { transition: transform 0.25s ease-out, opacity 0.25s ease-out; }
-.chat-slide-leave-active { transition: transform 0.2s ease-in, opacity 0.2s ease-in; }
-.chat-slide-enter-from { transform: translateX(100%); opacity: 0; }
-.chat-slide-leave-to { transform: translateX(100%); opacity: 0; }
 </style>

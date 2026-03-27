@@ -185,6 +185,7 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   >
     <div
       class="kanban-card"
+      :data-card-id="props.card.id"
       :style="{ borderLeftColor: props.columnColor }"
       @click="openChat"
     >

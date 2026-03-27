@@ -40,16 +40,14 @@ const statusText = computed(() => {
 </script>
 
 <template>
-  <Transition name="progress-fade">
-    <div v-if="visible" class="agent-progress">
-      <span class="progress-spinner" />
-      <span v-if="latest" class="progress-icon">{{ icon }}</span>
-      <span class="progress-text">{{ statusText }}</span>
-      <span v-if="subAgentCount > 0" class="sub-agent-badge">
-        {{ subAgentCount }} sub-agent{{ subAgentCount > 1 ? 's' : '' }}
-      </span>
-    </div>
-  </Transition>
+  <div v-if="visible" class="agent-progress">
+    <span class="progress-spinner" />
+    <span v-if="latest" class="progress-icon">{{ icon }}</span>
+    <span class="progress-text">{{ statusText }}</span>
+    <span v-if="subAgentCount > 0" class="sub-agent-badge">
+      {{ subAgentCount }} sub-agent{{ subAgentCount > 1 ? 's' : '' }}
+    </span>
+  </div>
 </template>
 
 <style scoped>
@@ -94,8 +92,4 @@ const statusText = computed(() => {
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.progress-fade-enter-active,
-.progress-fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
-.progress-fade-enter-from,
-.progress-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 </style>
