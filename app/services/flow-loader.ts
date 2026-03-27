@@ -76,7 +76,8 @@ async function readMd(path: string): Promise<string> {
     const e = await exists(path);
     if (!e) return '';
     return await readTextFile(path);
-  } catch {
+  } catch (e) {
+    if (import.meta.dev) console.warn('[OnCraft] readMd failed:', path, e);
     return '';
   }
 }
@@ -89,7 +90,9 @@ async function readFlowState(projectPath: string, slug: string): Promise<FlowSta
   try {
     const e = await exists(stateYaml);
     if (e) raw = (yaml.load(await readTextFile(stateYaml)) as Record<string, unknown>) || {};
-  } catch { /* treat as empty */ }
+  } catch (e) {
+    if (import.meta.dev) console.warn('[OnCraft] readFlowState YAML parse:', slug, e);
+  }
 
   const prompt        = await readMd(`${projectPath}/${STATES_DIR}/${slug}/prompt.md`);
   const triggerPrompt = await readMd(`${projectPath}/${STATES_DIR}/${slug}/trigger.md`);

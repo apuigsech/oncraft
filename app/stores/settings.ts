@@ -30,8 +30,8 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!dirExists) {
         await mkdir('', { baseDir: BaseDirectory.AppConfig, recursive: true });
       }
-    } catch {
-      // Directory might already exist
+    } catch (e) {
+      if (import.meta.dev) console.warn('[OnCraft] mkdir AppConfig:', e);
     }
     try {
       const fileExists = await exists(SETTINGS_FILE, { baseDir: BaseDirectory.AppConfig });
@@ -49,8 +49,8 @@ export const useSettingsStore = defineStore('settings', () => {
   async function save(): Promise<void> {
     try {
       await mkdir('', { baseDir: BaseDirectory.AppConfig, recursive: true });
-    } catch {
-      // Already exists
+    } catch (e) {
+      if (import.meta.dev) console.warn('[OnCraft] mkdir AppConfig on save:', e);
     }
     const content = yaml.dump(settings.value, { lineWidth: 120 });
     await writeTextFile(SETTINGS_FILE, content, { baseDir: BaseDirectory.AppConfig });

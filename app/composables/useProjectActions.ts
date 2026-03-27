@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 export function useProjectActions() {
   const projectsStore = useProjectsStore();
   const cardsStore = useCardsStore();
-  const pipelinesStore = usePipelinesStore();
+  const flowStore = useFlowStore();
 
   async function addProject(): Promise<void> {
     const selected = await open({ directory: true, multiple: false });
@@ -14,7 +14,7 @@ export function useProjectActions() {
     projectsStore.activeTab = project.id;
     await Promise.all([
       cardsStore.loadForProject(project.id),
-      pipelinesStore.loadForProject(project.path),
+      flowStore.loadForProject(project.path),
     ]);
   }
 
@@ -25,7 +25,7 @@ export function useProjectActions() {
     if (project) {
       await Promise.all([
         cardsStore.loadForProject(project.id),
-        pipelinesStore.loadForProject(project.path),
+        flowStore.loadForProject(project.path),
       ]);
     }
   }
@@ -37,7 +37,7 @@ export function useProjectActions() {
       projectsStore.activeTab = active.id;
       await Promise.all([
         cardsStore.loadForProject(active.id),
-        pipelinesStore.loadForProject(active.path),
+        flowStore.loadForProject(active.path),
       ]);
     } else {
       projectsStore.activeTab = 'home';

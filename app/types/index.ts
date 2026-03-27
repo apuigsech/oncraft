@@ -130,7 +130,7 @@ export interface ImageAttachment {
 export type ChatMode = 'integrated' | 'console';
 
 export interface GlobalSettings {
-  theme: 'dark' | 'light';
+  theme: 'dark'; // TODO: light theme not yet implemented
   defaultColumns: ColumnConfig[];
   chatMode: ChatMode;
   defaultModel?: ModelAlias;
