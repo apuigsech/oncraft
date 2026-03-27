@@ -29,7 +29,9 @@ async function onDragEnd() {
 </script>
 
 <template>
-  <div class="tab-bar">
+  <div class="tab-bar" data-tauri-drag-region>
+    <!-- macOS traffic light spacer -->
+    <div class="traffic-light-spacer" />
     <!-- Pinned: Home tab -->
     <div
       class="tab tab--pinned"
@@ -116,11 +118,17 @@ async function onDragEnd() {
   display: flex;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  padding: 0 8px;
+  padding: 0 8px 0 0;
   gap: 2px;
   height: 36px;
   align-items: flex-end;
-  -webkit-app-region: drag;
+}
+
+/* Reserve space for macOS traffic light buttons (close/minimize/maximize) */
+.traffic-light-spacer {
+  width: 78px;
+  flex-shrink: 0;
+  height: 100%;
 }
 
 .tab {
@@ -132,7 +140,6 @@ async function onDragEnd() {
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
-  -webkit-app-region: no-drag;
   transition: background 0.15s;
 }
 .tab:hover { background: var(--bg-tertiary); }
@@ -144,7 +151,7 @@ async function onDragEnd() {
 }
 .tab-icon { font-size: 16px; }
 
-.project-tabs { display: flex; gap: 2px; align-items: flex-end; -webkit-app-region: no-drag; }
+.project-tabs { display: flex; gap: 2px; align-items: flex-end; }
 .tab--project { padding: 6px 12px 6px 16px; }
 .activity-dot {
   width: 6px;
@@ -159,10 +166,8 @@ async function onDragEnd() {
   50% { opacity: 0.4; }
 }
 .tab-name { pointer-events: none; }
-.tab-close { opacity: 0; transition: opacity 0.15s; -webkit-app-region: no-drag; }
+.tab-close { opacity: 0; transition: opacity 0.15s; }
 .tab:hover .tab-close { opacity: 1; }
 
-.add-tab { -webkit-app-region: no-drag; }
-.action-btn { -webkit-app-region: no-drag; }
 .spacer { flex: 1; }
 </style>
