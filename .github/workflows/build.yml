@@ -38,15 +38,19 @@ jobs:
           - runner: macos-latest
             target: aarch64-apple-darwin
             sidecar-triple: aarch64-apple-darwin
+            bundles: dmg
           - runner: macos-latest
             target: x86_64-apple-darwin
             sidecar-triple: x86_64-apple-darwin
+            bundles: dmg
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             sidecar-triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             sidecar-triple: x86_64-pc-windows-msvc
+            bundles: msi,nsis
 
     runs-on: ${{ matrix.runner }}
 
@@ -101,16 +105,12 @@ jobs:
       # --- Build Nuxt frontend ---
       - run: pnpm build
 
-      # --- Build Tauri app ---
-      # Sidecar and frontend are already built above, skip beforeBuildCommand
+      # --- Build Tauri app (skip beforeBuildCommand — sidecar + frontend already built) ---
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-        with:
-          args: --target ${{ matrix.target }}
-          beforeBuildCommand: ''
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       # --- Upload artifacts ---
       - name: Upload build artifacts
@@ -119,7 +119,6 @@ jobs:
           name: oncraft-${{ matrix.target }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi

@@ -27,8 +27,8 @@ jobs:
       - run: pnpm install
       - run: pnpm test
 
-  # Build and release for all platforms
-  release:
+  # Build for all platforms
+  build:
     needs: test
     strategy:
       fail-fast: false
@@ -37,15 +37,19 @@ jobs:
           - runner: macos-latest
             target: aarch64-apple-darwin
             sidecar-triple: aarch64-apple-darwin
+            bundles: dmg
           - runner: macos-latest
             target: x86_64-apple-darwin
             sidecar-triple: x86_64-apple-darwin
+            bundles: dmg
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             sidecar-triple: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             sidecar-triple: x86_64-pc-windows-msvc
+            bundles: msi,nsis
 
     runs-on: ${{ matrix.runner }}
 
@@ -102,18 +106,63 @@ jobs:
       # --- Build Nuxt frontend ---
       - run: pnpm build
 
-      # --- Build Tauri + create GitHub Release ---
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+      # --- Build Tauri app (skip beforeBuildCommand — sidecar + frontend already built) ---
+      - name: Build Tauri app
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # --- Upload artifacts for release job ---
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'OnCraft ${{ github.ref_name }}'
-          releaseBody: |
-            See the full changelog at https://github.com/apuigsech/oncraft/commits/${{ github.ref_name }}
-          releaseDraft: false
+          name: oncraft-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+
+  # Create GitHub Release with all artifacts
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ github.ref_name }}" ]; then
+            echo "body=Initial release" >> "$GITHUB_OUTPUT"
+          else
+            LOG=$(git log --oneline "$PREV_TAG".."${{ github.ref_name }}" --no-merges)
+            # Use a delimiter for multiline output
+            {
+              echo "body<<CHANGELOG_EOF"
+              echo "$LOG"
+              echo "CHANGELOG_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'OnCraft ${{ github.ref_name }}'
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-          args: --target ${{ matrix.target }}
-          beforeBuildCommand: ''
+          files: artifacts/**/*
