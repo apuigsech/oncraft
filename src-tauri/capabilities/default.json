@@ -103,9 +103,11 @@
         { "path": "$HOME/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
+        { "path": "$TEMP/**" },
         { "path": "/Users/**" },
         { "path": "/tmp/**" },
-        { "path": "/private/**" }
+        { "path": "/private/**" },
+        { "path": "/var/folders/**" }
       ]
     },
     {
@@ -117,6 +119,19 @@
         { "path": "/Users/**" },
         { "path": "/tmp/**" },
         { "path": "/private/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$TEMP/**" },
+        { "path": "/Users/**" },
+        { "path": "/tmp/**" },
+        { "path": "/private/**" },
+        { "path": "/var/folders/**" }
       ]
     }
   ]
