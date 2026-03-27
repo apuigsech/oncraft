@@ -38,7 +38,7 @@ jobs:
           - runner: macos-latest
             target: aarch64-apple-darwin
             sidecar-triple: aarch64-apple-darwin
-          - runner: macos-13
+          - runner: macos-latest
             target: x86_64-apple-darwin
             sidecar-triple: x86_64-apple-darwin
           - runner: ubuntu-22.04
@@ -62,7 +62,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            libfuse2
 
       # --- Toolchains ---
       - uses: dtolnay/rust-toolchain@stable
@@ -101,6 +102,7 @@ jobs:
       - run: pnpm build
 
       # --- Build Tauri app ---
+      # Sidecar and frontend are already built above, skip beforeBuildCommand
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -108,6 +110,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
         with:
           args: --target ${{ matrix.target }}
+          beforeBuildCommand: ''
 
       # --- Upload artifacts ---
       - name: Upload build artifacts
