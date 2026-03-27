@@ -29,6 +29,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Kanban board for managing Claude Code sessions",
+    "longDescription": "OnCraft is a desktop application that provides a Kanban board interface for managing Claude Code sessions. Each card maps to a conversation, moving through a configurable workflow from brainstorming to implementation.",
     "externalBin": ["binaries/agent-bridge"],
     "resources": ["../presets/**/*"],
     "icon": [
@@ -37,6 +40,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }
