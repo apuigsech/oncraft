@@ -21,6 +21,13 @@ const githubRepo = computed(() => flowStore.githubRepository);
 const linkedFilesCount = computed(() => Object.keys(props.card.linkedFiles || {}).length);
 const linkedIssuesCount = computed(() => (props.card.linkedIssues || []).length);
 
+// Whether the card has a deliberate branch association (worktree or configured gitBranch)
+const hasExplicitBranch = computed(() => {
+  if (props.card.useWorktree && props.card.worktreeName) return true;
+  const config = sessionsStore.getSessionConfig(props.card.id);
+  return !!config.gitBranch;
+});
+
 // Branch ahead/behind status
 const branchStatus = ref<BranchStatus | null>(null);
 
@@ -28,14 +35,15 @@ async function refreshBranchStatus() {
   const project = projectsStore.activeProject;
   if (!project) return;
 
-  // Prefer the worktree branch, then the session-config git branch, then HEAD
-  const config = sessionsStore.getSessionConfig(props.card.id);
-  const branch = props.card.worktreeName
-    ? props.card.worktreeName
-    : (config.gitBranch ?? undefined);
+  // Use the effective project path (worktree-aware) as the repo root so git
+  // resolves the correct HEAD even before the sidecar has sent its init message.
+  const repoPath = effectiveProjectPath.value || project.path;
 
-  // Use worktree path as the repo root when available, otherwise the project path
-  const repoPath = config.worktreePath || project.path;
+  // Prefer the worktree branch (from sidecar init), then the session-config git branch, then HEAD
+  const config = sessionsStore.getSessionConfig(props.card.id);
+  const branch = config.worktreeBranch
+    || config.gitBranch
+    || undefined;
 
   const status = await gitBranchStatus(repoPath, branch);
   if (status && !status.error) {
@@ -260,7 +268,9 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
               <svg class="gh-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               #{{ issue.number }}
             </span>
-            <div v-if="branchStatus" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
+            <div v-if="branchStatus && hasExplicitBranch" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
+              <svg class="branch-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.5 2.5 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z" /></svg>
+              <span class="branch-name" :title="branchStatus.branch">{{ branchStatus.branch }}</span>
               <span v-if="branchStatus.ahead > 0" class="commits-ahead">&uarr;{{ branchStatus.ahead }}</span>
               <span v-if="branchStatus.behind > 0" class="commits-behind">&darr;{{ branchStatus.behind }}</span>
               <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="commits-synced">&check;</span>
@@ -395,6 +405,8 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 .card-indicator--issue:hover { opacity: 0.8; }
 .gh-icon { width: 12px; height: 12px; flex-shrink: 0; }
 .branch-status { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
+.branch-icon { width: 12px; height: 12px; flex-shrink: 0; color: var(--text-secondary); }
+.branch-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .commits-ahead  { color: #4ade80; font-weight: 600; }
 .commits-behind { color: #f87171; font-weight: 600; }
 .commits-synced { color: var(--text-muted); }
