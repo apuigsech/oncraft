@@ -23,18 +23,24 @@ export const useCardsStore = defineStore('cards', () => {
       _pendingWrites.delete(card.id);
       // Re-read from reactive array to get latest state
       const current = cards.value.find(c => c.id === card.id);
-      if (current) await db.updateCard(current);
+      if (current) {
+        try { await db.updateCard(current); }
+        catch (e) { console.error('[OnCraft] Debounced card write failed:', e); }
+      }
     }, 500));
   }
 
   // Flush a specific card's pending write immediately (e.g. before delete)
-  function _flushDbWrite(cardId: string): void {
+  async function _flushDbWrite(cardId: string): Promise<void> {
     const timer = _pendingWrites.get(cardId);
     if (timer) {
       clearTimeout(timer);
       _pendingWrites.delete(cardId);
       const card = cards.value.find(c => c.id === cardId);
-      if (card) db.updateCard(card);
+      if (card) {
+        try { await db.updateCard(card); }
+        catch (e) { console.error('[OnCraft] Failed to flush card write:', e); }
+      }
     }
   }
 

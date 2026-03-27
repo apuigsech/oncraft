@@ -1,11 +1,18 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { Project, Card } from '~/types';
 
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try { return JSON.parse(value); }
+  catch { return fallback; }
+}
+
 let db: Database | null = null;
 
 export async function getDb(): Promise<Database> {
   if (db) return db;
   db = await Database.load('sqlite:oncraft.db');
+  await db.execute('PRAGMA foreign_keys = ON');
   await runMigrations(db);
   return db;
 }
@@ -38,49 +45,37 @@ async function runMigrations(db: Database): Promise<void> {
       worktree_name TEXT DEFAULT ''
     )
   `);
+  // Helper: run ALTER TABLE migrations, only silencing "column already exists"
+  async function migrateAddColumn(sql: string): Promise<void> {
+    try {
+      await db.execute(sql);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        console.error('[OnCraft] Migration failed:', msg);
+      }
+    }
+  }
+
   // Migration: add archived column if missing (for existing DBs)
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN archived INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN archived INTEGER DEFAULT 0');
   // Migration: add worktree columns if missing (for existing DBs)
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN use_worktree INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
-  try {
-    await db.execute("ALTER TABLE cards ADD COLUMN worktree_name TEXT DEFAULT ''");
-  } catch { /* column already exists */ }
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN use_worktree INTEGER DEFAULT 0');
+  await migrateAddColumn("ALTER TABLE cards ADD COLUMN worktree_name TEXT DEFAULT ''");
   // Migration: add console_session_id for console mode (terminal) sessions
-  try {
-    await db.execute("ALTER TABLE cards ADD COLUMN console_session_id TEXT DEFAULT ''");
-  } catch { /* column already exists */ }
+  await migrateAddColumn("ALTER TABLE cards ADD COLUMN console_session_id TEXT DEFAULT ''");
   // Migration: add linked_files and linked_issues JSON columns
-  try {
-    await db.execute("ALTER TABLE cards ADD COLUMN linked_files TEXT DEFAULT '{}'");
-  } catch { /* column already exists */ }
-  try {
-    await db.execute("ALTER TABLE cards ADD COLUMN linked_issues TEXT DEFAULT '[]'");
-  } catch { /* column already exists */ }
+  await migrateAddColumn("ALTER TABLE cards ADD COLUMN linked_files TEXT DEFAULT '{}'");
+  await migrateAddColumn("ALTER TABLE cards ADD COLUMN linked_issues TEXT DEFAULT '[]'");
   // Migration: add cost tracking columns if missing (for existing DBs)
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN cost_usd REAL DEFAULT 0');
-  } catch { /* column already exists */ }
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN input_tokens INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN output_tokens INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
-  try {
-    await db.execute('ALTER TABLE cards ADD COLUMN duration_ms INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN cost_usd REAL DEFAULT 0');
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN input_tokens INTEGER DEFAULT 0');
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN output_tokens INTEGER DEFAULT 0');
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN duration_ms INTEGER DEFAULT 0');
   // Migration: add forked_from_id for session forking
-  try {
-    await db.execute("ALTER TABLE cards ADD COLUMN forked_from_id TEXT DEFAULT ''");
-  } catch { /* column already exists */ }
+  await migrateAddColumn("ALTER TABLE cards ADD COLUMN forked_from_id TEXT DEFAULT ''");
   // Migration: add tab_order for persistent project tab ordering
-  try {
-    await db.execute('ALTER TABLE projects ADD COLUMN tab_order INTEGER DEFAULT 0');
-  } catch { /* column already exists */ }
+  await migrateAddColumn('ALTER TABLE projects ADD COLUMN tab_order INTEGER DEFAULT 0');
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -125,6 +120,8 @@ export async function updateProjectLastOpened(id: string): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const d = await getDb();
+  // Explicit cascade as safety net (in case PRAGMA foreign_keys is not active)
+  await d.execute('DELETE FROM cards WHERE project_id = $1', [id]);
   await d.execute('DELETE FROM projects WHERE id = $1', [id]);
 }
 
@@ -141,13 +138,13 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     forked_from_id: string;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => {
-    const linkedFiles = r.linked_files ? JSON.parse(r.linked_files) : {};
-    const linkedIssues = r.linked_issues ? JSON.parse(r.linked_issues) : [];
+    const linkedFiles = safeJsonParse(r.linked_files, {});
+    const linkedIssues = safeJsonParse(r.linked_issues, []);
     return {
       id: r.id, projectId: r.project_id, name: r.name, description: r.description,
       columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
       consoleSessionId: r.console_session_id || undefined,
-      state: r.state as Card['state'], tags: JSON.parse(r.tags),
+      state: r.state as Card['state'], tags: safeJsonParse(r.tags, []),
       createdAt: r.created_at, lastActivityAt: r.last_activity_at,
       archived: r.archived === 1,
       useWorktree: r.use_worktree === 1,
@@ -206,11 +203,18 @@ export async function batchUpdateCardPositions(
   updates: { id: string; columnName: string; columnOrder: number }[]
 ): Promise<void> {
   const d = await getDb();
-  for (const u of updates) {
-    await d.execute(
-      'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
-      [u.columnName, u.columnOrder, u.id]
-    );
+  await d.execute('BEGIN');
+  try {
+    for (const u of updates) {
+      await d.execute(
+        'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
+        [u.columnName, u.columnOrder, u.id]
+      );
+    }
+    await d.execute('COMMIT');
+  } catch (e) {
+    await d.execute('ROLLBACK');
+    throw e;
   }
 }
 
@@ -218,11 +222,18 @@ export async function updateCardsColumn(
   cardIds: string[], columnName: string
 ): Promise<void> {
   const d = await getDb();
-  for (let i = 0; i < cardIds.length; i++) {
-    await d.execute(
-      'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
-      [columnName, i, cardIds[i]]
-    );
+  await d.execute('BEGIN');
+  try {
+    for (let i = 0; i < cardIds.length; i++) {
+      await d.execute(
+        'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
+        [columnName, i, cardIds[i]]
+      );
+    }
+    await d.execute('COMMIT');
+  } catch (e) {
+    await d.execute('ROLLBACK');
+    throw e;
   }
 }
 
