@@ -16,13 +16,13 @@ struct PtyInstance {
 
 /// Global registry of PTY instances
 pub struct PtyManager {
-    instances: Mutex<HashMap<PtyId, PtyInstance>>,
+    instances: Arc<Mutex<HashMap<PtyId, PtyInstance>>>,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
-            instances: Mutex::new(HashMap::new()),
+            instances: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -98,7 +98,7 @@ pub fn pty_spawn(
 
     // Store the instance
     {
-        let mut instances = state.instances.lock().unwrap();
+        let mut instances = state.instances.lock().map_err(|e| format!("PTY lock poisoned: {e}"))?;
         instances.insert(
             pty_id.clone(),
             PtyInstance {
@@ -157,8 +157,7 @@ pub fn pty_spawn(
     // Spawn a thread to wait for child exit and emit event
     let app_clone2 = app.clone();
     let exit_id = pty_id.clone();
-    let state_ref = Arc::new(state.instances.lock().unwrap().len()); // just to keep state alive
-    drop(state_ref);
+    let instances_clone = state.inner().instances.clone();
     thread::spawn(move || {
         let status = child.wait();
         let code = status.ok().map(|s| {
@@ -171,6 +170,10 @@ pub fn pty_spawn(
                 code,
             },
         );
+        // Clean up the instance to prevent resource leak
+        if let Ok(mut instances) = instances_clone.lock() {
+            instances.remove(&exit_id);
+        }
     });
 
     Ok(pty_id)
@@ -183,7 +186,7 @@ pub fn pty_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut instances = state.instances.lock().unwrap();
+    let mut instances = state.instances.lock().map_err(|e| format!("PTY lock poisoned: {e}"))?;
     let instance = instances
         .get_mut(&id)
         .ok_or_else(|| format!("No PTY with id: {}", id))?;
@@ -206,7 +209,7 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let instances = state.instances.lock().unwrap();
+    let instances = state.instances.lock().map_err(|e| format!("PTY lock poisoned: {e}"))?;
     let instance = instances
         .get(&id)
         .ok_or_else(|| format!("No PTY with id: {}", id))?;
@@ -228,7 +231,7 @@ pub fn pty_kill(
     state: tauri::State<'_, PtyManager>,
     id: String,
 ) -> Result<(), String> {
-    let mut instances = state.instances.lock().unwrap();
+    let mut instances = state.instances.lock().map_err(|e| format!("PTY lock poisoned: {e}"))?;
     // Dropping the instance will close the master, which signals EOF to the child
     instances.remove(&id);
     Ok(())

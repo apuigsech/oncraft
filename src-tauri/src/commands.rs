@@ -229,6 +229,11 @@ pub async fn git_branch_status(
     base: Option<String>,
 ) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
+        // Validate repo_path is an existing directory
+        let repo = Path::new(&repo_path);
+        if !repo.is_dir() {
+            return serde_json::json!({ "error": "Invalid repository path" });
+        }
         // Resolve the working branch name
         let branch_name = match branch {
             Some(b) if !b.is_empty() => b,
@@ -315,6 +320,10 @@ pub async fn git_branch_status(
 #[tauri::command]
 pub async fn delete_session(session_id: String) -> bool {
     tauri::async_runtime::spawn_blocking(move || {
+        // Validate session_id against path traversal
+        if session_id.contains("..") || session_id.contains('/') || session_id.contains('\\') {
+            return false;
+        }
         let home = match dirs::home_dir() {
             Some(h) => h,
             None => return false,
@@ -356,6 +365,10 @@ pub async fn git_file_status(
 ) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         let repo = Path::new(&repo_path);
+        // Validate repo_path is an existing directory
+        if !repo.is_dir() {
+            return serde_json::json!({ "error": "Invalid repository path" });
+        }
 
         // Build git command: git -C <repo> status --porcelain -- file1 file2 ...
         let mut cmd = std::process::Command::new("git");
