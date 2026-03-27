@@ -83,7 +83,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="`Import Sessions into &quot;${columnName}&quot;`" :ui="{ width: 'sm:max-w-[500px]' }" @update:open="(val: boolean) => { if (!val) close() }">
+  <UModal v-model:open="open" :title="`Import Sessions into &quot;${columnName}&quot;`" :ui="{ content: 'sm:max-w-[500px]' }" @update:open="(val: boolean) => { if (!val) close() }">
     <template #body>
       <div v-if="loading" class="loading">Loading sessions...</div>
 

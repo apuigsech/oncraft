@@ -75,7 +75,7 @@ async function onDragEnd() {
           size="xs"
           icon="i-lucide-x"
           class="tab-close"
-          :padded="false"
+          square
           @click.stop="closeProject(project.id)"
           title="Close project"
         />
@@ -89,7 +89,7 @@ async function onDragEnd() {
       size="sm"
       icon="i-lucide-plus"
       class="add-tab"
-      :padded="false"
+      square
       title="Add project"
       @click="addProject"
     />
@@ -104,7 +104,7 @@ async function onDragEnd() {
       size="xs"
       icon="i-lucide-sliders-horizontal"
       class="action-btn"
-      :padded="false"
+      square
       title="Project settings"
       @click="emit('open-project-settings')"
     />

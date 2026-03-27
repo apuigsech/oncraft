@@ -53,7 +53,7 @@ function close() {
 </script>
 
 <template>
-  <UModal v-model:open="open" title="Project Settings" :ui="{ width: 'sm:max-w-[500px]' }" @update:open="(val: boolean) => { if (!val) close() }">
+  <UModal v-model:open="open" title="Project Settings" :ui="{ content: 'sm:max-w-[500px]' }" @update:open="(val: boolean) => { if (!val) close() }">
     <template #body>
       <div v-if="project" class="settings-content">
         <div class="field">
