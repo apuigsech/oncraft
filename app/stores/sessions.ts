@@ -23,7 +23,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   });
 
   const historyLoaded = new Set<string>();
-  const _loadingHistory = ref(new Set<string>());
+  const _loadingHistory = shallowRef(new Set<string>());
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
@@ -478,7 +478,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (card?.sessionId && !card.sessionId.startsWith('pending-')) {
         if (import.meta.dev) console.log('[OnCraft] loading history for session:', card.sessionId);
         _loadingHistory.value.add(cardId);
-        _loadingHistory.value = new Set(_loadingHistory.value); // trigger reactivity
+        triggerRef(_loadingHistory);
         loadHistoryViaSidecar(card.sessionId).then((history) => {
           if (import.meta.dev) console.log('[OnCraft] loaded', history.length, 'messages from history');
           if (history.length > 0) {
@@ -486,7 +486,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           }
         }).finally(() => {
           _loadingHistory.value.delete(cardId);
-          _loadingHistory.value = new Set(_loadingHistory.value);
+          triggerRef(_loadingHistory);
         });
       }
     }

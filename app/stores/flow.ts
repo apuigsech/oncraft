@@ -95,17 +95,23 @@ export const useFlowStore = defineStore('flow', () => {
     // Resolve agent names → AgentDefinition objects
     const { resolved, missing } = await resolveAgents(config.agents, projectPath);
 
-    // Add warnings for missing agents
-    for (const name of missing) {
-      const alreadyWarned = warnings.value.some(
-        w => w.stateSlug === stateSlug && w.message.includes(name)
-      );
-      if (!alreadyWarned) {
-        warnings.value.push({
-          scope:     stateSlug ? 'state' : 'flow',
-          stateSlug: stateSlug || undefined,
-          message:   `Agent "${name}" not found in .claude/agents/ or plugins`,
-        });
+    // Surface warnings for missing agents (deduplicated)
+    if (missing.length > 0) {
+      const newWarnings: FlowWarning[] = [];
+      for (const name of missing) {
+        const alreadyWarned = warnings.value.some(
+          w => w.stateSlug === stateSlug && w.message.includes(name)
+        );
+        if (!alreadyWarned) {
+          newWarnings.push({
+            scope:     stateSlug ? 'state' : 'flow',
+            stateSlug: stateSlug || undefined,
+            message:   `Agent "${name}" not found in .claude/agents/ or plugins`,
+          });
+        }
+      }
+      if (newWarnings.length > 0) {
+        warnings.value = [...warnings.value, ...newWarnings];
       }
     }
 

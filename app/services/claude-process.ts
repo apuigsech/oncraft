@@ -35,6 +35,37 @@ export interface FlowPayload {
   }>;
 }
 
+// ─── Start command builder (shared by spawnSession and sendStart) ───
+function buildStartCmd(
+  cardId: string,
+  prompt: string,
+  projectPath: string,
+  sessionId?: string,
+  config?: SessionConfig,
+  imagePaths?: { path: string; mediaType: string }[],
+  flowPayload?: FlowPayload,
+  forkSession?: boolean,
+): string {
+  return JSON.stringify({
+    cmd: 'start',
+    cardId,
+    prompt,
+    projectPath,
+    ...(sessionId ? { sessionId } : {}),
+    ...(config?.model          ? { model:          config.model          } : {}),
+    ...(config?.effort         ? { effort:         config.effort         } : {}),
+    ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
+    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
+    ...(imagePaths?.length     ? { imagePaths }                            : {}),
+    ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
+    ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
+    ...(flowPayload?.disallowedTools?.length                         ? { disallowedTools:    flowPayload.disallowedTools    } : {}),
+    ...(flowPayload?.agents && Object.keys(flowPayload.agents).length ? { agents:            flowPayload.agents             } : {}),
+    ...(flowPayload?.mcpServers && Object.keys(flowPayload.mcpServers).length ? { mcpServers: flowPayload.mcpServers        } : {}),
+    ...(forkSession ? { forkSession: true } : {}),
+  });
+}
+
 // ─── Image temp file helpers ───
 // Write image attachments to temp files and return paths.
 // This avoids sending large base64 payloads over Tauri stdin IPC.
@@ -264,25 +295,7 @@ export async function spawnSession(
     if (import.meta.dev) console.log(`[OnCraft] wrote ${imagePaths.length} images to temp files`);
   }
 
-  const startCmd = JSON.stringify({
-    cmd: 'start',
-    cardId,
-    prompt,
-    projectPath,
-    ...(sessionId ? { sessionId } : {}),
-    ...(config?.model          ? { model:          config.model          } : {}),
-    ...(config?.effort         ? { effort:         config.effort         } : {}),
-    ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
-    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
-    ...(imagePaths?.length     ? { imagePaths }                            : {}),
-    // Flow-injected fields (replace old columnPrompt)
-    ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
-    ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
-    ...(flowPayload?.disallowedTools?.length                         ? { disallowedTools:    flowPayload.disallowedTools    } : {}),
-    ...(flowPayload?.agents && Object.keys(flowPayload.agents).length ? { agents:            flowPayload.agents             } : {}),
-    ...(flowPayload?.mcpServers && Object.keys(flowPayload.mcpServers).length ? { mcpServers: flowPayload.mcpServers        } : {}),
-    ...(forkSession ? { forkSession: true } : {}),
-  });
+  const startCmd = buildStartCmd(cardId, prompt, projectPath, sessionId, config, imagePaths, flowPayload, forkSession);
   if (import.meta.dev) {
     console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}, hasFlowPrompt=${!!flowPayload?.systemPromptAppend}`);
   }
@@ -309,25 +322,7 @@ export async function sendStart(
     imagePaths = await writeImagesToTempFiles(images);
   }
 
-  const startCmd = JSON.stringify({
-    cmd: 'start',
-    cardId,
-    prompt,
-    projectPath,
-    ...(sessionId ? { sessionId } : {}),
-    ...(config?.model          ? { model:          config.model          } : {}),
-    ...(config?.effort         ? { effort:         config.effort         } : {}),
-    ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
-    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
-    ...(imagePaths?.length     ? { imagePaths }                            : {}),
-    // Flow-injected fields
-    ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
-    ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
-    ...(flowPayload?.disallowedTools?.length                         ? { disallowedTools:    flowPayload.disallowedTools    } : {}),
-    ...(flowPayload?.agents && Object.keys(flowPayload.agents).length ? { agents:            flowPayload.agents             } : {}),
-    ...(flowPayload?.mcpServers && Object.keys(flowPayload.mcpServers).length ? { mcpServers: flowPayload.mcpServers        } : {}),
-    ...(forkSession ? { forkSession: true } : {}),
-  });
+  const startCmd = buildStartCmd(cardId, prompt, projectPath, sessionId, config, imagePaths, flowPayload, forkSession);
   await proc.write(startCmd);
 }
 
