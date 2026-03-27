@@ -109,9 +109,9 @@ jobs:
       # --- Build Tauri app (skip beforeBuildCommand — sidecar + frontend already built) ---
       - name: Build Tauri app
         shell: bash
-        run: |
-          cd src-tauri
-          cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        env:
+          TAURI_CONFIG: '{"build":{"beforeBuildCommand":""}}'
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       # --- Upload artifacts for release job ---
       - name: Upload build artifacts
