@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   chatMode: 'integrated',
   defaultModel: 'sonnet',
   defaultEffort: 'high',
+  defaultPermissionMode: 'default',
 };
 
 export const useSettingsStore = defineStore('settings', () => {
