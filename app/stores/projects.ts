@@ -50,7 +50,7 @@ export const useProjectsStore = defineStore('projects', () => {
       }
       throw new Error(`Failed to add project at ${path}`);
     }
-    projects.value.push(project);
+    projects.value = [...projects.value, project];
     activeProjectId.value = project.id;
     return project;
   }
