@@ -1,12 +1,6 @@
 mod commands;
 mod pty;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -17,7 +11,6 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(pty::PtyManager::new())
         .invoke_handler(tauri::generate_handler![
-            greet,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
