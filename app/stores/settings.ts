@@ -4,14 +4,6 @@ import type { GlobalSettings } from '~/types';
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   theme: 'dark',
-  defaultColumns: [
-    { name: 'Brainstorm', color: '#a78bfa' },
-    { name: 'Specify', color: '#60a5fa' },
-    { name: 'Plan', color: '#34d399' },
-    { name: 'Implement', color: '#fbbf24' },
-    { name: 'Review', color: '#f472b6' },
-    { name: 'Done', color: '#22c55e' },
-  ],
   chatMode: 'integrated',
   defaultModel: 'sonnet',
   defaultEffort: 'high',

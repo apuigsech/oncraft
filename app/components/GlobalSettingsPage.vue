@@ -2,19 +2,9 @@
 import type { ChatMode, ModelAlias, EffortLevel, PermissionMode } from '~/types';
 import type { HealthCheckItem } from '~/services/health-check';
 import { setEnabled as telemetrySetEnabled, getEventQueue, getInstallId, type TelemetryEvent } from '~/services/telemetry';
+import { CHAT_MODE_OPTIONS, MODEL_OPTIONS, EFFORT_LEVELS, EFFORT_LABELS, MODE_OPTIONS } from '~/constants/options';
 
 const settingsStore = useSettingsStore();
-
-// Section navigation
-const sections = [
-  { id: 'general', label: 'General', icon: 'i-lucide-sliders-horizontal' },
-  { id: 'telemetry', label: 'Telemetry', icon: 'i-lucide-bar-chart-3' },
-  { id: 'system', label: 'System', icon: 'i-lucide-monitor-check' },
-  { id: 'about', label: 'About', icon: 'i-lucide-info' },
-] as const;
-
-type SectionId = (typeof sections)[number]['id'];
-const activeSection = ref<SectionId>('general');
 
 // ── General section ──
 const selectedTheme = computed({
@@ -24,27 +14,6 @@ const selectedTheme = computed({
     settingsStore.save();
   },
 });
-
-const chatModeOptions = [
-  { label: 'Integrated UI', value: 'integrated' as ChatMode, description: 'Rich chat with markdown, tool blocks, and metrics', icon: 'i-lucide-message-square' },
-  { label: 'Console (Terminal)', value: 'console' as ChatMode, description: 'Full Claude CLI running in an embedded terminal', icon: 'i-lucide-terminal' },
-];
-
-const modelOptions = [
-  { label: 'Opus',   value: 'opus' as ModelAlias,   icon: 'i-simple-icons-anthropic' },
-  { label: 'Sonnet', value: 'sonnet' as ModelAlias, icon: 'i-simple-icons-anthropic' },
-  { label: 'Haiku',  value: 'haiku' as ModelAlias,  icon: 'i-simple-icons-anthropic' },
-];
-
-const effortLevels: EffortLevel[] = ['low', 'medium', 'high', 'max'];
-const effortLabels: Record<EffortLevel, string> = { low: 'Lo', medium: 'Med', high: 'Hi', max: 'Max' };
-
-const modeOptions = [
-  { label: 'Default',   value: 'default' as PermissionMode,           icon: 'i-lucide-lock' },
-  { label: 'Auto-edit', value: 'acceptEdits' as PermissionMode,       icon: 'i-lucide-pencil',         class: 'text-primary', ui: { itemLeadingIcon: 'text-primary' } },
-  { label: 'Plan',      value: 'plan' as PermissionMode,              icon: 'i-lucide-clipboard-list', class: 'text-warning', ui: { itemLeadingIcon: 'text-warning' } },
-  { label: 'YOLO',      value: 'bypassPermissions' as PermissionMode, icon: 'i-lucide-zap',            class: 'text-error', ui: { itemLeadingIcon: 'text-error' } },
-];
 
 const selectedChatMode = computed({
   get: () => settingsStore.settings.chatMode || 'integrated',
@@ -70,7 +39,6 @@ const selectedEffort = computed({
   },
 });
 
-const effortIndex = computed(() => effortLevels.indexOf(selectedEffort.value));
 
 const selectedPermissionMode = computed({
   get: () => settingsStore.settings.defaultPermissionMode || 'default',
@@ -80,8 +48,8 @@ const selectedPermissionMode = computed({
   },
 });
 
-const currentModeIcon = computed(() => modeOptions.find(m => m.value === selectedPermissionMode.value)?.icon);
-const currentModelIcon = computed(() => modelOptions.find(m => m.value === selectedModel.value)?.icon);
+const currentModeIcon = computed(() => MODE_OPTIONS.find(m => m.value === selectedPermissionMode.value)?.icon);
+const currentModelIcon = computed(() => MODEL_OPTIONS.find(m => m.value === selectedModel.value)?.icon);
 
 const modeColorClass = computed(() => {
   switch (selectedPermissionMode.value) {
@@ -198,7 +166,7 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
             <span class="setting-label">Chat Mode</span>
             <div class="chat-mode-options">
               <UButton
-                v-for="opt in chatModeOptions"
+                v-for="opt in CHAT_MODE_OPTIONS"
                 :key="opt.value"
                 :variant="selectedChatMode === opt.value ? 'outline' : 'ghost'"
                 :color="selectedChatMode === opt.value ? 'primary' : 'neutral'"
@@ -226,7 +194,7 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
               <!-- Permission mode -->
               <USelectMenu
                 v-model="selectedPermissionMode"
-                :items="modeOptions"
+                :items="MODE_OPTIONS"
                 :icon="currentModeIcon"
                 size="sm"
                 variant="ghost"
@@ -243,7 +211,7 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
               <!-- Model selector -->
               <USelectMenu
                 v-model="selectedModel"
-                :items="modelOptions"
+                :items="MODEL_OPTIONS"
                 :icon="currentModelIcon"
                 size="sm"
                 variant="ghost"
@@ -256,16 +224,7 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
               />
 
               <!-- Effort level -->
-              <div class="effort-bars" :title="'Effort: ' + selectedEffort">
-                <div
-                  v-for="(level, i) in effortLevels"
-                  :key="level"
-                  class="effort-bar"
-                  :class="{ active: i <= effortIndex }"
-                  @click="selectedEffort = level"
-                />
-                <span class="effort-label">{{ effortLabels[selectedEffort] }}</span>
-              </div>
+              <EffortBar v-model="selectedEffort" />
             </div>
           </div>
         </section>
@@ -525,32 +484,6 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.effort-bars {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-}
-.effort-bar {
-  width: 6px;
-  height: 14px;
-  border-radius: 2px;
-  background: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.15s;
-  opacity: 0.35;
-}
-.effort-bar.active {
-  background: #f97316;
-  opacity: 1;
-}
-.effort-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--ui-text-muted);
-  margin-left: 4px;
-}
-
 /* Toggle row */
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 
