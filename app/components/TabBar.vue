@@ -63,9 +63,9 @@ async function onDragEnd() {
         <UDropdownMenu
           v-if="projectsStore.activeTab === project.id"
           :items="[[
-            { label: 'Project Settings', icon: 'i-lucide-sliders-horizontal', click: () => emit('open-project-settings') },
+            { label: 'Project Settings', icon: 'i-lucide-sliders-horizontal', onSelect: () => emit('open-project-settings') },
           ], [
-            { label: 'Close Project', icon: 'i-lucide-x', color: 'error' as any, click: () => closeProject(project.id) },
+            { label: 'Close Project', icon: 'i-lucide-x', color: 'error' as any, onSelect: () => closeProject(project.id) },
           ]]"
         >
           <UButton

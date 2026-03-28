@@ -168,8 +168,8 @@ async function createForkedSession(name: string, description: string, useWorktre
         </UTooltip>
       </div>
       <UDropdownMenu :items="[[
-        { label: 'New session', icon: 'i-lucide-plus', click: () => { showNewDialog = true } },
-        { label: 'Import sessions', icon: 'i-lucide-download', click: () => { showImportDialog = true } },
+        { label: 'New session', icon: 'i-lucide-plus', onSelect: () => { showNewDialog = true } },
+        { label: 'Import sessions', icon: 'i-lucide-download', onSelect: () => { showImportDialog = true } },
       ]]">
         <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-ellipsis" square />
       </UDropdownMenu>
