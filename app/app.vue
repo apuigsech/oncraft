@@ -118,6 +118,7 @@ onUnmounted(() => {
     <div v-show="appReady" id="app">
       <UpdateNotice v-if="updateInfo" :update-info="updateInfo" @dismiss="updateInfo = null" />
       <TabBar @open-project-settings="showSettings = true" />
+      <ProjectInfoBar v-if="isProjectTab && projectsStore.activeProject" />
       <div class="main-content" :class="{ 'with-chat': showChat }">
         <div class="board-area">
           <ErrorBoundary>
