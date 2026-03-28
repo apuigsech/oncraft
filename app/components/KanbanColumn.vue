@@ -155,21 +155,24 @@ async function createForkedSession(name: string, description: string, useWorktre
     <!-- Column header -->
     <div class="column-header">
       <div class="column-title">
-        <UIcon v-if="flowState.icon" :name="flowState.icon" class="column-icon" :style="{ color: flowState.color }" />
-        <span v-else class="color-dot" :style="{ background: flowState.color }" />
-        <span>{{ flowState.name }}</span>
-        <UBadge variant="soft" color="neutral" size="sm" class="card-count">
-          {{ dragCards.length }}
-        </UBadge>
-        <!-- Configuration warnings badge -->
+        <div class="column-icon-box" :style="{ background: flowState.color + '1F' }">
+          <UIcon v-if="flowState.icon" :name="flowState.icon" class="column-icon" :style="{ color: flowState.color }" />
+          <span v-else class="color-dot" :style="{ background: flowState.color }" />
+        </div>
+        <div class="column-title-text">
+          <span>{{ flowState.name }}</span>
+          <span class="column-card-count">{{ dragCards.length }} {{ dragCards.length === 1 ? 'card' : 'cards' }}</span>
+        </div>
         <UTooltip v-if="warnings.length" :text="warnings.map(w => w.message).join('; ')">
           <UIcon name="i-lucide-alert-triangle" class="warning-icon" />
         </UTooltip>
       </div>
-      <div class="header-actions">
-        <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-download" title="Import existing sessions" @click="showImportDialog = true" />
-        <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-plus" title="New session" @click="showNewDialog = true" />
-      </div>
+      <UDropdownMenu :items="[[
+        { label: 'New session', icon: 'i-lucide-plus', click: () => { showNewDialog = true } },
+        { label: 'Import sessions', icon: 'i-lucide-download', click: () => { showImportDialog = true } },
+      ]]">
+        <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-ellipsis" square />
+      </UDropdownMenu>
     </div>
 
     <!-- Cards with drag-and-drop -->
@@ -276,20 +279,42 @@ async function createForkedSession(name: string, description: string, useWorktre
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 12px 12px 10px;
   border-bottom: 1px solid var(--bg-tertiary);
 }
 .column-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+.column-icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.column-icon { font-size: 14px; flex-shrink: 0; }
+.color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.column-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.column-title-text > span:first-child {
   font-size: 13px;
   font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
 }
-.color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.column-icon { font-size: 16px; flex-shrink: 0; }
+.column-card-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
 .warning-icon { font-size: 13px; color: #fbbf24; cursor: help; }
-.header-actions { display: flex; gap: 2px; }
 .column-body {
   flex: 1;
   overflow-y: auto;
