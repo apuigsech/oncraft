@@ -353,6 +353,107 @@ pub async fn delete_session(session_id: String) -> bool {
     .unwrap_or(false)
 }
 
+/// List orphaned Claude sessions for a project.
+/// Scans ~/.claude/projects/ for session JSONL files whose IDs are not in the
+/// provided list of known card session IDs.
+#[tauri::command]
+pub async fn list_orphaned_sessions(
+    project_path: String,
+    card_session_ids: Vec<String>,
+) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => return Vec::new(),
+        };
+        let known: HashSet<String> = card_session_ids.into_iter().collect();
+        let mut orphans = Vec::new();
+
+        let projects_dir = home.join(".claude").join("projects");
+        if !projects_dir.is_dir() {
+            return orphans;
+        }
+
+        // Claude stores sessions in directories named by project path (with slashes replaced)
+        // Scan all project dirs for JSONL files
+        let normalized = project_path.replace('/', "-");
+        if let Ok(entries) = fs::read_dir(&projects_dir) {
+            for entry in entries.flatten() {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                // Match directories that correspond to this project path
+                if !dir_name.contains(&normalized) && !dir_name.contains(&project_path.replace('/', "%2F")) {
+                    continue;
+                }
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                if let Ok(files) = fs::read_dir(entry.path()) {
+                    for file in files.flatten() {
+                        let fname = file.file_name().to_string_lossy().to_string();
+                        if fname.ends_with(".jsonl") {
+                            let session_id = fname.trim_end_matches(".jsonl").to_string();
+                            if !known.contains(&session_id) {
+                                orphans.push(session_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        orphans
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// List orphaned git worktrees for a project.
+/// Runs `git worktree list --porcelain` and returns worktree branch names that
+/// match OnCraft's naming pattern but are not in the provided list of known card worktree names.
+#[tauri::command]
+pub async fn list_orphaned_worktrees(
+    project_path: String,
+    card_worktree_names: Vec<String>,
+) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let known: HashSet<String> = card_worktree_names.into_iter().collect();
+        let mut orphans = Vec::new();
+
+        let output = match std::process::Command::new("git")
+            .args(["-C", &project_path, "worktree", "list", "--porcelain"])
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return orphans,
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse porcelain output: blocks separated by blank lines
+        // Each block has: worktree <path>, HEAD <sha>, branch refs/heads/<name>
+        for block in stdout.split("\n\n") {
+            let mut branch_name = None;
+
+            for line in block.lines() {
+                if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                    branch_name = Some(b.to_string());
+                }
+            }
+
+            // Extract worktree name from branch if it follows OnCraft pattern (worktree-<name>)
+            if let Some(ref branch) = branch_name {
+                if let Some(wt_name) = branch.strip_prefix("worktree-") {
+                    if !known.contains(wt_name) {
+                        orphans.push(wt_name.to_string());
+                    }
+                }
+            }
+        }
+        orphans
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Return the git status of specific files within a repository.
 /// Runs `git -C <repo_path> status --porcelain -- <file1> <file2> ...`.
 /// For each file returns one of: "clean", "modified", "missing".

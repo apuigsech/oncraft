@@ -1,5 +1,5 @@
 import type { Flow, FlowState, FlowWarning } from '~/types';
-import { loadFlow, resolveConfigForState, loadGitHubConfig, saveGitHubConfig, type LoadFlowResult } from '~/services/flow-loader';
+import { loadFlow, resolveConfigForState, loadGitHubConfig, saveGitHubConfig, listAvailablePresets as listPresetsFromLoader, changeProjectPreset, hasLocalOverrides as checkLocalOverrides, type LoadFlowResult, type PresetSummary } from '~/services/flow-loader';
 import { resolveAgents, type ResolvedAgent } from '~/services/agent-resolver';
 import type { McpServerConfig, AgentConfig } from '~/types';
 
@@ -143,6 +143,19 @@ export const useFlowStore = defineStore('flow', () => {
     return state.requiredFiles.filter(slot => !files[slot] || !files[slot].trim());
   }
 
+  async function listPresets(): Promise<PresetSummary[]> {
+    return listPresetsFromLoader();
+  }
+
+  async function changePreset(projectPath: string, presetName: string): Promise<void> {
+    await changeProjectPreset(projectPath, presetName);
+    await loadForProject(projectPath);
+  }
+
+  async function hasLocalOverrides(projectPath: string): Promise<boolean> {
+    return checkLocalOverrides(projectPath);
+  }
+
   function reset(): void {
     flow.value     = null;
     flowMd.value   = '';
@@ -157,6 +170,6 @@ export const useFlowStore = defineStore('flow', () => {
     githubRepository, githubConfigRepo, githubDetectedRepo,
     loadForProject, getFlowState, stateWarnings,
     getResolvedConfig, getTriggerPrompt, checkRequiredFiles,
-    setGitHubRepository, reset,
+    setGitHubRepository, listPresets, changePreset, hasLocalOverrides, reset,
   };
 });

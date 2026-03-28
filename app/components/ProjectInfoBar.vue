@@ -15,7 +15,14 @@ const shortenedPath = computed(() => {
 });
 
 const githubRepo = computed(() => flowStore.githubRepository);
+const githubUrl = computed(() => githubRepo.value ? `https://github.com/${githubRepo.value}` : '');
 const presetName = computed(() => flowStore.flow?.preset);
+
+async function openGithubRepo() {
+  if (!githubUrl.value) return;
+  const { openUrl } = await import('@tauri-apps/plugin-opener');
+  await openUrl(githubUrl.value);
+}
 </script>
 
 <template>
@@ -26,10 +33,10 @@ const presetName = computed(() => flowStore.flow?.preset);
     </div>
     <template v-if="githubRepo">
       <div class="info-divider" />
-      <div class="info-item">
-        <UIcon name="i-lucide-git-branch" class="info-icon" />
+      <a class="info-item info-item--link" @click="openGithubRepo">
+        <UIcon name="i-simple-icons-github" class="info-icon" />
         <span class="info-text">{{ githubRepo }}</span>
-      </div>
+      </a>
     </template>
     <template v-if="presetName">
       <div class="info-divider" />
@@ -57,6 +64,17 @@ const presetName = computed(() => flowStore.flow?.preset);
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.info-item--link {
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.info-item--link:hover .info-text {
+  color: var(--text-primary);
+}
+.info-item--link:hover .info-icon {
+  opacity: 1;
 }
 
 .info-icon {
