@@ -30,24 +30,14 @@ async function onDragEnd() {
 
 <template>
   <div class="tab-bar">
-    <!-- Pinned: Home tab -->
+    <!-- Logo / Home -->
     <div
-      class="tab tab--pinned"
-      :class="{ 'tab--active': projectsStore.activeTab === 'home' }"
-      @click="projectsStore.activeTab = 'home'"
+      class="tab-logo"
+      :class="{ 'tab-logo--active': projectsStore.activeTab === 'home' }"
       title="Home"
+      @click="projectsStore.activeTab = 'home'"
     >
-      <UIcon name="i-lucide-house" class="tab-icon" />
-    </div>
-
-    <!-- Pinned: Settings tab -->
-    <div
-      class="tab tab--pinned"
-      :class="{ 'tab--active': projectsStore.activeTab === 'settings' }"
-      @click="projectsStore.activeTab = 'settings'"
-      title="Settings"
-    >
-      <UIcon name="i-lucide-settings" class="tab-icon" />
+      <UIcon name="i-lucide-house" class="logo-icon" />
     </div>
 
     <!-- Project tabs (draggable) -->
@@ -69,15 +59,36 @@ async function onDragEnd() {
       >
         <span v-if="sessionsStore.hasActiveCards(project.id)" class="activity-dot" />
         <span class="tab-name">{{ project.name }}</span>
+        <!-- Active tab: dropdown chevron for project actions -->
+        <UDropdownMenu
+          v-if="projectsStore.activeTab === project.id"
+          :items="[[
+            { label: 'Project Settings', icon: 'i-lucide-sliders-horizontal', click: () => emit('open-project-settings') },
+          ], [
+            { label: 'Close Project', icon: 'i-lucide-x', color: 'error' as any, click: () => closeProject(project.id) },
+          ]]"
+        >
+          <UButton
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            icon="i-lucide-chevron-down"
+            class="tab-chevron"
+            square
+            @click.stop
+          />
+        </UDropdownMenu>
+        <!-- Inactive tabs: close button on hover -->
         <UButton
+          v-else
           variant="ghost"
           color="neutral"
           size="xs"
           icon="i-lucide-x"
           class="tab-close"
           square
-          @click.stop="closeProject(project.id)"
           title="Close project"
+          @click.stop="closeProject(project.id)"
         />
       </div>
     </VueDraggable>
@@ -96,17 +107,17 @@ async function onDragEnd() {
 
     <div class="spacer" />
 
-    <!-- Project settings (visible when a project tab is active) -->
+    <!-- Global settings gear -->
     <UButton
-      v-if="projectsStore.isProjectTab"
       variant="ghost"
       color="neutral"
       size="xs"
-      icon="i-lucide-sliders-horizontal"
+      icon="i-lucide-settings"
       class="action-btn"
+      :class="{ 'action-btn--active': projectsStore.activeTab === 'settings' }"
       square
-      title="Project settings"
-      @click="emit('open-project-settings')"
+      title="Settings"
+      @click="projectsStore.activeTab = 'settings'"
     />
   </div>
 </template>
@@ -123,6 +134,23 @@ async function onDragEnd() {
   -webkit-app-region: drag;
 }
 
+/* Logo / Home icon */
+.tab-logo {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  color: var(--accent);
+  border-right: 1px solid var(--border);
+  margin-right: 6px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.15s;
+}
+.tab-logo:hover { opacity: 1; }
+.tab-logo--active { opacity: 1; }
+.logo-icon { font-size: 18px; }
+
+/* Project tabs */
 .tab {
   display: flex;
   align-items: center;
@@ -137,12 +165,6 @@ async function onDragEnd() {
 }
 .tab:hover { background: var(--bg-tertiary); }
 .tab--active { background: var(--bg-primary); color: var(--text-primary); }
-
-.tab--pinned {
-  padding: 6px 10px;
-  flex-shrink: 0;
-}
-.tab-icon { font-size: 16px; }
 
 .project-tabs { display: flex; gap: 2px; align-items: flex-end; -webkit-app-region: no-drag; }
 .tab--project { padding: 6px 12px 6px 16px; }
@@ -161,8 +183,11 @@ async function onDragEnd() {
 .tab-name { pointer-events: none; }
 .tab-close { opacity: 0; transition: opacity 0.15s; -webkit-app-region: no-drag; }
 .tab:hover .tab-close { opacity: 1; }
+.tab-chevron { -webkit-app-region: no-drag; opacity: 0.6; transition: opacity 0.15s; }
+.tab-chevron:hover { opacity: 1; }
 
 .add-tab { -webkit-app-region: no-drag; }
 .action-btn { -webkit-app-region: no-drag; }
+.action-btn--active { color: var(--accent); }
 .spacer { flex: 1; }
 </style>
