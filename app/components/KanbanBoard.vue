@@ -77,7 +77,6 @@ async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldInd
           v-for="card in orphanedCards"
           :key="card.id"
           :card="card"
-          column-color="#6b7280"
         />
       </VueDraggable>
     </div>
