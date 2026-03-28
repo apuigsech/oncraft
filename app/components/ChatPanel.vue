@@ -36,6 +36,32 @@ const sessionConfig = computed(() => {
   return sessionsStore.getSessionConfig(sessionsStore.activeChatCardId);
 });
 
+// ─── Chat header: column color + metric flash ───
+const flowStore = useFlowStore();
+
+const columnFlowState = computed(() => {
+  if (!card.value?.columnName) return null;
+  return flowStore.getFlowState(card.value.columnName) || null;
+});
+
+const columnColor = computed(() => columnFlowState.value?.color || 'var(--accent)');
+const columnDisplayName = computed(() => columnFlowState.value?.name || card.value?.columnName || '');
+
+function formatTokens(n: number): string {
+  if (!n || n < 1000) return String(n || 0);
+  return `${(n / 1000).toFixed(1)}k`;
+}
+
+const metricFlash = ref(false);
+let flashTimeout: ReturnType<typeof setTimeout> | null = null;
+
+watch([() => metrics.value.costUsd, () => metrics.value.inputTokens], () => {
+  if (metrics.value.costUsd <= 0 && metrics.value.inputTokens <= 0) return;
+  metricFlash.value = true;
+  if (flashTimeout) clearTimeout(flashTimeout);
+  flashTimeout = setTimeout(() => { metricFlash.value = false; }, 100);
+});
+
 // ─── Component resolution for dynamic zones ───
 const componentMap: Record<string, any> = {
   MarkdownContent: resolveComponent('MarkdownContent'),
@@ -170,6 +196,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   mutationObserver?.disconnect();
+  if (flashTimeout) clearTimeout(flashTimeout);
 });
 </script>
 
@@ -177,32 +204,27 @@ onUnmounted(() => {
   <div class="chat-panel">
     <!-- Header -->
     <div class="chat-header">
-      <div class="chat-title">
-        <strong>{{ card?.name || 'Session' }}</strong>
-        <UBadge v-if="card?.columnName" variant="soft" color="neutral" size="sm">
-          {{ card.columnName }}
-        </UBadge>
+      <div class="chat-header-accent" :style="{ background: columnColor }" />
+      <div class="chat-header-info">
+        <span class="chat-header-title">{{ card?.name || 'Session' }}</span>
+        <span class="chat-header-meta" :class="{ 'metric-flash': metricFlash }">
+          {{ columnDisplayName }} · ${{ metrics.costUsd.toFixed(3) }} · &uarr;{{ formatTokens(metrics.inputTokens) }} &darr;{{ formatTokens(metrics.outputTokens) }}
+        </span>
       </div>
-      <div class="header-metrics">
+      <div class="chat-header-right">
         <ContextGauge
           :input-tokens="metrics.inputTokens"
           :output-tokens="metrics.outputTokens"
         />
-        <SessionMetrics
-          :cost-usd="metrics.costUsd"
-          :input-tokens="metrics.inputTokens"
-          :output-tokens="metrics.outputTokens"
-          :duration-ms="metrics.durationMs"
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          icon="i-lucide-x"
+          square
+          @click="sessionsStore.closeChat()"
         />
       </div>
-      <UButton
-        variant="ghost"
-        color="neutral"
-        size="sm"
-        icon="i-lucide-x"
-        square
-        @click="sessionsStore.closeChat()"
-      />
     </div>
 
     <!-- Header Zone -->
@@ -400,14 +422,18 @@ onUnmounted(() => {
 }
 .chat-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
 }
-.chat-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.header-metrics { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 10px; }
+.chat-header-accent { width: 3px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+.chat-header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.chat-header-title { font-size: 14px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3; }
+.chat-header-meta { font-size: 10px; font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text-muted); transition: color 0.6s ease; line-height: 1.3; }
+.chat-header-meta.metric-flash { color: var(--accent); transition: color 0.05s ease; }
+.chat-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .task-list-sticky { flex-shrink: 0; border-bottom: 1px solid var(--border); }
 .chat-messages-wrapper { flex: 1; overflow-y: auto; }
