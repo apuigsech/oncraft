@@ -131,7 +131,6 @@ export type ChatMode = 'integrated' | 'console';
 
 export interface GlobalSettings {
   theme: 'dark'; // TODO: light theme not yet implemented
-  defaultColumns: ColumnConfig[];
   chatMode: ChatMode;
   defaultModel?: ModelAlias;
   defaultEffort?: EffortLevel;
