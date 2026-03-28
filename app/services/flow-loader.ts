@@ -461,6 +461,69 @@ async function copyDirRecursive(src: string, dest: string): Promise<void> {
   }
 }
 
+// ─── Preset Discovery ────────────────────────────────────────────────────────
+
+export interface PresetSummary {
+  name: string;
+  stateOrder: string[];
+  stateCount: number;
+  states: { slug: string; name: string; color: string }[];
+  agent: Partial<AgentConfig>;
+}
+
+export async function listAvailablePresets(): Promise<PresetSummary[]> {
+  const summaries: PresetSummary[] = [];
+  try {
+    const home = await homeDir();
+    const presetsDir = `${home}/.oncraft/presets`;
+    if (!await exists(presetsDir)) return summaries;
+
+    const entries = await readDir(presetsDir);
+    for (const entry of entries) {
+      if (!entry.isDirectory) continue;
+      try {
+        const presetDir = `${presetsDir}/${entry.name}`;
+        const result = await readFlowFromPresetDir(presetDir);
+        if (result) {
+          summaries.push({
+            name: entry.name,
+            stateOrder: result.stateOrder,
+            stateCount: result.stateOrder.length,
+            states: result.states.map(s => ({ slug: s.slug, name: s.name, color: s.color })),
+            agent: result.agent || {},
+          });
+        }
+      } catch {
+        // Skip unreadable presets
+      }
+    }
+  } catch {
+    // Presets dir doesn't exist or unreadable
+  }
+  return summaries;
+}
+
+export async function changeProjectPreset(projectPath: string, presetName: string): Promise<void> {
+  const flowFile = `${projectPath}/${FLOW_FILE}`;
+  const content = `preset: ${presetName}\n`;
+  const dirPath = `${projectPath}/${ONCRAFT_DIR}`;
+  try {
+    await mkdir(dirPath, { recursive: true });
+  } catch { /* already exists */ }
+  await writeTextFile(flowFile, content);
+}
+
+export async function hasLocalOverrides(projectPath: string): Promise<boolean> {
+  try {
+    const statesDir = `${projectPath}/${STATES_DIR}`;
+    if (!await exists(statesDir)) return false;
+    const entries = await readDir(statesDir);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function installBundledPresets(): Promise<void> {
   try {
     const home   = await homeDir();

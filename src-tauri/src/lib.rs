@@ -19,6 +19,8 @@ pub fn run() {
             commands::delete_session,
             commands::git_branch_status,
             commands::git_file_status,
+            commands::list_orphaned_sessions,
+            commands::list_orphaned_worktrees,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
