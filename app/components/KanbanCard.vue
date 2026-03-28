@@ -4,7 +4,7 @@ import { deleteSessionNative, gitBranchStatus } from '~/services/claude-process'
 import type { BranchStatus } from '~/services/claude-process';
 import { getFilesGitStatus, type FileGitStatus } from '~/services/git-status';
 
-const props = defineProps<{ card: Card; columnColor: string }>();
+const props = defineProps<{ card: Card }>();
 const emit = defineEmits<{
   fork: [card: Card];
 }>();
@@ -17,9 +17,36 @@ const { openFile, activeFile } = useFileViewer();
 // GitHub repo from flow store (manual override > auto-detected)
 const githubRepo = computed(() => flowStore.githubRepository);
 
-// Counts for indicators
-const linkedFilesCount = computed(() => Object.keys(props.card.linkedFiles || {}).length);
-const linkedIssuesCount = computed(() => (props.card.linkedIssues || []).length);
+// Dropdown menu items for the ⋯ button
+const menuItems = computed(() => {
+  const groups: any[][] = [];
+
+  // Group 1: Stop (only if active)
+  if (sessionsStore.isActive(props.card.id)) {
+    groups.push([{
+      label: 'Stop',
+      icon: 'i-lucide-square',
+      color: 'error' as const,
+      onSelect: () => sessionsStore.interruptSession(props.card.id),
+    }]);
+  }
+
+  // Group 2: Edit, Fork
+  groups.push([
+    { label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => handleEdit() },
+    { label: 'Fork', icon: 'i-lucide-git-branch', onSelect: () => handleFork() },
+  ]);
+
+  // Group 3: Archive/Delete
+  groups.push([
+    props.card.archived
+      ? { label: 'Unarchive', icon: 'i-lucide-archive-restore', onSelect: () => handleUnarchive(props.card.id) }
+      : { label: 'Archive', icon: 'i-lucide-archive', onSelect: () => handleArchive(props.card.id) },
+    { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => handleDeleteRequest(props.card.id) },
+  ]);
+
+  return groups;
+});
 
 // Whether the card has a deliberate branch association (worktree or configured gitBranch)
 const hasExplicitBranch = computed(() => {
@@ -62,10 +89,11 @@ async function refreshFileStatuses() {
   fileStatuses.value = await getFilesGitStatus(basePath, paths);
 }
 
-function fileStatusClass(filePath: string): string {
+function fileChipClass(label: string, filePath: string): string {
+  if (isFileActive(label)) return 'file-chip--active';
   const status = fileStatuses.value[filePath];
-  if (status === 'modified') return 'file-tag--modified';
-  if (status === 'missing') return 'file-tag--missing';
+  if (status === 'modified') return 'file-chip--modified';
+  if (status === 'missing') return 'file-chip--missing';
   return '';
 }
 
@@ -83,20 +111,14 @@ const showEdit = ref(false);
 const showDeleteConfirm = ref(false);
 const pendingDeleteCardId = ref<string | null>(null);
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 function formatTokens(n: number): string {
   if (!n || n < 1000) return String(n || 0);
   return `${(n / 1000).toFixed(1)}k`;
+}
+
+function formatCost(usd: number): string {
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(4)}`;
 }
 
 function openChat() { sessionsStore.openChat(props.card.id); }
@@ -106,12 +128,6 @@ async function openIssue(number: number) {
   const { openUrl } = await import('@tauri-apps/plugin-opener');
   openUrl(`https://github.com/${githubRepo.value}/issues/${number}`);
 }
-
-const parentCardName = computed(() => {
-  if (!props.card.forkedFromId) return undefined;
-  const parent = cardsStore.cards.find(c => c.id === props.card.forkedFromId);
-  return parent?.name;
-});
 
 function handleEdit() {
   showEdit.value = true;
@@ -179,6 +195,13 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   if (!basePath) return;
   openFile(props.card.id, label, filePath.startsWith('/') ? filePath : `${basePath}/${filePath}`);
 }
+
+// Meta zone visibility
+const showMetaZone = computed(() => {
+  return (branchStatus.value && hasExplicitBranch.value)
+    || (props.card.linkedIssues?.length ?? 0) > 0
+    || (props.card.costUsd ?? 0) > 0;
+});
 </script>
 
 <template>
@@ -193,102 +216,70 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
   >
     <div
       class="kanban-card"
-      :data-card-id="props.card.id"
-      :style="{ borderLeftColor: props.columnColor }"
+      :class="{ 'kanban-card--error': card.state === 'error' }"
+      :data-card-id="card.id"
       @click="openChat"
     >
-      <!-- Quick actions overlay (hover) -->
-      <div class="card-actions">
-        <UButton
-          v-if="sessionsStore.isActive(card.id)"
-          variant="soft"
-          color="error"
-          size="xs"
-          icon="i-lucide-square"
-          title="Stop"
-          @click.stop="sessionsStore.interruptSession(card.id)"
-        />
-        <UButton
-          variant="soft"
-          color="neutral"
-          size="xs"
-          icon="i-lucide-pencil"
-          title="Edit"
-          @click.stop="handleEdit"
-        />
+      <!-- Zone 1: Identity Bar -->
+      <div class="zone-identity">
+        <StatusIndicator :state="card.state" size="xs" />
+        <span class="card-name">{{ card.name }}</span>
+        <UDropdownMenu :items="menuItems">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            size="xs"
+            icon="i-lucide-ellipsis"
+            class="menu-trigger"
+            @click.stop
+          />
+        </UDropdownMenu>
       </div>
-      <div class="card-inner">
-        <div class="card-header">
-          <span class="card-name">{{ card.name }}</span>
-          <UBadge
-            v-if="card.useWorktree"
-            variant="soft"
-            color="primary"
-            size="xs"
-            class="worktree-badge"
-            :title="'Worktree: ' + (card.worktreeName || '')"
-          >WT</UBadge>
-          <UBadge
-            v-if="card.forkedFromId"
-            variant="soft"
-            color="warning"
-            size="xs"
-            class="fork-badge"
-            :title="parentCardName ? 'Forked from ' + parentCardName : 'Fork'"
-          >Fork</UBadge>
-          <StatusIndicator :state="card.state" />
-        </div>
-        <p v-if="card.description" class="card-desc">{{ card.description }}</p>
-        <!-- Linked file tags -->
-        <div v-if="linkedFilesEntries.length > 0" class="card-files">
-          <template v-for="([label, filePath], idx) in linkedFilesEntries" :key="label">
-            <UButton
-              variant="link"
-              color="neutral"
-              size="xs"
-              class="file-tag"
-              :class="[{ 'file-tag--active': isFileActive(label) }, fileStatusClass(String(filePath))]"
-              :title="String(filePath)"
-              @click="onFileClick($event, label, String(filePath))"
-            >{{ label }}</UButton>
-            <span v-if="idx < linkedFilesEntries.length - 1" class="file-sep">|</span>
-          </template>
-        </div>
 
-        <div class="card-footer">
-          <span class="card-meta">{{ timeAgo(card.lastActivityAt) }}</span>
-          <div class="card-footer-right">
+      <!-- Zone 2: Description -->
+      <div v-if="card.description" class="zone-description">
+        {{ card.description }}
+      </div>
+
+      <!-- Zone 3: Linked Files -->
+      <div v-if="linkedFilesEntries.length > 0" class="zone-files">
+        <span
+          v-for="[label, filePath] in linkedFilesEntries"
+          :key="label"
+          class="file-chip"
+          :class="[fileChipClass(label, String(filePath))]"
+          :title="String(filePath)"
+          @click.stop="onFileClick($event, label, String(filePath))"
+        >
+          {{ label }}<span v-if="fileStatuses[String(filePath)] === 'modified'" class="file-chip-dot"> ●</span>
+        </span>
+      </div>
+
+      <!-- Zone 4: Meta Line -->
+      <div v-if="showMetaZone" class="zone-meta">
+        <div class="meta-left">
+          <template v-if="branchStatus && hasExplicitBranch">
+            <UIcon name="i-lucide-git-branch" class="meta-branch-icon" />
+            <span class="meta-branch">{{ branchStatus.branch }}</span>
+            <span v-if="branchStatus.ahead > 0" class="meta-ahead">&uarr;{{ branchStatus.ahead }}</span>
+            <span v-if="branchStatus.behind > 0" class="meta-behind">&darr;{{ branchStatus.behind }}</span>
+            <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="meta-synced">&check;</span>
+          </template>
+          <template v-if="(card.linkedIssues?.length ?? 0) > 0">
+            <span v-if="branchStatus && hasExplicitBranch" class="meta-sep">&middot;</span>
             <span
-              v-for="issue in (card.linkedIssues || [])"
+              v-for="issue in card.linkedIssues"
               :key="issue.number"
-              class="card-indicator card-indicator--issue"
+              class="meta-issue"
               :title="`#${issue.number}${issue.title ? ' ' + issue.title : ''}`"
               @click.stop="openIssue(issue.number)"
-            >
-              <svg class="gh-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-              #{{ issue.number }}
-            </span>
-            <div v-if="branchStatus && hasExplicitBranch" class="branch-status" :title="`${branchStatus.branch} vs ${branchStatus.base}`">
-              <svg class="branch-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.5 2.5 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z" /></svg>
-              <span class="branch-name" :title="branchStatus.branch">{{ branchStatus.branch }}</span>
-              <span v-if="branchStatus.ahead > 0" class="commits-ahead">&uarr;{{ branchStatus.ahead }}</span>
-              <span v-if="branchStatus.behind > 0" class="commits-behind">&darr;{{ branchStatus.behind }}</span>
-              <span v-if="branchStatus.ahead === 0 && branchStatus.behind === 0" class="commits-synced">&check;</span>
-            </div>
-            <div v-if="card.tags?.length" class="card-tags">
-              <UBadge
-                v-for="tag in card.tags"
-                :key="tag"
-                variant="soft"
-                color="neutral"
-                size="sm"
-              >{{ tag }}</UBadge>
-            </div>
-          </div>
+            >#{{ issue.number }}</span>
+          </template>
         </div>
-        <div v-if="card.costUsd && card.costUsd > 0" class="card-cost-footer">
-          <span class="cost-amount">${{ card.costUsd.toFixed(4) }}</span>
-          <span class="cost-tokens">&uarr;{{ formatTokens(card.inputTokens ?? 0) }} &darr;{{ formatTokens(card.outputTokens ?? 0) }}</span>
+        <div v-if="card.costUsd && card.costUsd > 0" class="meta-right">
+          <span>{{ formatCost(card.costUsd) }}</span>
+          <span class="meta-sep">&middot;</span>
+          <span>{{ formatTokens((card.inputTokens ?? 0) + (card.outputTokens ?? 0)) }}</span>
         </div>
       </div>
     </div>
@@ -307,7 +298,6 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
     @cancel="showEdit = false"
   />
 
-  <!-- Delete confirmation modal -->
   <UModal v-model:open="showDeleteConfirm" title="Delete session?">
     <template #body>
       <p class="text-sm">Delete "{{ card.name }}" and its Claude session? This cannot be undone.</p>
@@ -322,104 +312,141 @@ function onFileClick(e: MouseEvent, label: string, filePath: string) {
 </template>
 
 <style scoped>
+/* Card container */
 .kanban-card {
-  position: relative;
   background: var(--bg-secondary);
-  border-left: 3px solid;
-  border-radius: 6px;
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
+  overflow: hidden;
 }
 .kanban-card:hover { background: var(--bg-tertiary); }
+.kanban-card--error { border-color: rgba(247, 118, 142, 0.3); }
 
-/* Quick actions overlay */
-.card-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+/* Zone 1: Identity */
+.zone-identity {
   display: flex;
-  gap: 4px;
-  z-index: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+.card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-trigger {
+  flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s;
-  pointer-events: none;
 }
-.kanban-card:hover .card-actions {
-  opacity: 1;
-  pointer-events: auto;
+.kanban-card:hover .menu-trigger { opacity: 1; }
+
+/* Zone 2: Description */
+.zone-description {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--bg-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.card-inner { padding: 10px; }
-.card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.card-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; }
-.worktree-badge { flex-shrink: 0; font-family: 'SF Mono', 'Fira Code', monospace; letter-spacing: 0.5px; }
-.fork-badge { flex-shrink: 0; }
-.card-desc {
-  font-size: 12px;
+
+/* Zone 3: Linked Files */
+.zone-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+.file-chip {
+  background: rgba(122, 162, 247, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(122, 162, 247, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.file-chip:hover {
+  background: rgba(122, 162, 247, 0.2);
+  border-color: rgba(122, 162, 247, 0.35);
+}
+.file-chip--active {
+  background: rgba(122, 162, 247, 0.2);
+  border-color: rgba(122, 162, 247, 0.4);
+}
+.file-chip--modified {
+  background: rgba(224, 175, 104, 0.12);
+  color: var(--warning);
+  border-color: rgba(224, 175, 104, 0.2);
+}
+.file-chip--modified:hover {
+  background: rgba(224, 175, 104, 0.2);
+  border-color: rgba(224, 175, 104, 0.35);
+}
+.file-chip--missing {
+  background: rgba(247, 118, 142, 0.12);
+  color: var(--error);
+  border-color: rgba(247, 118, 142, 0.2);
+  text-decoration: line-through;
+}
+.file-chip--missing:hover {
+  background: rgba(247, 118, 142, 0.2);
+  border-color: rgba(247, 118, 142, 0.35);
+}
+.file-chip-dot { font-size: 8px; }
+
+/* Zone 4: Meta */
+.zone-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+}
+.meta-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.meta-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.meta-branch-icon { width: 12px; height: 12px; color: var(--text-muted); flex-shrink: 0; }
+.meta-branch {
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.card-files {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0;
-  margin-bottom: 6px;
-}
-.file-tag {
-  padding: 0 !important;
-  font-size: 11px !important;
-  color: var(--text-muted) !important;
-  text-decoration: none !important;
-  min-height: auto !important;
-  height: auto !important;
-}
-.file-tag:hover {
-  color: var(--text-secondary) !important;
-  text-decoration: underline !important;
-}
-.file-tag--active {
-  color: var(--accent, #7c8aff) !important;
+.meta-ahead { color: #4ade80; font-weight: 600; }
+.meta-behind { color: #f87171; font-weight: 600; }
+.meta-synced { color: var(--text-muted); }
+.meta-sep { color: var(--bg-tertiary); }
+.meta-issue {
+  color: var(--accent);
   font-weight: 600;
+  cursor: pointer;
 }
-.file-tag--modified {
-  color: var(--warning, #f59e0b) !important;
-}
-.file-tag--missing {
-  color: var(--error, #f87171) !important;
-  text-decoration: line-through !important;
-}
-.file-sep {
-  color: var(--border, #3a3a4e);
-  margin: 0 5px;
-  font-weight: 300;
-}
-.card-footer { display: flex; justify-content: space-between; align-items: center; }
-.card-footer-right { display: flex; align-items: center; gap: 6px; }
-.card-meta { font-size: 11px; color: var(--text-muted); }
-.card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-.card-indicator { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.card-indicator--issue { color: var(--accent); font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
-.card-indicator--issue:hover { opacity: 0.8; }
-.gh-icon { width: 12px; height: 12px; flex-shrink: 0; }
-.branch-status { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; }
-.branch-icon { width: 12px; height: 12px; flex-shrink: 0; color: var(--text-secondary); }
-.branch-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
-.commits-ahead  { color: #4ade80; font-weight: 600; }
-.commits-behind { color: #f87171; font-weight: 600; }
-.commits-synced { color: var(--text-muted); }
-.card-cost-footer {
-  display: flex;
-  gap: 8px;
-  padding-top: 6px;
-  margin-top: 6px;
-  border-top: 1px solid var(--bg-tertiary);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.cost-amount { white-space: nowrap; }
-.cost-tokens { white-space: nowrap; }
+.meta-issue:hover { opacity: 0.8; }
 </style>

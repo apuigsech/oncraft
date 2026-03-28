@@ -192,7 +192,6 @@ async function createForkedSession(name: string, description: string, useWorktre
         v-for="card in dragCards"
         :key="card.id"
         :card="card"
-        :column-color="flowState.color"
         @fork="handleFork"
       />
     </VueDraggable>

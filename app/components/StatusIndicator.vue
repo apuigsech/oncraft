@@ -3,10 +3,10 @@ import type { CardState } from '~/types';
 
 const props = withDefaults(defineProps<{
   state: CardState;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md';
 }>(), { size: 'md' });
 
-const sizeMap = { sm: 8, md: 12 };
+const sizeMap = { xs: 10, sm: 8, md: 12 };
 const px = computed(() => sizeMap[props.size]);
 </script>
 
@@ -60,6 +60,7 @@ const px = computed(() => sizeMap[props.size]);
 }
 .status-indicator--md { width: 12px; height: 12px; }
 .status-indicator--sm { width: 8px; height: 8px; }
+.status-indicator--xs { width: 10px; height: 10px; }
 
 .status-dot {
   display: block;
