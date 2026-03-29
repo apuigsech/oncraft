@@ -7,6 +7,7 @@ export interface Project {
   path: string;
   createdAt: string;
   lastOpenedAt: string;
+  closed?: boolean;
 }
 
 export interface Card {
@@ -32,6 +33,7 @@ export interface Card {
   linkedFiles?: Record<string, string>;    // { label: relativePath } e.g. { "plan": "docs/plan.md" }
   linkedIssues?: CardLinkedIssue[];
   forkedFromId?: string;
+  lastViewedAt?: string;
 }
 
 export type CardState = 'active' | 'idle' | 'error' | 'completed';
@@ -174,6 +176,27 @@ export interface SessionConfig {
   worktreeName?: string;
   worktreePath?: string;
   worktreeBranch?: string;
+}
+
+export type ActivityPriority = 'attention' | 'active' | 'unseen' | 'inactive';
+
+export interface ActivityCardRow {
+  id: string;
+  projectId: string;
+  projectName: string;
+  name: string;
+  columnName: string;
+  lastActivityAt: string;
+  lastViewedAt: string | null;
+  state: string;
+  priority: ActivityPriority;
+  toolName?: string;
+  toolContext?: string;
+}
+
+export interface DailyCost {
+  date: string;
+  cost: number;
 }
 
 export interface TemplateContext {
