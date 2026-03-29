@@ -48,6 +48,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     subAgentStartTimes: Record<string, number>;
   }> = reactive({});
 
+  // HOME: Track current tool per active session for Activity panel
+  const activeToolByCard = reactive(new Map<string, { toolName: string; toolContext: string }>());
+  // HOME: Track cards needing attention (approval, error, rate_limit)
+  const cardAttentionState = reactive(new Map<string, 'approval' | 'error' | 'rate_limit'>());
+
   // ME-3: Maximum messages kept in memory per card.
   // Older messages are discarded to prevent unbounded memory growth in long sessions.
   const MAX_MESSAGES_PER_CARD = 500;
@@ -201,6 +206,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       trackSessionEnd((msg.durationMs as number) || 0);
       markQueryComplete(cardId);
       delete activeSubAgents[cardId]; // Clear sub-agent tracking on query end
+      // HOME: Clear live tool and attention state on query end
+      activeToolByCard.delete(cardId);
+      cardAttentionState.delete(cardId);
       cardsStore.updateCardState(cardId, 'idle');
       return;
     }
@@ -275,6 +283,34 @@ export const useSessionsStore = defineStore('sessions', () => {
       const thinkingLast = thinkingMsgs[thinkingMsgs.length - 1]!;
       thinkingLast.data.content = (thinkingLast.data.content as string) + ((msg.content as string) || '');
       return;
+    }
+
+    // HOME: Track current tool for Activity panel
+    if (msg.type === 'tool_use' || (msg.type as string) === 'tool_use') {
+      const toolName = (msg.toolName as string) || 'Tool';
+      const input = msg.toolInput as Record<string, unknown> | undefined;
+      let context = '';
+      if (toolName === 'Bash' || toolName === 'bash') {
+        context = (input?.command as string)?.slice(0, 60) || '';
+      } else if (toolName === 'Edit' || toolName === 'edit' || toolName === 'Write' || toolName === 'write') {
+        context = (input?.file_path as string)?.split('/').pop() || '';
+      } else if (toolName === 'Read' || toolName === 'read') {
+        context = (input?.file_path as string)?.split('/').pop() || '';
+      } else {
+        context = toolName;
+      }
+      activeToolByCard.set(cardId, { toolName, toolContext: context });
+    }
+
+    // HOME: Track attention-needing states
+    if (msg.type === 'tool_confirmation') {
+      cardAttentionState.set(cardId, 'approval');
+    }
+    if (msg.type === 'error') {
+      cardAttentionState.set(cardId, 'error');
+    }
+    if (msg.type === 'system' && (msg.subtype === 'rate_limit' || (msg.content as string)?.includes?.('rate limit'))) {
+      cardAttentionState.set(cardId, 'rate_limit');
     }
 
     // tool_result: merge into matching tool_use part
@@ -440,10 +476,12 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function approveToolUse(cardId: string, updatedInput?: Record<string, unknown>): Promise<void> {
+    cardAttentionState.delete(cardId); // HOME: Clear attention on approval
     await sendReply(cardId, 'allow', updatedInput);
   }
 
   async function rejectToolUse(cardId: string): Promise<void> {
+    cardAttentionState.delete(cardId); // HOME: Clear attention on rejection
     await sendReply(cardId, 'deny');
   }
 
@@ -474,8 +512,13 @@ export const useSessionsStore = defineStore('sessions', () => {
       cardProjectMap.set(cardId, projectId);
     }
 
-    // Seed session metrics from persisted card data (survives app restart)
+    // HOME: Update lastViewedAt so Activity panel can track "unseen changes"
+    import('~/services/database').then(db => db.updateCardLastViewedAt(cardId));
     const cardsStore = useCardsStore();
+    const cardForViewed = cardsStore.cards.find(c => c.id === cardId);
+    if (cardForViewed) cardForViewed.lastViewedAt = new Date().toISOString();
+
+    // Seed session metrics from persisted card data (survives app restart)
     const card = cardsStore.cards.find(c => c.id === cardId);
     if (card && !sessionMetrics[cardId]) {
       sessionMetrics[cardId] = {
@@ -560,6 +603,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
+    activeToolByCard.delete(cardId);
+    cardAttentionState.delete(cardId);
     // NAV: Clean up per-project active chat if this card was open
     const pid = cardProjectMap.get(cardId);
     if (pid && activeChatCardByProject.get(pid) === cardId) {
@@ -569,7 +614,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   return {
-    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, activeSubAgents,
+    messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, activeSubAgents, activeToolByCard, cardAttentionState,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getActiveSubAgentCount, getQueryTracking,
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
