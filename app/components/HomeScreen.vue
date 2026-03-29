@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { exists } from '@tauri-apps/plugin-fs'
-import { getProjectCardSummaries, getActiveCardsAllProjects, getUsageMetrics, type ProjectCardSummary, type ActiveCardRow, type UsageMetrics } from '~/services/database'
+import {
+  getProjectCardSummaries, getActiveCardsAllProjects, getUsageMetrics, getCostByDay,
+  type ProjectCardSummary, type ActiveCardRow, type UsageMetrics,
+} from '~/services/database'
 import { runHealthChecks, type HealthCheckResult } from '~/services/health-check'
+import type { ActivityPriority, ActivityCardRow, DailyCost } from '~/types'
 
 const projectsStore = useProjectsStore()
-const { addProject, switchToProject, navigateToCard } = useProjectActions()
+const sessionsStore = useSessionsStore()
+const { addProject, switchToProject, reopenProject, navigateToCard } = useProjectActions()
 
-// --- Block 1: Recent Projects ---
+// --- Block 1: Stats & Projects ---
 const projectSummaries = ref<Map<string, ProjectCardSummary>>(new Map())
 const projectPathExists = ref<Map<string, boolean>>(new Map())
 
@@ -16,7 +21,6 @@ async function loadProjectSummaries() {
   for (const s of summaries) map.set(s.projectId, s)
   projectSummaries.value = map
 
-  // Check disk existence in parallel
   const checks = projectsStore.projects.map(async (p) => {
     try {
       const ok = await exists(p.path)
@@ -50,17 +54,59 @@ function formatRelativeTime(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString()
 }
 
-// --- Block 2: Global Activity ---
-const activeCards = ref<ActiveCardRow[]>([])
+// --- Block 2: Activity ---
+const activityRows = ref<ActiveCardRow[]>([])
 
-async function loadActiveCards() {
-  activeCards.value = await getActiveCardsAllProjects()
+async function loadActivityCards() {
+  activityRows.value = await getActiveCardsAllProjects()
 }
 
-function getProjectName(projectId: string): string {
-  const p = projectsStore.projects.find(p => p.id === projectId)
-  return p?.name || 'Unknown'
-}
+const sortedActivityCards = computed<ActivityCardRow[]>(() => {
+  const priorityOrder: Record<ActivityPriority, number> = { attention: 0, active: 1, unseen: 2, inactive: 3 }
+
+  return activityRows.value.map(row => {
+    // Determine priority from live data
+    let priority: ActivityPriority = 'inactive'
+    let toolName: string | undefined
+    let toolContext: string | undefined
+
+    const attention = sessionsStore.cardAttentionState.get(row.id)
+    if (attention) {
+      priority = 'attention'
+      toolName = attention === 'approval' ? 'Approval' : attention === 'rate_limit' ? 'Rate Limit' : 'Error'
+      const liveTool = sessionsStore.activeToolByCard.get(row.id)
+      toolContext = liveTool ? `${liveTool.toolName}: ${liveTool.toolContext}` : ''
+    } else if (row.state === 'active') {
+      priority = 'active'
+      const liveTool = sessionsStore.activeToolByCard.get(row.id)
+      if (liveTool) {
+        toolName = liveTool.toolName
+        toolContext = liveTool.toolContext
+      }
+    } else if (row.lastViewedAt && row.lastActivityAt > row.lastViewedAt) {
+      priority = 'unseen'
+    }
+
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      name: row.name,
+      columnName: row.columnName,
+      lastActivityAt: row.lastActivityAt,
+      lastViewedAt: row.lastViewedAt,
+      state: row.state,
+      priority,
+      toolName,
+      toolContext,
+    } satisfies ActivityCardRow
+  }).sort((a, b) => {
+    const pa = priorityOrder[a.priority]
+    const pb = priorityOrder[b.priority]
+    if (pa !== pb) return pa - pb
+    return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
+  })
+})
 
 function formatDuration(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -73,11 +119,36 @@ function formatDuration(dateStr: string): string {
   return `${hours}h ${remMins}m`
 }
 
-// --- Block 3: Usage Metrics ---
+function priorityBorderColor(priority: ActivityPriority): string {
+  switch (priority) {
+    case 'attention': return 'var(--error)'
+    case 'active': return 'var(--success)'
+    case 'unseen': return 'var(--accent)'
+    case 'inactive': return 'var(--border)'
+  }
+}
+
+function toolBadgeStyle(toolName: string): { color: string; bg: string } {
+  const name = toolName.toLowerCase()
+  if (name === 'bash') return { color: '#7aa2f7', bg: '#7aa2f733' }
+  if (name === 'edit' || name === 'write') return { color: '#e0af68', bg: '#e0af6833' }
+  if (name === 'read' || name === 'glob' || name === 'grep') return { color: '#9ece6a', bg: '#9ece6a33' }
+  if (name === 'approval') return { color: '#f7768e', bg: '#f7768e33' }
+  if (name === 'rate limit') return { color: '#e0af68', bg: '#e0af6833' }
+  if (name === 'error') return { color: '#f7768e', bg: '#f7768e33' }
+  return { color: '#bb9af7', bg: '#bb9af733' }
+}
+
+// --- Block 3: Usage ---
 const usageMetrics = ref<UsageMetrics | null>(null)
+const costByDay = ref<DailyCost[]>([])
 
 async function loadUsageMetrics() {
   usageMetrics.value = await getUsageMetrics()
+}
+
+async function loadCostByDay() {
+  costByDay.value = await getCostByDay(7)
 }
 
 function formatCost(value: number): string {
@@ -92,6 +163,11 @@ function formatTokens(value: number): string {
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
   return String(value)
 }
+
+const sparklineMax = computed(() => {
+  if (costByDay.value.length === 0) return 1
+  return Math.max(...costByDay.value.map(d => d.cost), 0.01)
+})
 
 // --- Block 4: System Health ---
 const healthResult = ref<HealthCheckResult | null>(null)
@@ -108,27 +184,83 @@ async function loadHealthChecks() {
   }
 }
 
+// Stats bar computed values
+const activeSessionCount = computed(() =>
+  sortedActivityCards.value.filter(c => c.priority === 'active' || c.priority === 'attention').length
+)
+
+const healthSummaryLabel = computed(() => {
+  if (!healthResult.value) return ''
+  const items = healthResult.value.items
+  const red = items.filter(i => i.status === 'red').length
+  const amber = items.filter(i => i.status === 'amber').length
+  if (red > 0) return `${red} issue${red > 1 ? 's' : ''}`
+  if (amber > 0) return `${amber} warning${amber > 1 ? 's' : ''}`
+  return 'All OK'
+})
+
+// Project avatar color from name hash
+function avatarColor(name: string): string {
+  const colors = ['#7aa2f7', '#9ece6a', '#e0af68', '#bb9af7', '#f7768e', '#73daca', '#ff9e64', '#2ac3de']
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
+  return colors[Math.abs(hash) % colors.length]!
+}
+
+function handleProjectClick(projectId: string) {
+  const project = projectsStore.projects.find(p => p.id === projectId)
+  if (!project) return
+  if (project.closed) {
+    reopenProject(projectId)
+  } else {
+    switchToProject(projectId)
+  }
+}
+
 onMounted(() => {
   loadProjectSummaries()
-  loadActiveCards()
+  loadActivityCards()
   loadUsageMetrics()
+  loadCostByDay()
   loadHealthChecks()
 })
 </script>
 
 <template>
   <div class="home-screen">
-    <header class="home-header">
-      <h1 class="home-title">OnCraft</h1>
-      <p class="home-subtitle">Kanban for Claude Code sessions</p>
-    </header>
+    <!-- Zone 1: Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-dot stat-dot--active" />
+        <span class="stat-value">{{ activeSessionCount }}</span>
+        <span class="stat-label">active</span>
+      </div>
+      <div class="stat-divider" />
+      <div v-if="usageMetrics" class="stat-item">
+        <span class="stat-value">{{ formatCost(usageMetrics.costToday) }}</span>
+        <span class="stat-label">today</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">{{ usageMetrics?.sessionCount ?? 0 }} sessions</span>
+      </div>
+      <div class="stat-spacer" />
+      <div v-if="healthResult" class="stat-item stat-item--health">
+        <span
+          v-for="item in healthResult.items"
+          :key="item.label"
+          class="stat-health-dot"
+          :class="`stat-health-dot--${item.status}`"
+          :title="item.label"
+        />
+        <span class="stat-label">{{ healthSummaryLabel }}</span>
+      </div>
+    </div>
 
     <div class="home-grid">
-      <!-- Block 1: Recent Projects -->
+      <!-- Zone 2: Recent Projects -->
       <section class="home-block">
         <div class="block-header">
-          <UIcon name="i-lucide-folder-open" class="block-icon" />
-          <h2 class="block-title">Recent Projects</h2>
+          <span class="block-title">Recent Projects</span>
           <div class="block-header-spacer" />
           <UButton
             variant="ghost"
@@ -145,32 +277,41 @@ onMounted(() => {
             <div
               v-for="project in projectsStore.projects"
               :key="project.id"
-              class="project-card"
-              :class="{ 'project-card--warning': projectPathExists.get(project.id) === false }"
-              @click="switchToProject(project.id)"
+              class="project-row"
+              :class="{
+                'project-row--closed': project.closed,
+                'project-row--warning': projectPathExists.get(project.id) === false,
+              }"
+              @click="handleProjectClick(project.id)"
             >
-              <div class="project-card-top">
-                <span class="project-name">{{ project.name }}</span>
-                <UIcon
-                  v-if="projectPathExists.get(project.id) === false"
-                  name="i-lucide-triangle-alert"
-                  class="project-warning-icon"
-                  title="Directory not found on disk"
-                />
+              <div
+                class="project-avatar"
+                :style="{ background: project.closed ? 'var(--bg-tertiary)' : avatarColor(project.name) + '22' }"
+              >
+                <span
+                  class="project-avatar-letter"
+                  :style="{ color: project.closed ? 'var(--text-muted)' : avatarColor(project.name) }"
+                >{{ project.name.charAt(0).toUpperCase() }}</span>
               </div>
-              <div class="project-card-meta">
+              <div class="project-info">
+                <div class="project-name-row">
+                  <span class="project-name">{{ project.name }}</span>
+                  <span v-if="!project.closed && getSummary(project.id).activeCount > 0" class="project-active-dot" />
+                  <UIcon
+                    v-if="projectPathExists.get(project.id) === false"
+                    name="i-lucide-triangle-alert"
+                    class="project-warning-icon"
+                    title="Directory not found on disk"
+                  />
+                </div>
                 <span class="project-path" :title="project.path">{{ project.path }}</span>
               </div>
-              <div class="project-card-stats">
-                <span v-if="getSummary(project.id).activeCount > 0" class="stat stat--active">
+              <div class="project-stats">
+                <span v-if="!project.closed && getSummary(project.id).activeCount > 0" class="pstat pstat--active">
                   {{ getSummary(project.id).activeCount }} active
                 </span>
-                <span class="stat">
-                  {{ getSummary(project.id).totalCount }} cards
-                </span>
-                <span class="stat stat--time">
-                  {{ formatRelativeTime(getSummary(project.id).lastActivityAt || project.lastOpenedAt) }}
-                </span>
+                <span class="pstat">{{ getSummary(project.id).totalCount }} cards</span>
+                <span class="pstat">{{ formatRelativeTime(getSummary(project.id).lastActivityAt || project.lastOpenedAt) }}</span>
               </div>
             </div>
           </div>
@@ -186,79 +327,98 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Block 2: Global Activity -->
+      <!-- Zone 3: Activity (Smart Panel) -->
       <section class="home-block">
         <div class="block-header">
-          <UIcon name="i-lucide-activity" class="block-icon" />
-          <h2 class="block-title">Activity</h2>
+          <span class="block-title">Activity</span>
           <div class="block-header-spacer" />
           <UButton
-            v-if="activeCards.length > 0"
+            v-if="activityRows.length > 0"
             variant="ghost"
             color="neutral"
             size="xs"
             icon="i-lucide-refresh-cw"
-            @click="loadActiveCards"
+            @click="loadActivityCards"
           />
         </div>
         <div class="block-content">
-          <div v-if="activeCards.length > 0" class="activity-list">
+          <div v-if="sortedActivityCards.length > 0" class="activity-list">
             <div
-              v-for="card in activeCards"
+              v-for="card in sortedActivityCards"
               :key="card.id"
               class="activity-row"
+              :style="{ borderLeftColor: priorityBorderColor(card.priority) }"
               @click="navigateToCard(card.projectId, card.id)"
             >
-              <div class="activity-indicator" />
-              <div class="activity-info">
+              <div class="activity-top">
                 <span class="activity-name">{{ card.name }}</span>
-                <span class="activity-meta">
-                  {{ getProjectName(card.projectId) }} · {{ card.columnName }}
+                <span v-if="card.priority === 'unseen'" class="activity-new-badge">new</span>
+                <span class="activity-meta">{{ card.projectName }} · {{ card.columnName }}</span>
+                <span class="activity-time">{{ formatDuration(card.lastActivityAt) }}</span>
+              </div>
+              <div v-if="card.toolName" class="activity-tool">
+                <span
+                  class="tool-badge"
+                  :style="{ color: toolBadgeStyle(card.toolName).color, background: toolBadgeStyle(card.toolName).bg }"
+                >{{ card.toolName }}</span>
+                <span v-if="card.toolContext" class="tool-context">{{ card.toolContext }}</span>
+              </div>
+              <div v-else-if="card.priority === 'inactive'" class="activity-tool">
+                <span class="tool-context tool-context--muted">
+                  {{ card.state === 'completed' ? 'Completed' : 'Idle' }} {{ formatDuration(card.lastActivityAt) }} ago
                 </span>
               </div>
-              <span class="activity-time">{{ formatDuration(card.lastActivityAt) }}</span>
             </div>
           </div>
           <EmptyState
             v-else
             icon="i-lucide-radio"
-            title="No active sessions"
+            title="No activity"
             description="Start a chat on any card to see activity here."
           />
         </div>
       </section>
 
-      <!-- Block 3: Usage Metrics -->
+      <!-- Zone 4: Usage -->
       <section class="home-block">
         <div class="block-header">
-          <UIcon name="i-lucide-bar-chart-3" class="block-icon" />
-          <h2 class="block-title">Usage</h2>
+          <span class="block-title">Usage</span>
         </div>
         <div class="block-content">
-          <div v-if="usageMetrics && usageMetrics.sessionCount > 0" class="metrics-grid">
-            <div class="metric">
-              <span class="metric-label">Today</span>
-              <span class="metric-value">{{ formatCost(usageMetrics.costToday) }}</span>
+          <div v-if="usageMetrics && usageMetrics.sessionCount > 0" class="usage-panel">
+            <div class="metrics-row">
+              <div class="metric">
+                <span class="metric-label">Today</span>
+                <span class="metric-value">{{ formatCost(usageMetrics.costToday) }}</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Week</span>
+                <span class="metric-value">{{ formatCost(usageMetrics.costWeek) }}</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Month</span>
+                <span class="metric-value">{{ formatCost(usageMetrics.costMonth) }}</span>
+              </div>
             </div>
-            <div class="metric">
-              <span class="metric-label">This week</span>
-              <span class="metric-value">{{ formatCost(usageMetrics.costWeek) }}</span>
+            <!-- Sparkline -->
+            <div v-if="costByDay.length > 0" class="sparkline">
+              <div class="sparkline-label">Last 7 days</div>
+              <div class="sparkline-bars">
+                <div
+                  v-for="(day, i) in costByDay"
+                  :key="day.date"
+                  class="sparkline-bar"
+                  :class="{ 'sparkline-bar--today': i === costByDay.length - 1 }"
+                  :style="{ height: Math.max(4, (day.cost / sparklineMax) * 100) + '%' }"
+                  :title="`${day.date}: ${formatCost(day.cost)}`"
+                />
+              </div>
             </div>
-            <div class="metric">
-              <span class="metric-label">This month</span>
-              <span class="metric-value">{{ formatCost(usageMetrics.costMonth) }}</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Sessions</span>
-              <span class="metric-value">{{ usageMetrics.sessionCount }}</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Input tokens</span>
-              <span class="metric-value">{{ formatTokens(usageMetrics.inputTokens) }}</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Output tokens</span>
-              <span class="metric-value">{{ formatTokens(usageMetrics.outputTokens) }}</span>
+            <!-- Token stats -->
+            <div class="token-stats">
+              <span class="tstat"><span class="tstat-label">Sessions </span><span class="tstat-value">{{ usageMetrics.sessionCount }}</span></span>
+              <span class="tstat"><span class="tstat-label">Input </span><span class="tstat-value">{{ formatTokens(usageMetrics.inputTokens) }}</span></span>
+              <span class="tstat"><span class="tstat-label">Output </span><span class="tstat-value">{{ formatTokens(usageMetrics.outputTokens) }}</span></span>
             </div>
           </div>
           <EmptyState
@@ -270,11 +430,10 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Block 4: System Health -->
+      <!-- Zone 5: System Health -->
       <section class="home-block">
         <div class="block-header">
-          <UIcon name="i-lucide-heart-pulse" class="block-icon" />
-          <h2 class="block-title">System Health</h2>
+          <span class="block-title">System Health</span>
           <div class="block-header-spacer" />
           <UButton
             variant="ghost"
@@ -310,32 +469,71 @@ onMounted(() => {
 .home-screen {
   height: 100%;
   overflow-y: auto;
-  padding: 32px 40px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 16px;
 }
 
-.home-header {
-  text-align: center;
-  padding: 8px 0 4px;
+/* Zone 1: Stats Bar */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  flex-shrink: 0;
 }
-.home-title {
-  font-size: 24px;
-  font-weight: 700;
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.stat-item--health {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stat-dot--active { background: var(--success); }
+.stat-value {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
 }
-.home-subtitle {
-  font-size: 13px;
+.stat-label {
+  font-size: 11px;
   color: var(--text-muted);
-  margin: 4px 0 0;
 }
+.stat-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.stat-spacer { flex: 1; }
+.stat-health-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stat-health-dot--green { background: var(--success); }
+.stat-health-dot--amber { background: var(--warning); }
+.stat-health-dot--red { background: var(--error); }
 
+/* Grid */
 .home-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 14px;
   flex: 1;
   min-height: 0;
 }
@@ -354,104 +552,209 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 0;
+  padding: 12px 14px 0;
 }
 .block-header-spacer { flex: 1; }
-.block-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--accent);
-  flex-shrink: 0;
-}
 .block-title {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .block-content {
   flex: 1;
-  padding: 8px 16px 14px;
+  padding: 8px 14px 12px;
   overflow-y: auto;
 }
 
-/* Recent Projects */
+/* Zone 2: Recent Projects */
 .project-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
-.project-card {
-  padding: 10px 12px;
-  border-radius: 8px;
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.project-card:hover {
+.project-row:hover {
   border-color: var(--border);
   background: var(--bg-primary);
 }
-.project-card--warning {
+.project-row--closed {
+  opacity: 0.55;
+}
+.project-row--warning {
   border-color: var(--warning);
-  opacity: 0.7;
 }
 
-.project-card-top {
+.project-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.project-avatar-letter {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.project-info {
+  flex: 1;
+  min-width: 0;
+}
+.project-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .project-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
 }
+.project-active-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
 .project-warning-icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   color: var(--warning);
 }
-
-.project-card-meta {
-  margin-top: 3px;
-}
 .project-path {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
   max-width: 100%;
+  margin-top: 1px;
 }
 
-.project-card-stats {
+.project-stats {
   display: flex;
-  gap: 10px;
-  margin-top: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
 }
-.stat {
-  font-size: 11px;
+.pstat {
+  font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
 }
-.stat--active {
+.pstat--active {
   color: var(--success);
   font-weight: 600;
 }
-.stat--time {
+
+/* Zone 3: Activity */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activity-row {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  border-left: 2px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.activity-row:hover { background: var(--bg-primary); }
+
+.activity-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.activity-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-new-badge {
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent);
+  background: rgba(122, 162, 247, 0.15);
+  color: #7aa2f7;
+  padding: 0 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.activity-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
   margin-left: auto;
 }
 
-/* Usage Metrics */
-.metrics-grid {
+.activity-tool {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+.tool-badge {
+  font-size: 9px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.tool-context {
+  font-size: 9px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-context--muted {
+  color: var(--text-muted);
+}
+
+/* Zone 4: Usage */
+.usage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.metrics-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding-top: 4px;
+  gap: 10px;
 }
 .metric {
   display: flex;
@@ -459,8 +762,9 @@ onMounted(() => {
   gap: 2px;
 }
 .metric-label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
+  text-transform: uppercase;
 }
 .metric-value {
   font-size: 18px;
@@ -469,75 +773,62 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* Global Activity */
-.activity-list {
+.sparkline {
+  margin-top: 2px;
+}
+.sparkline-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.sparkline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 32px;
+}
+.sparkline-bar {
+  flex: 1;
+  background: rgba(122, 162, 247, 0.25);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  transition: height 0.3s;
+}
+.sparkline-bar--today {
+  background: var(--accent);
+}
+
+.token-stats {
+  display: flex;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.tstat {
+  font-size: 10px;
+}
+.tstat-label { color: var(--text-muted); }
+.tstat-value { color: var(--text-primary); font-weight: 600; }
+
+/* Zone 5: System Health */
+.health-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.activity-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.activity-row:hover { background: var(--bg-tertiary); }
-.activity-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  flex-shrink: 0;
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-.activity-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.activity-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.activity-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.activity-time {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* System Health */
-.health-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
-}
 .health-row {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 5px;
   flex-wrap: wrap;
 }
 .health-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -545,25 +836,25 @@ onMounted(() => {
 .health-dot--amber { background: var(--warning); }
 .health-dot--red { background: var(--error); }
 .health-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-primary);
-  min-width: 90px;
+  min-width: 80px;
 }
 .health-detail {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-muted);
 }
 .health-hint {
-  font-size: 11px;
-  color: var(--accent);
+  font-size: 10px;
+  color: var(--warning);
   font-style: italic;
-  width: 100%;
-  padding-left: 18px;
+  margin-left: auto;
 }
 
 @media (max-width: 700px) {
   .home-grid { grid-template-columns: 1fr; }
-  .home-screen { padding: 20px 16px; }
+  .home-screen { padding: 16px 12px; }
+  .stats-bar { flex-wrap: wrap; }
 }
 </style>
