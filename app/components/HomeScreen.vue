@@ -275,6 +275,7 @@ onMounted(() => {
       <!-- Zone 2: Recent Projects -->
       <section class="home-block">
         <div class="block-header">
+          <UIcon name="i-lucide-folder-open" class="block-icon" />
           <span class="block-title">Recent Projects</span>
           <div class="block-header-spacer" />
           <UButton
@@ -345,6 +346,7 @@ onMounted(() => {
       <!-- Zone 3: Activity (Smart Panel) -->
       <section class="home-block">
         <div class="block-header">
+          <UIcon name="i-lucide-activity" class="block-icon" />
           <span class="block-title">Activity</span>
           <div class="block-header-spacer" />
           <UButton
@@ -397,6 +399,7 @@ onMounted(() => {
       <!-- Zone 4: Usage -->
       <section class="home-block">
         <div class="block-header">
+          <UIcon name="i-lucide-bar-chart-3" class="block-icon" />
           <span class="block-title">Usage</span>
         </div>
         <div class="block-content">
@@ -448,6 +451,7 @@ onMounted(() => {
       <!-- Zone 5: System Health -->
       <section class="home-block">
         <div class="block-header">
+          <UIcon name="i-lucide-heart-pulse" class="block-icon" />
           <span class="block-title">System Health</span>
           <div class="block-header-spacer" />
           <UButton
@@ -570,6 +574,12 @@ onMounted(() => {
   padding: 12px 14px 0;
 }
 .block-header-spacer { flex: 1; }
+.block-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
 .block-title {
   font-size: 10px;
   font-weight: 600;
