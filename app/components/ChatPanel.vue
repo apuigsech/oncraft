@@ -439,6 +439,13 @@ onUnmounted(() => {
 .chat-messages-wrapper { flex: 1; overflow-y: auto; }
 /* Neutralize UChatMessages' --last-message-height spacer (we own scroll) */
 .chat-messages-inner { padding: 12px; --last-message-height: 0px !important; }
+/* Pin the scroll-to-bottom button to the visible bottom of the chat area */
+.chat-messages-inner :deep([data-slot="viewport"]) {
+  position: sticky;
+  bottom: 8px;
+  top: auto;
+  inset-inline: 0;
+}
 
 .chat-input-area { position: relative; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .chat-input-area.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 8px; }
