@@ -83,7 +83,7 @@ const sortedActivityCards = computed<ActivityCardRow[]>(() => {
         toolName = liveTool.toolName
         toolContext = liveTool.toolContext
       }
-    } else if (row.lastViewedAt && row.lastActivityAt > row.lastViewedAt) {
+    } else if (!row.lastViewedAt || row.lastActivityAt > row.lastViewedAt) {
       priority = 'unseen'
     }
 
@@ -164,9 +164,24 @@ function formatTokens(value: number): string {
   return String(value)
 }
 
+// Fill missing days so sparkline always shows 7 bars
+const todayDateStr = computed(() => new Date().toISOString().slice(0, 10))
+const fullSparkline = computed<DailyCost[]>(() => {
+  const result: DailyCost[] = []
+  const today = new Date()
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    const existing = costByDay.value.find(c => c.date === dateStr)
+    result.push({ date: dateStr, cost: existing?.cost ?? 0 })
+  }
+  return result
+})
+
 const sparklineMax = computed(() => {
-  if (costByDay.value.length === 0) return 1
-  return Math.max(...costByDay.value.map(d => d.cost), 0.01)
+  if (fullSparkline.value.length === 0) return 1
+  return Math.max(...fullSparkline.value.map(d => d.cost), 0.01)
 })
 
 // --- Block 4: System Health ---
@@ -405,10 +420,10 @@ onMounted(() => {
               <div class="sparkline-label">Last 7 days</div>
               <div class="sparkline-bars">
                 <div
-                  v-for="(day, i) in costByDay"
+                  v-for="day in fullSparkline"
                   :key="day.date"
                   class="sparkline-bar"
-                  :class="{ 'sparkline-bar--today': i === costByDay.length - 1 }"
+                  :class="{ 'sparkline-bar--today': day.date === todayDateStr }"
                   :style="{ height: Math.max(4, (day.cost / sparklineMax) * 100) + '%' }"
                   :title="`${day.date}: ${formatCost(day.cost)}`"
                 />

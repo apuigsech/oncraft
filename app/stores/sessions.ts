@@ -286,7 +286,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
 
     // HOME: Track current tool for Activity panel
-    if (msg.type === 'tool_use' || (msg.type as string) === 'tool_use') {
+    if (msg.type === 'tool_use') {
       const toolName = (msg.toolName as string) || 'Tool';
       const input = msg.toolInput as Record<string, unknown> | undefined;
       let context = '';

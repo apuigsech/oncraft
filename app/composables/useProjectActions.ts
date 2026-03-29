@@ -35,12 +35,7 @@ export function useProjectActions() {
     await projectsStore.closeProject(projectId);
     const nextOpen = projectsStore.openProjects[0];
     if (nextOpen) {
-      projectsStore.activeTab = nextOpen.id;
-      projectsStore.activeProjectId = nextOpen.id;
-      await Promise.all([
-        cardsStore.loadForProject(nextOpen.id),
-        flowStore.loadForProject(nextOpen.path),
-      ]);
+      await switchToProject(nextOpen.id);
     } else {
       projectsStore.activeTab = 'home';
     }
@@ -57,12 +52,7 @@ export function useProjectActions() {
     await projectsStore.removeProject(projectId);
     const nextOpen = projectsStore.openProjects[0];
     if (nextOpen) {
-      projectsStore.activeTab = nextOpen.id;
-      projectsStore.activeProjectId = nextOpen.id;
-      await Promise.all([
-        cardsStore.loadForProject(nextOpen.id),
-        flowStore.loadForProject(nextOpen.path),
-      ]);
+      await switchToProject(nextOpen.id);
     } else {
       projectsStore.activeTab = 'home';
     }
