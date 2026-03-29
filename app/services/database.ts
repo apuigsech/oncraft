@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { Project, Card } from '~/types';
+import type { Project, Card, DailyCost } from '~/types';
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -76,6 +76,10 @@ async function runMigrations(db: Database): Promise<void> {
   await migrateAddColumn("ALTER TABLE cards ADD COLUMN forked_from_id TEXT DEFAULT ''");
   // Migration: add tab_order for persistent project tab ordering
   await migrateAddColumn('ALTER TABLE projects ADD COLUMN tab_order INTEGER DEFAULT 0');
+  // Migration: add closed column for soft-close projects
+  await migrateAddColumn('ALTER TABLE projects ADD COLUMN closed INTEGER DEFAULT 0');
+  // Migration: add last_viewed_at for "unseen changes" tracking
+  await migrateAddColumn('ALTER TABLE cards ADD COLUMN last_viewed_at TEXT');
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -91,10 +95,12 @@ export async function getAllProjects(): Promise<Project[]> {
   const rows = await d.select<Array<{
     id: string; name: string; path: string;
     created_at: string; last_opened_at: string; tab_order: number;
-  }>>('SELECT * FROM projects ORDER BY tab_order ASC, last_opened_at DESC');
+    closed: number;
+  }>>('SELECT * FROM projects ORDER BY closed ASC, tab_order ASC, last_opened_at DESC');
   return rows.map(r => ({
     id: r.id, name: r.name, path: r.path,
     createdAt: r.created_at, lastOpenedAt: r.last_opened_at,
+    closed: r.closed === 1,
   }));
 }
 
@@ -125,6 +131,11 @@ export async function deleteProject(id: string): Promise<void> {
   await d.execute('DELETE FROM projects WHERE id = $1', [id]);
 }
 
+export async function setProjectClosed(id: string, closed: boolean): Promise<void> {
+  const d = await getDb();
+  await d.execute('UPDATE projects SET closed = $1 WHERE id = $2', [closed ? 1 : 0, id]);
+}
+
 export async function getCardsByProject(projectId: string): Promise<Card[]> {
   const d = await getDb();
   const rows = await d.select<Array<{
@@ -135,7 +146,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
     archived: number; use_worktree: number; worktree_name: string;
     linked_files: string; linked_issues: string;
     cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
-    forked_from_id: string;
+    forked_from_id: string; last_viewed_at: string | null;
   }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
   return rows.map(r => {
     const linkedFiles = safeJsonParse(r.linked_files, {});
@@ -156,6 +167,7 @@ export async function getCardsByProject(projectId: string): Promise<Card[]> {
       outputTokens: r.output_tokens || 0,
       durationMs: r.duration_ms || 0,
       forkedFromId: r.forked_from_id || undefined,
+      lastViewedAt: r.last_viewed_at || undefined,
     };
   });
 }
@@ -274,28 +286,41 @@ export async function getProjectCardSummaries(): Promise<ProjectCardSummary[]> {
 export interface ActiveCardRow {
   id: string;
   projectId: string;
+  projectName: string;
   name: string;
   columnName: string;
+  state: string;
   lastActivityAt: string;
+  lastViewedAt: string | null;
 }
 
 export async function getActiveCardsAllProjects(): Promise<ActiveCardRow[]> {
   const d = await getDb();
   const rows = await d.select<Array<{
-    id: string; project_id: string; name: string;
-    column_name: string; last_activity_at: string;
+    id: string; project_id: string; project_name: string; name: string;
+    column_name: string; state: string; last_activity_at: string;
+    last_viewed_at: string | null;
   }>>(`
-    SELECT id, project_id, name, column_name, last_activity_at
-    FROM cards
-    WHERE state = 'active' AND archived = 0
-    ORDER BY last_activity_at DESC
+    SELECT c.id, c.project_id, p.name AS project_name, c.name, c.column_name,
+           c.state, c.last_activity_at, c.last_viewed_at
+    FROM cards c
+    JOIN projects p ON c.project_id = p.id
+    WHERE c.archived = 0
+      AND (c.state = 'active' OR c.last_activity_at >= datetime('now', '-24 hours'))
+    ORDER BY
+      CASE WHEN c.state = 'active' THEN 0 ELSE 1 END ASC,
+      c.last_activity_at DESC
+    LIMIT 20
   `);
   return rows.map(r => ({
     id: r.id,
     projectId: r.project_id,
+    projectName: r.project_name,
     name: r.name,
     columnName: r.column_name,
+    state: r.state,
     lastActivityAt: r.last_activity_at,
+    lastViewedAt: r.last_viewed_at,
   }));
 }
 
@@ -333,6 +358,25 @@ export async function getUsageMetrics(): Promise<UsageMetrics> {
     outputTokens: r.output_tokens,
     sessionCount: r.session_count,
   };
+}
+
+export async function updateCardLastViewedAt(cardId: string): Promise<void> {
+  const d = await getDb();
+  await d.execute('UPDATE cards SET last_viewed_at = CURRENT_TIMESTAMP WHERE id = $1', [cardId]);
+}
+
+export async function getCostByDay(days: number): Promise<DailyCost[]> {
+  const d = await getDb();
+  const rows = await d.select<Array<{ date: string; cost: number }>>(`
+    SELECT date(last_activity_at) AS date,
+           COALESCE(SUM(cost_usd), 0) AS cost
+    FROM cards
+    WHERE last_activity_at >= datetime('now', '-' || $1 || ' days')
+      AND session_id != '' AND session_id IS NOT NULL
+    GROUP BY date(last_activity_at)
+    ORDER BY date ASC
+  `, [days]);
+  return rows.map(r => ({ date: r.date, cost: r.cost }));
 }
 
 export async function getUsageMetricsByProject(projectId: string): Promise<UsageMetrics> {
