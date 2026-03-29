@@ -41,6 +41,13 @@ export const useSessionsStore = defineStore('sessions', () => {
   // Track active sub-agents per card (task_started adds, result/notification removes)
   const activeSubAgents: Record<string, Set<string>> = reactive({});
 
+  // Per-query tracking: start time, token accumulation, sub-agent timestamps
+  const queryTracking: Record<string, {
+    startedAt: number;
+    outputTokens: number;
+    subAgentStartTimes: Record<string, number>;
+  }> = reactive({});
+
   // ME-3: Maximum messages kept in memory per card.
   // Older messages are discarded to prevent unbounded memory growth in long sessions.
   const MAX_MESSAGES_PER_CARD = 500;
@@ -107,6 +114,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     return activeSubAgents[cardId]?.size ?? 0;
   }
 
+  function getQueryTracking(cardId: string) {
+    return queryTracking[cardId] ?? null;
+  }
+
   function appendPart(cardId: string, part: ChatPart): void {
     if (!messages[cardId]) { messages[cardId] = []; }
 
@@ -114,8 +125,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (part.kind === 'task_started' && part.data.taskId) {
       if (!activeSubAgents[cardId]) activeSubAgents[cardId] = new Set();
       activeSubAgents[cardId].add(part.data.taskId as string);
+      if (queryTracking[cardId]) {
+        queryTracking[cardId].subAgentStartTimes[part.data.taskId as string] = Date.now();
+      }
     } else if (part.kind === 'task_notification' && part.data.taskId) {
       activeSubAgents[cardId]?.delete(part.data.taskId as string);
+      if (queryTracking[cardId]) {
+        delete queryTracking[cardId].subAgentStartTimes[part.data.taskId as string];
+      }
     }
 
     // QW-3: Streaming tokens are buffered and flushed via rAF
@@ -168,6 +185,10 @@ export const useSessionsStore = defineStore('sessions', () => {
         const usage = msg.usage as { inputTokens?: number; outputTokens?: number };
         m.inputTokens += usage.inputTokens || 0;
         m.outputTokens += usage.outputTokens || 0;
+        // Overwrite estimated tokens with real count from SDK
+        if (queryTracking[cardId] && usage.outputTokens) {
+          queryTracking[cardId].outputTokens = usage.outputTokens;
+        }
       }
       // Persist accumulated metrics to SQLite via cards store
       cardsStore.updateCardMetrics(cardId, {
@@ -225,7 +246,12 @@ export const useSessionsStore = defineStore('sessions', () => {
           data: { content: '', streaming: true },
         });
       }
-      _bufferStreamingToken(cardId, (msg.content as string) || '');
+      const token = (msg.content as string) || '';
+      _bufferStreamingToken(cardId, token);
+      // Estimate output tokens (~4 chars per token)
+      if (queryTracking[cardId] && token.length > 0) {
+        queryTracking[cardId].outputTokens += Math.max(1, Math.ceil(token.length / 4));
+      }
       return;
     }
 
@@ -310,6 +336,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       });
       return;
     }
+
+    // Initialize per-query tracking (after confirming no active query)
+    queryTracking[cardId] = { startedAt: Date.now(), outputTokens: 0, subAgentStartTimes: {} };
 
     const project = useProjectsStore().activeProject;
     if (!project) return;
@@ -527,6 +556,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     delete sessionConfigs[cardId];
     delete sessionMetrics[cardId];
     delete activeSubAgents[cardId];
+    delete queryTracking[cardId];
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
@@ -540,7 +570,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   return {
     messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, activeSubAgents,
-    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getActiveSubAgentCount,
+    getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getActiveSubAgentCount, getQueryTracking,
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, isLoadingHistory, purgeCard,
