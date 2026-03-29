@@ -21,7 +21,7 @@ const card = computed(() => {
   return cardsStore.cards.find(c => c.id === sessionsStore.activeChatCardId) || null;
 });
 
-const { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive } = useChatParts(
+const { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive, queryTracking } = useChatParts(
   computed(() => sessionsStore.activeChatCardId)
 );
 const uiMessages = useUIMessages(computed(() => inlineParts.value));
@@ -334,7 +334,7 @@ onUnmounted(() => {
       @paste="handlePaste"
     >
       <div class="progress-area">
-        <AgentProgressBar :parts="progressParts" :is-active="isActive" :card-id="sessionsStore.activeChatCardId!" />
+        <AgentProgressBar :parts="progressParts" :is-active="isActive" :card-id="sessionsStore.activeChatCardId!" :query-tracking="queryTracking" />
       </div>
 
       <!-- Action Bar Zone — shows one pending action at a time -->
