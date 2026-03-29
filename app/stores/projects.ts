@@ -15,17 +15,26 @@ export const useProjectsStore = defineStore('projects', () => {
     projects.value.find(p => p.id === activeProjectId.value) || null
   );
 
+  // Only open (non-closed) projects — used by TabBar
+  const openProjects = computed(() =>
+    projects.value.filter(p => !p.closed)
+  );
+
   async function load(): Promise<void> {
     projects.value = await db.getAllProjects();
     if (projects.value.length > 0 && !activeProjectId.value) {
-      activeProjectId.value = projects.value[0]!.id;
+      const firstOpen = projects.value.find(p => !p.closed);
+      activeProjectId.value = firstOpen?.id || null;
     }
   }
 
   async function addProject(name: string, path: string): Promise<Project> {
-    // Check in-memory first
+    // Check in-memory first — may be a closed project being reopened
     const existing = projects.value.find(p => p.path === path);
     if (existing) {
+      if (existing.closed) {
+        await reopenProject(existing.id);
+      }
       activeProjectId.value = existing.id;
       await db.updateProjectLastOpened(existing.id);
       return existing;
@@ -44,6 +53,9 @@ export const useProjectsStore = defineStore('projects', () => {
       await load(); // Reload from DB
       const reloaded = projects.value.find(p => p.path === path);
       if (reloaded) {
+        if (reloaded.closed) {
+          await reopenProject(reloaded.id);
+        }
         activeProjectId.value = reloaded.id;
         await db.updateProjectLastOpened(reloaded.id);
         return reloaded;
@@ -55,11 +67,35 @@ export const useProjectsStore = defineStore('projects', () => {
     return project;
   }
 
+  // Permanent delete — removes project and all its cards from DB
   async function removeProject(id: string): Promise<void> {
     await db.deleteProject(id);
     projects.value = projects.value.filter(p => p.id !== id);
     if (activeProjectId.value === id) {
-      activeProjectId.value = projects.value[0]?.id || null;
+      const nextOpen = projects.value.find(p => !p.closed);
+      activeProjectId.value = nextOpen?.id || null;
+    }
+  }
+
+  // Soft close — hides from TabBar but keeps in Recent Projects
+  async function closeProject(id: string): Promise<void> {
+    await db.setProjectClosed(id, true);
+    const project = projects.value.find(p => p.id === id);
+    if (project) project.closed = true;
+    if (activeProjectId.value === id) {
+      const nextOpen = projects.value.find(p => !p.closed);
+      activeProjectId.value = nextOpen?.id || null;
+    }
+  }
+
+  // Reopen a closed project
+  async function reopenProject(id: string): Promise<void> {
+    await db.setProjectClosed(id, false);
+    await db.updateProjectLastOpened(id);
+    const project = projects.value.find(p => p.id === id);
+    if (project) {
+      project.closed = false;
+      project.lastOpenedAt = new Date().toISOString();
     }
   }
 
@@ -76,5 +112,8 @@ export const useProjectsStore = defineStore('projects', () => {
     await db.updateProjectTabOrder(orderedIds);
   }
 
-  return { projects, activeProjectId, activeTab, isProjectTab, activeProject, load, addProject, removeProject, setActive, reorderProjects };
+  return {
+    projects, openProjects, activeProjectId, activeTab, isProjectTab, activeProject,
+    load, addProject, removeProject, closeProject, reopenProject, setActive, reorderProjects,
+  };
 });
