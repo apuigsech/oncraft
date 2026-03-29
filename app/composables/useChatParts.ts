@@ -57,6 +57,11 @@ export function useChatParts(cardId: Ref<string | null>) {
     return sessionsStore.isActive(cardId.value);
   });
 
+  const queryTracking = computed(() => {
+    if (!cardId.value) return null;
+    return sessionsStore.getQueryTracking(cardId.value);
+  });
+
   const chatStatus = computed(() => {
     if (!isActive.value) return 'ready' as const;
     const last = inlineParts.value[inlineParts.value.length - 1];
@@ -64,5 +69,5 @@ export function useChatParts(cardId: Ref<string | null>) {
     return 'submitted' as const;
   });
 
-  return { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive, allParts };
+  return { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isActive, queryTracking, allParts };
 }
