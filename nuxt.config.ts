@@ -19,6 +19,43 @@ export default defineNuxtConfig({
   icon: {
     clientBundle: {
       scan: true,
+      include: [
+        // Nuxt UI internal icons (resolved dynamically via appConfig.ui.icons.*)
+        'i-lucide-arrow-down',
+        'i-lucide-arrow-left',
+        'i-lucide-arrow-right',
+        'i-lucide-arrow-up',
+        'i-lucide-arrow-up-right',
+        'i-lucide-check',
+        'i-lucide-chevrons-left',
+        'i-lucide-chevrons-right',
+        'i-lucide-circle-alert',
+        'i-lucide-circle-check',
+        'i-lucide-circle-x',
+        'i-lucide-copy',
+        'i-lucide-copy-check',
+        'i-lucide-grip-vertical',
+        'i-lucide-hash',
+        'i-lucide-info',
+        'i-lucide-loader-circle',
+        'i-lucide-menu',
+        'i-lucide-minus',
+        'i-lucide-monitor',
+        'i-lucide-moon',
+        'i-lucide-panel-left-close',
+        'i-lucide-panel-left-open',
+        'i-lucide-rotate-ccw',
+        'i-lucide-sun',
+        'i-lucide-triangle-alert',
+        'i-lucide-upload',
+        // Preset YAML icons (loaded at runtime, not in scanned source)
+        'i-lucide-lightbulb',
+        'i-lucide-code',
+        'i-lucide-search-check',
+        // Brand logos (simple-icons collection)
+        'i-simple-icons-anthropic',
+        'i-simple-icons-github',
+      ],
     },
   },
   colorMode: {
