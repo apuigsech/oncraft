@@ -140,7 +140,7 @@ function handleFork() {
 async function saveEdit(name: string, description: string, linkedFiles: Record<string, string>, linkedIssues: CardLinkedIssue[]) {
   showEdit.value = false;
   await cardsStore.updateCardInfo(props.card.id, name, description);
-  await cardsStore.updateCardLinkedFiles(props.card.id, linkedFiles);
+  await cardsStore.setCardLinkedFiles(props.card.id, linkedFiles);
   await cardsStore.updateCardLinkedIssues(props.card.id, linkedIssues);
 }
 

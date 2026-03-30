@@ -136,40 +136,54 @@ export async function setProjectClosed(id: string, closed: boolean): Promise<voi
   await d.execute('UPDATE projects SET closed = $1 WHERE id = $2', [closed ? 1 : 0, id]);
 }
 
+// Row type shared by card queries
+type CardRow = {
+  id: string; project_id: string; name: string; description: string;
+  column_name: string; column_order: number; session_id: string;
+  console_session_id: string;
+  state: string; tags: string; created_at: string; last_activity_at: string;
+  archived: number; use_worktree: number; worktree_name: string;
+  linked_files: string; linked_issues: string;
+  cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
+  forked_from_id: string; last_viewed_at: string | null;
+};
+
+function mapRowToCard(r: CardRow): Card {
+  const linkedFiles = safeJsonParse(r.linked_files, {});
+  const linkedIssues = safeJsonParse(r.linked_issues, []);
+  return {
+    id: r.id, projectId: r.project_id, name: r.name, description: r.description,
+    columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
+    consoleSessionId: r.console_session_id || undefined,
+    state: r.state as Card['state'], tags: safeJsonParse(r.tags, []),
+    createdAt: r.created_at, lastActivityAt: r.last_activity_at,
+    archived: r.archived === 1,
+    useWorktree: r.use_worktree === 1,
+    worktreeName: r.worktree_name || undefined,
+    linkedFiles: Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined,
+    linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
+    costUsd: r.cost_usd || 0,
+    inputTokens: r.input_tokens || 0,
+    outputTokens: r.output_tokens || 0,
+    durationMs: r.duration_ms || 0,
+    forkedFromId: r.forked_from_id || undefined,
+    lastViewedAt: r.last_viewed_at || undefined,
+  };
+}
+
+export async function getCardById(id: string): Promise<Card | null> {
+  const d = await getDb();
+  const rows = await d.select<CardRow[]>('SELECT * FROM cards WHERE id = $1', [id]);
+  if (rows.length === 0) return null;
+  return mapRowToCard(rows[0]!);
+}
+
 export async function getCardsByProject(projectId: string): Promise<Card[]> {
   const d = await getDb();
-  const rows = await d.select<Array<{
-    id: string; project_id: string; name: string; description: string;
-    column_name: string; column_order: number; session_id: string;
-    console_session_id: string;
-    state: string; tags: string; created_at: string; last_activity_at: string;
-    archived: number; use_worktree: number; worktree_name: string;
-    linked_files: string; linked_issues: string;
-    cost_usd: number; input_tokens: number; output_tokens: number; duration_ms: number;
-    forked_from_id: string; last_viewed_at: string | null;
-  }>>('SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId]);
-  return rows.map(r => {
-    const linkedFiles = safeJsonParse(r.linked_files, {});
-    const linkedIssues = safeJsonParse(r.linked_issues, []);
-    return {
-      id: r.id, projectId: r.project_id, name: r.name, description: r.description,
-      columnName: r.column_name, columnOrder: r.column_order, sessionId: r.session_id,
-      consoleSessionId: r.console_session_id || undefined,
-      state: r.state as Card['state'], tags: safeJsonParse(r.tags, []),
-      createdAt: r.created_at, lastActivityAt: r.last_activity_at,
-      archived: r.archived === 1,
-      useWorktree: r.use_worktree === 1,
-      worktreeName: r.worktree_name || undefined,
-      linkedFiles: Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined,
-      linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
-      costUsd: r.cost_usd || 0,
-      inputTokens: r.input_tokens || 0,
-      outputTokens: r.output_tokens || 0,
-      durationMs: r.duration_ms || 0,
-      forkedFromId: r.forked_from_id || undefined,
-      lastViewedAt: r.last_viewed_at || undefined,
-    };
-  });
+  const rows = await d.select<CardRow[]>(
+    'SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId],
+  );
+  return rows.map(mapRowToCard);
 }
 
 export async function insertCard(card: Card): Promise<void> {
