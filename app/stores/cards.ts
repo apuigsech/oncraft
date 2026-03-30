@@ -179,12 +179,18 @@ export const useCardsStore = defineStore('cards', () => {
     await db.updateCard(card);
   }
 
-  async function updateCardLinkedFiles(cardId: string, linkedFiles: Record<string, string>): Promise<void> {
+  async function setCardLinkedFiles(cardId: string, linkedFiles: Record<string, string>): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
-    // Merge incoming entries with existing (allows partial updates from MCP)
+    card.linkedFiles = Object.keys(linkedFiles).length > 0 ? linkedFiles : undefined;
+    card.lastActivityAt = new Date().toISOString();
+    await db.updateCard(card);
+  }
+
+  async function mergeCardLinkedFiles(cardId: string, linkedFiles: Record<string, string>): Promise<void> {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
     const merged = { ...(card.linkedFiles || {}), ...linkedFiles };
-    // Remove entries explicitly set to empty string (allows deletion)
     const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== ''));
     card.linkedFiles = Object.keys(cleaned).length > 0 ? cleaned : undefined;
     card.lastActivityAt = new Date().toISOString();
@@ -227,7 +233,7 @@ export const useCardsStore = defineStore('cards', () => {
     cards, loadedProjectId, isDragging, cardsByColumn, loadForProject,
     addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
     updateCardMetrics, updateCardInfo,
-    updateCardLinkedFiles, updateCardLinkedIssues,
+    setCardLinkedFiles, mergeCardLinkedFiles, updateCardLinkedIssues,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,
   };
 });
