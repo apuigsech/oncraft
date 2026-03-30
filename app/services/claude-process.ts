@@ -102,10 +102,6 @@ const metaCallbacks = new Map<string, MetaCallback>();
 // Uses Vue reactive() so that isQueryActive() triggers reactivity in computed properties.
 const activeQueries = reactive(new Set<string>());
 
-// Stable card snapshot registry: survives Pinia store reloads (project switch).
-// When a sidecar spawns, we store a snapshot of the card. MCP bridge uses this
-// as fallback when cardsStore.cards.find() fails (e.g. after project switch).
-const cardSnapshots = new Map<string, Record<string, unknown>>();
 
 export function onMessage(cardId: string, callback: PartCallback): void {
   messageCallbacks.set(cardId, callback);
@@ -251,7 +247,6 @@ export async function spawnSession(
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
     activeQueries.delete(cardId);
-    cardSnapshots.delete(cardId);
     if (import.meta.dev) console.log('[OnCraft] sidecar closed, code:', payload.code);
   });
 
@@ -264,7 +259,6 @@ export async function spawnSession(
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
     activeQueries.delete(cardId);
-    cardSnapshots.delete(cardId);
   });
 
   const proc: SidecarProcess = {
@@ -277,13 +271,6 @@ export async function spawnSession(
   };
 
   processes.set(cardId, proc);
-
-  // Snapshot the card for MCP bridge resilience (survives store reloads)
-  const cardsStore = useCardsStore();
-  const cardForSnapshot = cardsStore.cards.find(c => c.id === cardId);
-  if (cardForSnapshot) {
-    cardSnapshots.set(cardId, { ...cardForSnapshot });
-  }
 
   // Mark query as active and send the start command
   activeQueries.add(cardId);
@@ -351,7 +338,6 @@ export async function killProcess(cardId: string): Promise<void> {
   messageCallbacks.delete(cardId);
   metaCallbacks.delete(cardId);
   activeQueries.delete(cardId);
-  cardSnapshots.delete(cardId);
 }
 
 export function isProcessActive(cardId: string): boolean {
@@ -391,80 +377,98 @@ interface SessionRequest {
   [key: string]: unknown;
 }
 
-// Helper: find card in store or fall back to snapshot for MCP bridge resilience.
-// Snapshots survive store reloads (project switches) so MCP tools keep working.
-function findCardForMcp(cardId: string): Record<string, unknown> | null {
+// Sync only the fields changed by this MCP request to the reactive store object.
+// We deliberately avoid syncing ALL fields from the DB card because hot-path
+// operations (updateCardState, updateCardMetrics) use debounced writes — syncing
+// stale DB values would clobber in-flight updates not yet flushed to SQLite.
+// columnName/columnOrder are excluded because moveCardToColumn updates the store directly.
+function syncCardToStore(cardId: string, dbCard: import('~/types').Card, changedFields: Set<string>): void {
   const cardsStore = useCardsStore();
   const live = cardsStore.cards.find(c => c.id === cardId);
-  if (live) {
-    // Keep snapshot fresh with latest store data
-    cardSnapshots.set(cardId, { ...live });
-    return live as unknown as Record<string, unknown>;
+  if (!live) return;
+  for (const field of changedFields) {
+    (live as any)[field] = (dbCard as any)[field];
   }
-  // Fallback to snapshot if store was reloaded
-  const snapshot = cardSnapshots.get(cardId);
-  if (snapshot) {
-    if (import.meta.dev) console.warn(`[OnCraft] MCP bridge: card ${cardId} not in store, using snapshot`);
-    return snapshot;
-  }
-  return null;
+  live.lastActivityAt = dbCard.lastActivityAt;
 }
 
 async function handleSessionRequest(cardId: string, req: SessionRequest): Promise<void> {
   const proc = processes.get(cardId);
   if (!proc) return;
 
-  const cardsStore    = useCardsStore();
   const projectsStore = useProjectsStore();
 
   let responseData: Record<string, unknown> = {};
 
   try {
     if (req.action === 'get_current_card') {
-      const card = findCardForMcp(cardId);
+      const card = await db.getCardById(cardId);
       if (card) {
         responseData = { card: { ...card } };
       } else {
-        responseData = { card: null, error: `Card ${cardId} not found (store size: ${cardsStore.cards.length}, has process: ${processes.has(cardId)})` };
+        responseData = { card: null, error: `Card ${cardId} not found in database` };
       }
 
     } else if (req.action === 'update_current_card') {
-      const card = cardsStore.cards.find(c => c.id === cardId);
+      const card = await db.getCardById(cardId);
       if (card) {
-        // Handle column move via centralized method (validates requiredFiles + fires trigger)
+        const changedFields = new Set<string>();
+
+        // Column move requires the active project (for flow validation + trigger prompts)
         if (req.columnName !== undefined && req.columnName !== card.columnName) {
-          const result = await cardsStore.moveCardToColumn(card.id, req.columnName as string);
+          const cardsStore = useCardsStore();
+          const liveCard = cardsStore.cards.find(c => c.id === cardId);
+          if (!liveCard) {
+            responseData = { success: false, error: 'Column move requires the card\'s project to be active in the UI' };
+            await proc.write(JSON.stringify({ cmd: 'session_response', requestId: req.requestId, data: responseData }));
+            return;
+          }
+          const result = await cardsStore.moveCardToColumn(cardId, req.columnName as string);
           if (!result.success) {
             responseData = { success: false, error: 'Missing required files', missingFiles: result.missingFiles };
             await proc.write(JSON.stringify({ cmd: 'session_response', requestId: req.requestId, data: responseData }));
             return;
           }
+          // Re-read card after move (moveCardToColumn persists to DB)
+          const updated = await db.getCardById(cardId);
+          if (updated) Object.assign(card, updated);
         }
 
-        // Apply remaining non-column fields via store actions for proper reactivity
+        // LinkedFiles: merge semantics (spread + filter empty strings)
         if (req.linkedFiles !== undefined) {
-          await cardsStore.updateCardLinkedFiles(card.id, req.linkedFiles as Record<string, string>);
-        }
-        if (req.linkedIssues !== undefined) {
-          await cardsStore.updateCardLinkedIssues(card.id, req.linkedIssues as import('~/types').CardLinkedIssue[]);
+          const incoming = req.linkedFiles as Record<string, string>;
+          const merged = { ...(card.linkedFiles || {}), ...incoming };
+          const cleaned = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== ''));
+          card.linkedFiles = Object.keys(cleaned).length > 0 ? cleaned : undefined;
+          changedFields.add('linkedFiles');
         }
 
-        // Apply simple scalar fields directly on the reactive proxy
+        // LinkedIssues: replace
+        if (req.linkedIssues !== undefined) {
+          const issues = req.linkedIssues as import('~/types').CardLinkedIssue[];
+          card.linkedIssues = issues.length > 0 ? issues : undefined;
+          changedFields.add('linkedIssues');
+        }
+
+        // Simple scalar fields
         const simpleFields = ['name', 'description', 'state', 'tags', 'archived'] as const;
-        let hasSimpleChanges = false;
         for (const field of simpleFields) {
           if (req[field] !== undefined) {
             (card as any)[field] = req[field];
-            hasSimpleChanges = true;
+            changedFields.add(field);
           }
         }
-        if (hasSimpleChanges) {
-          card.lastActivityAt = new Date().toISOString();
-          await db.updateCard(card);
-        }
+
+        // Persist to DB
+        card.lastActivityAt = new Date().toISOString();
+        await db.updateCard(card);
+
+        // Sync only changed fields to reactive store (avoids clobbering debounced writes)
+        syncCardToStore(cardId, card, changedFields);
+
         responseData = { success: true, card: { ...card } };
       } else {
-        responseData = { success: false, error: `Card ${cardId} not found for update (store size: ${cardsStore.cards.length}, has process: ${processes.has(cardId)})` };
+        responseData = { success: false, error: `Card ${cardId} not found in database` };
       }
 
     } else if (req.action === 'get_project') {
