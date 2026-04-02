@@ -131,6 +131,13 @@ export const useCardsStore = defineStore('cards', () => {
     _debouncedDbWrite(card);
   }
 
+  function updateCardWorktreeName(cardId: string, worktreeName: string): void {
+    const card = cards.value.find(c => c.id === cardId);
+    if (!card) return;
+    card.worktreeName = worktreeName;
+    _debouncedDbWrite(card);
+  }
+
   async function updateCardConsoleSessionId(cardId: string, consoleSessionId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
@@ -231,7 +238,7 @@ export const useCardsStore = defineStore('cards', () => {
 
   return {
     cards, loadedProjectId, isDragging, cardsByColumn, loadForProject,
-    addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardConsoleSessionId,
+    addCard, moveCardToColumn, updateCardState, updateCardSessionId, updateCardWorktreeName, updateCardConsoleSessionId,
     updateCardMetrics, updateCardInfo,
     setCardLinkedFiles, mergeCardLinkedFiles, updateCardLinkedIssues,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,

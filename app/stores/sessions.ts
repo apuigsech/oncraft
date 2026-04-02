@@ -225,6 +225,14 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (Object.keys(partial).length > 0) {
         updateSessionConfig(cardId, partial);
       }
+      // Sync card worktreeName with actual directory created by CLI
+      if (msg.worktreePath) {
+        const actualName = (msg.worktreePath as string).split('/').pop() || '';
+        const card = cardsStore.cards.find(c => c.id === cardId);
+        if (card && card.worktreeName && card.worktreeName !== actualName && actualName) {
+          cardsStore.updateCardWorktreeName(cardId, actualName);
+        }
+      }
       return;
     }
 
@@ -412,9 +420,9 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     const config = getSessionConfig(cardId);
 
-    // Ensure worktreeName from card is reflected in session config (capped at 64 chars for CLI)
+    // Ensure worktreeName from card is reflected in session config
     if (card?.useWorktree && card.worktreeName && !config.worktreeName) {
-      config.worktreeName = card.worktreeName.slice(0, 64);
+      config.worktreeName = card.worktreeName;
     }
 
     // Resolve Flow config for this card's current state (Flow + FlowState layers)
