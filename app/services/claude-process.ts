@@ -193,6 +193,12 @@ export async function spawnSession(
           continue;
         }
 
+        // 3c. Intercept session_died — SDK session crashed, need to clean up query state
+        if (sidecarMsg.type === 'system' && sidecarMsg.subtype === 'session_died') {
+          dispatchMeta(cardId, { ...sidecarMsg, type: 'session_died' });
+          continue;
+        }
+
         // 4. Process through registry
         const part = registryProcess(sidecarMsg);
 
@@ -230,6 +236,8 @@ export async function spawnSession(
           dispatchMeta(cardId, raw);
         } else if (raw.type === 'session_state_changed') {
           dispatchMeta(cardId, raw);
+        } else if (raw.type === 'system' && raw.subtype === 'session_died') {
+          dispatchMeta(cardId, { ...raw, type: 'session_died' });
         } else {
           const part = registryProcess(raw);
           if (!part && raw.type === 'tool_result') {
@@ -243,6 +251,11 @@ export async function spawnSession(
       }
       lineBuffer = '';
     }
+    // If the query was still active when the sidecar closed, dispatch session_died
+    // so the sessions store can clean up card state (mark idle/error).
+    if (activeQueries.has(cardId)) {
+      dispatchMeta(cardId, { type: 'session_died', content: `Sidecar exited with code ${payload.code}` } as SidecarMessage);
+    }
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);
@@ -255,6 +268,10 @@ export async function spawnSession(
     const errorMsg: SidecarMessage = { type: 'error', message: `Sidecar error: ${err}` };
     const part = registryProcess(errorMsg);
     if (part) dispatchMessage(cardId, part);
+    // Dispatch session_died so the sessions store can clean up card state
+    if (activeQueries.has(cardId)) {
+      dispatchMeta(cardId, { type: 'session_died', content: `Sidecar error: ${err}` } as SidecarMessage);
+    }
     processes.delete(cardId);
     messageCallbacks.delete(cardId);
     metaCallbacks.delete(cardId);

@@ -69,7 +69,7 @@ export const useCardsStore = defineStore('cards', () => {
   ): Promise<Card> {
     const columnCards = cards.value.filter(c => c.columnName === columnName);
     const worktreeName = useWorktree
-      ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
       : undefined;
     const card: Card = {
       id: uuidv4(), projectId, name, description, columnName,

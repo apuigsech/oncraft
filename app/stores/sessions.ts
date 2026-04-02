@@ -228,6 +228,16 @@ export const useSessionsStore = defineStore('sessions', () => {
       return;
     }
 
+    // session_died: SDK session crashed (e.g. CLI exited with non-zero code)
+    // Clean up query state so the card isn't stuck in 'active' forever.
+    if (msg.type === 'session_died') {
+      markQueryComplete(cardId);
+      delete activeSubAgents[cardId];
+      activeToolByCard.delete(cardId);
+      cardsStore.updateCardState(cardId, 'error');
+      return;
+    }
+
     // session_state_changed: authoritative state from SDK
     if (msg.type === 'session_state_changed') {
       const state = msg.state as string;
@@ -402,9 +412,9 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     const config = getSessionConfig(cardId);
 
-    // Ensure worktreeName from card is reflected in session config
+    // Ensure worktreeName from card is reflected in session config (capped at 64 chars for CLI)
     if (card?.useWorktree && card.worktreeName && !config.worktreeName) {
-      config.worktreeName = card.worktreeName;
+      config.worktreeName = card.worktreeName.slice(0, 64);
     }
 
     // Resolve Flow config for this card's current state (Flow + FlowState layers)

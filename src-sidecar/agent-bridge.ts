@@ -689,6 +689,9 @@ rl.on("line", async (line: string) => {
       executable: "node",
       env: claudeEnv,
       cwd: projectPath,
+      stderr: (data: string) => {
+        process.stderr.write(`[agent-bridge] CLI stderr: ${data}`);
+      },
       resume: cmd.sessionId ? (cmd.sessionId as string) : undefined,
       forkSession: cmd.forkSession ? true : undefined,
       abortController: abort,
