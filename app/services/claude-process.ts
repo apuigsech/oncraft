@@ -55,7 +55,7 @@ function buildStartCmd(
     ...(config?.model          ? { model:          config.model          } : {}),
     ...(config?.effort         ? { effort:         config.effort         } : {}),
     ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
-    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName   } : {}),
+    ...(config?.worktreeName   ? { worktreeName:   config.worktreeName.slice(0, 64) } : {}),
     ...(imagePaths?.length     ? { imagePaths }                            : {}),
     ...(flowPayload?.systemPromptAppend                              ? { systemPromptAppend: flowPayload.systemPromptAppend } : {}),
     ...(flowPayload?.allowedTools?.length                            ? { allowedTools:       flowPayload.allowedTools       } : {}),
