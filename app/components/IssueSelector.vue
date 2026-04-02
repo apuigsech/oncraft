@@ -16,8 +16,6 @@ const issues = ref<GitHubIssue[]>([]);
 const loading = ref(false);
 const error = ref('');
 const open = ref(false);
-const triggerEl = ref<{ $el: HTMLElement } | null>(null);
-const dropdownStyle = ref<Record<string, string>>({});
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,24 +68,21 @@ function removeIssue(number: number) {
 
 function toggleDropdown() {
   open.value = !open.value;
-  if (open.value) {
-    updateDropdownPosition();
-    if (issues.value.length === 0) fetchIssues();
+  if (open.value && issues.value.length === 0) {
+    fetchIssues();
   }
 }
 
-function updateDropdownPosition() {
-  if (!triggerEl.value) return;
-  const el = triggerEl.value.$el as HTMLElement | undefined;
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  dropdownStyle.value = {
-    position: 'fixed',
-    top: `${rect.bottom + 4}px`,
-    left: `${rect.left}px`,
-    width: `${rect.width}px`,
-  };
+// Close on click outside
+function onClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.issue-selector')) {
+    open.value = false;
+  }
 }
+
+onMounted(() => document.addEventListener('pointerdown', onClickOutside));
+onUnmounted(() => document.removeEventListener('pointerdown', onClickOutside));
 
 const filteredIssues = computed(() => {
   if (!search.value) return issues.value;
@@ -110,56 +105,52 @@ const filteredIssues = computed(() => {
     </div>
 
     <!-- Dropdown trigger -->
-    <UButton ref="triggerEl" variant="outline" color="neutral" size="sm" block class="selector-trigger" @click="toggleDropdown">
+    <button type="button" class="selector-trigger" @click="toggleDropdown">
       <span class="trigger-text">{{ single ? 'Select an issue...' : 'Add issue...' }}</span>
-      <template #trailing>
-        <UIcon :name="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" />
-      </template>
-    </UButton>
+      <UIcon :name="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="trigger-icon" />
+    </button>
 
-    <!-- Dropdown (teleported to body to avoid clipping) -->
-    <Teleport to="body">
-      <div v-if="open" class="selector-dropdown" :style="dropdownStyle">
-        <UInput
-          v-model="search"
-          placeholder="Search issues..."
-          size="sm"
-          autofocus
-          class="selector-search"
-          @input="onSearchInput"
-          @keydown.escape="open = false"
-        />
+    <!-- Inline dropdown (positioned relative to .issue-selector) -->
+    <div v-if="open" class="selector-dropdown">
+      <UInput
+        v-model="search"
+        placeholder="Search issues..."
+        size="sm"
+        autofocus
+        class="selector-search"
+        @input="onSearchInput"
+        @keydown.escape="open = false"
+      />
 
-        <div class="selector-list">
-          <div v-if="loading" class="selector-status">Loading...</div>
-          <div v-else-if="error" class="selector-error">
-            {{ error }}
-            <UButton variant="link" color="primary" size="xs" @click="fetchIssues()">Retry</UButton>
-          </div>
-          <div v-else-if="filteredIssues.length === 0" class="selector-status">No issues found</div>
-          <template v-else>
-            <UButton
-              v-for="issue in filteredIssues"
-              :key="issue.number"
-              variant="ghost"
-              color="neutral"
-              block
-              size="sm"
-              class="selector-item"
-              :class="{ 'is-linked': isLinked(issue) }"
-              @click="selectIssue(issue)"
-            >
-              <span class="item-number">#{{ issue.number }}</span>
-              <span class="item-title">{{ issue.title }}</span>
-              <div v-if="issue.labels.length > 0" class="item-labels">
-                <span v-for="label in issue.labels.slice(0, 3)" :key="label" class="item-label">{{ label }}</span>
-              </div>
-              <span v-if="!single && isLinked(issue)" class="item-check">&check;</span>
-            </UButton>
-          </template>
+      <div class="selector-list">
+        <div v-if="loading" class="selector-status">Loading...</div>
+        <div v-else-if="error" class="selector-error">
+          {{ error }}
+          <UButton variant="link" color="primary" size="xs" @click="fetchIssues()">Retry</UButton>
         </div>
+        <div v-else-if="filteredIssues.length === 0" class="selector-status">No issues found</div>
+        <template v-else>
+          <UButton
+            v-for="issue in filteredIssues"
+            :key="issue.number"
+            variant="ghost"
+            color="neutral"
+            block
+            size="sm"
+            class="selector-item"
+            :class="{ 'is-linked': isLinked(issue) }"
+            @click="selectIssue(issue)"
+          >
+            <span class="item-number">#{{ issue.number }}</span>
+            <span class="item-title">{{ issue.title }}</span>
+            <div v-if="issue.labels.length > 0" class="item-labels">
+              <span v-for="label in issue.labels.slice(0, 3)" :key="label" class="item-label">{{ label }}</span>
+            </div>
+            <span v-if="!single && isLinked(issue)" class="item-check">&check;</span>
+          </UButton>
+        </template>
       </div>
-    </Teleport>
+    </div>
   </div>
 </template>
 
@@ -172,13 +163,39 @@ const filteredIssues = computed(() => {
 .issue-chip-title { color: var(--text-secondary); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .issue-chip-remove { padding: 0 !important; min-height: auto !important; height: auto !important; }
 
-.selector-trigger { justify-content: space-between !important; }
+.selector-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.selector-trigger:hover { border-color: var(--accent); }
 .trigger-text { font-size: 12px; color: var(--text-muted); }
-</style>
+.trigger-icon { font-size: 14px; color: var(--text-muted); flex-shrink: 0; }
 
-<style>
-/* Unscoped because the dropdown is teleported to body */
-.selector-dropdown { z-index: 200; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); max-height: 280px; display: flex; flex-direction: column; }
+.selector-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  z-index: 50;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+}
 .selector-search { border-radius: 6px 6px 0 0; }
 .selector-list { overflow-y: auto; flex: 1; }
 .selector-item { justify-content: flex-start !important; gap: 6px; text-align: left; border-radius: 0 !important; }
