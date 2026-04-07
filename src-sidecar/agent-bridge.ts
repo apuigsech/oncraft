@@ -206,6 +206,7 @@ function translateMessage(
   if (msg.type === "assistant") {
     const content = msg.message?.content;
     if (!content || !Array.isArray(content)) return null;
+    const parentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id ?? null;
 
     const results: Record<string, unknown>[] = [];
     for (const block of content) {
@@ -213,6 +214,7 @@ function translateMessage(
         results.push({
           type: "assistant",
           content: block.text,
+          parentToolUseId,
           usage: msg.message?.usage
             ? {
                 inputTokens: msg.message.usage.input_tokens,
@@ -226,12 +228,14 @@ function translateMessage(
           toolName: block.name,
           toolInput: block.input,
           toolUseId: block.id,
+          parentToolUseId,
         });
       } else if (block.type === "thinking") {
         results.push({
           type: "assistant",
           content: (block as { thinking?: string }).thinking || "",
           subtype: "thinking",
+          parentToolUseId,
         });
       }
     }
@@ -242,10 +246,12 @@ function translateMessage(
   if (msg.type === "user") {
     const content = msg.message?.content;
     if (!content) return null;
+    const isSynthetic = (msg as Record<string, unknown>).isSynthetic === true;
+    const parentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id ?? null;
 
     // Content can be a plain string
     if (typeof content === "string") {
-      return { type: "user", content };
+      return { type: "user", content, isSynthetic, parentToolUseId };
     }
 
     if (!Array.isArray(content)) return null;
@@ -254,7 +260,7 @@ function translateMessage(
     const images: { data: string; mediaType: string; name: string }[] = [];
     for (const block of content as Record<string, unknown>[]) {
       if (block.type === "text") {
-        results.push({ type: "user", content: block.text });
+        results.push({ type: "user", content: block.text, isSynthetic, parentToolUseId });
       } else if (block.type === "image") {
         const source = block.source as { type: string; media_type: string; data: string } | undefined;
         if (source?.type === "base64" && source.data) {
@@ -272,6 +278,7 @@ function translateMessage(
             typeof block.content === "string"
               ? block.content
               : JSON.stringify(block.content),
+          parentToolUseId,
         });
       }
     }
@@ -433,6 +440,7 @@ function translateMessage(
 
   // Streaming partial messages (token-by-token text and thinking)
   if (msg.type === "stream_event") {
+    const parentToolUseId = (msg as Record<string, unknown>).parent_tool_use_id ?? null;
     const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
     if (event?.type === "content_block_delta") {
       const delta = event.delta as Record<string, unknown> | undefined;
@@ -441,6 +449,7 @@ function translateMessage(
           type: "assistant",
           subtype: "streaming",
           content: delta.text,
+          parentToolUseId,
         };
       }
       if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
@@ -448,6 +457,7 @@ function translateMessage(
           type: "assistant",
           subtype: "thinking_streaming",
           content: delta.thinking,
+          parentToolUseId,
         };
       }
     }
@@ -463,6 +473,7 @@ function translateMessage(
       toolName: m.tool_name,
       elapsedSeconds: m.elapsed_time_seconds,
       taskId: m.task_id,
+      parentToolUseId: m.parent_tool_use_id ?? null,
     };
   }
 

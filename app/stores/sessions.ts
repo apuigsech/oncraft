@@ -269,7 +269,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           kind: 'assistant',
           placement: 'inline',
           timestamp: Date.now(),
-          data: { content: '', streaming: true },
+          data: { content: '', streaming: true, parentToolUseId: msg.parentToolUseId ?? null },
         });
       }
       const token = (msg.content as string) || '';
@@ -293,7 +293,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           kind: 'assistant',
           placement: 'inline',
           timestamp: Date.now(),
-          data: { content: '', thinking: true, thinkingStreaming: true },
+          data: { content: '', thinking: true, thinkingStreaming: true, parentToolUseId: msg.parentToolUseId ?? null },
         });
       }
       // Buffer into thinking part directly (reuse same rAF approach)
