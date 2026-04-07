@@ -84,18 +84,8 @@ function isChildSynthetic(part: ChatPart): boolean {
   return part.kind === 'user' && (part.data.isSynthetic as boolean) === true;
 }
 
-function childToolSummary(part: ChatPart): string {
-  const input = (part.data.toolInput as Record<string, unknown>) || {};
-  const name = (part.data.toolName as string) || '';
-  switch (name) {
-    case 'Bash': return `$ ${(input.command as string || '').substring(0, 60)}`;
-    case 'Read': return `${input.file_path || ''}`;
-    case 'Write': return `${input.file_path || ''}`;
-    case 'Edit': return `${input.file_path || ''}`;
-    case 'Glob': return `${input.pattern || ''}`;
-    case 'Grep': return `"${input.pattern || ''}" in ${input.path || '.'}`;
-    default: return name;
-  }
+function isChildToolUse(part: ChatPart): boolean {
+  return part.kind === 'tool_use' || part.kind.startsWith('tool_use:');
 }
 
 onMounted(() => {
@@ -134,12 +124,8 @@ onUnmounted(() => {
             &#8627; Subagent prompt
           </div>
 
-          <div v-else-if="child.kind === 'tool_use'" class="sub-tool">
-            <span class="sub-tool-icon">&#9889;</span>
-            <span class="sub-tool-name">{{ child.data.toolName }}</span>
-            <span class="sub-tool-summary">{{ childToolSummary(child) }}</span>
-            <span v-if="child.data.toolResult" class="sub-tool-result">&#10003;</span>
-            <span v-else class="sub-tool-pending">&#8987;</span>
+          <div v-else-if="isChildToolUse(child)" class="sub-tool-wrapper">
+            <ToolCallBlock :part="child" :card-id="cardId" />
           </div>
 
           <div v-else-if="child.kind === 'assistant' && !child.data.thinking" class="sub-assistant">
@@ -231,22 +217,9 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
-.sub-tool {
-  background: var(--bg-secondary);
-  border: 1px solid var(--bg-tertiary);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.sub-tool-wrapper {
+  opacity: 0.75;
 }
-.sub-tool-icon { color: var(--success); font-size: 10px; }
-.sub-tool-name { color: var(--text-secondary); font-weight: 500; }
-.sub-tool-summary { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.sub-tool-result { color: var(--success); font-size: 10px; margin-left: auto; }
-.sub-tool-pending { color: var(--warning); font-size: 10px; margin-left: auto; }
 
 .sub-assistant {
   padding: 4px 10px;
