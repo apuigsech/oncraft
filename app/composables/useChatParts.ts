@@ -34,11 +34,16 @@ export function useChatParts(cardId: Ref<string | null>) {
   });
 
   // Parts for the inline zone: normal inline parts + resolved action-bar parts in chronological order
+  // Exclude parts that belong to a subagent (parentToolUseId is set)
   const inlineParts = computed(() => {
-    return allParts.value.filter(p =>
-      (p.placement === 'inline' && isVisible(p)) ||
-      (p.placement === 'action-bar' && p.resolved),
-    );
+    return allParts.value.filter(p => {
+      const belongsToSubagent = p.data.parentToolUseId != null && p.data.parentToolUseId !== '';
+      if (belongsToSubagent) return false;
+      return (
+        (p.placement === 'inline' && isVisible(p)) ||
+        (p.placement === 'action-bar' && p.resolved)
+      );
+    });
   });
 
   const actionBarParts = computed(() => {
@@ -49,7 +54,11 @@ export function useChatParts(cardId: Ref<string | null>) {
   });
 
   const progressParts = computed(() => {
-    return allParts.value.filter(p => p.placement === 'progress');
+    return allParts.value.filter(p => {
+      const belongsToSubagent = p.data.parentToolUseId != null && p.data.parentToolUseId !== '';
+      if (belongsToSubagent) return false;
+      return p.placement === 'progress';
+    });
   });
 
   const isActive = computed(() => {
