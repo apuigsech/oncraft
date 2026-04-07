@@ -53,10 +53,18 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
     let currentAssistant: UIMessage | null = null;
 
     for (const part of inlineParts.value) {
-      const isAssistantRole = part.kind === 'assistant' || part.kind === 'tool_use';
+      const isAssistantRole = (part.kind === 'assistant' || part.kind === 'tool_use') && part.kind !== 'tool_use:Agent';
 
       if (part.kind === 'user') {
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
+
+        // Synthetic user messages render as SyntheticBadge (via chat-part)
+        if (part.data.isSynthetic) {
+          const syntheticPart = { ...part, kind: 'user:synthetic' };
+          result.push({ id: part.id, role: 'assistant', parts: [{ type: 'chat-part', chatPart: syntheticPart }] });
+          continue;
+        }
+
         const userParts: UIMessagePart[] = [];
         const images = part.data.images as Array<{ data: string; mediaType: string; name: string }> | undefined;
         if (images?.length) {
@@ -100,6 +108,10 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
             loading: !hasResult,
           });
         }
+      } else if (part.kind === 'tool_use:Agent') {
+        // SubagentBlock renders as its own component via registry
+        if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
+        result.push({ id: part.id, role: 'assistant', parts: [{ type: 'chat-part', chatPart: part }] });
       } else if (part.placement === 'action-bar' && part.resolved && part.kind === 'tool_confirmation') {
         // Resolved tool_confirmation (normal tools only): render as tool block (same style as tool_use)
         // so that post-decision tool widgets look identical to normal tool calls.

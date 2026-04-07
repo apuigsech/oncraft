@@ -75,6 +75,8 @@ const componentMap: Record<string, any> = {
   RateLimitNotice: resolveComponent('RateLimitNotice'),
   TaskListDisplay: resolveComponent('TaskListDisplay'),
   GenericMessageBlock: resolveComponent('GenericMessageBlock'),
+  SyntheticBadge: resolveComponent('SyntheticBadge'),
+  SubagentBlock: resolveComponent('SubagentBlock'),
 };
 
 function getComponent(kind: string): any {
