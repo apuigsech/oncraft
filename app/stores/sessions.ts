@@ -336,7 +336,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       const parts = messages[cardId];
       if (!parts) return;
       for (let i = parts.length - 1; i >= 0; i--) {
-        if (parts[i]!.kind === 'tool_use' && parts[i]!.data.toolUseId === msg.toolUseId) {
+        if ((parts[i]!.kind === 'tool_use' || parts[i]!.kind.startsWith('tool_use:')) && parts[i]!.data.toolUseId === msg.toolUseId) {
           parts[i]!.data.toolResult = (msg.content as string) || (msg.toolResult as string) || '';
           return;
         }

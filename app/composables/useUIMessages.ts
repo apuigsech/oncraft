@@ -53,7 +53,7 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
     let currentAssistant: UIMessage | null = null;
 
     for (const part of inlineParts.value) {
-      const isAssistantRole = (part.kind === 'assistant' || part.kind === 'tool_use') && part.kind !== 'tool_use:Agent';
+      const isAssistantRole = (part.kind === 'assistant' || part.kind === 'tool_use') && !part.kind.startsWith('tool_use:');
 
       if (part.kind === 'user') {
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
@@ -108,7 +108,7 @@ export function useUIMessages(inlineParts: Ref<ChatPart[]>): ComputedRef<UIMessa
             loading: !hasResult,
           });
         }
-      } else if (part.kind === 'tool_use:Agent') {
+      } else if (part.kind.startsWith('tool_use:')) {
         // SubagentBlock renders as its own component via registry
         if (currentAssistant) { result.push(currentAssistant); currentAssistant = null; }
         result.push({ id: part.id, role: 'assistant', parts: [{ type: 'chat-part', chatPart: part }] });
