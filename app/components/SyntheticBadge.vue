@@ -14,7 +14,7 @@ const badge = computed(() => {
 
   // Skill loaded: look for <command-name> tag
   const cmdMatch = text.match(/<command-name>\/?([^<]+)<\/command-name>/);
-  if (cmdMatch) {
+  if (cmdMatch?.[1]) {
     return { icon: 'i-lucide-puzzle', type: 'Skill loaded', name: cmdMatch[1].trim() };
   }
 

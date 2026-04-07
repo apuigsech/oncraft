@@ -20,8 +20,9 @@ const childParts = computed(() => {
 // State: running / completed / error
 const state = computed(() => {
   if (toolResult.value) {
-    const result = toolResult.value;
-    if (typeof result === 'string' && (result.includes('error') || result.includes('Error'))) {
+    const result = typeof toolResult.value === 'string' ? toolResult.value : '';
+    // Only mark as error if the result starts with an error pattern (not just contains "error" anywhere)
+    if (/^(Error:|error:|ERROR:|Failed|failed|Traceback)/.test(result.trim())) {
       return 'error';
     }
     return 'completed';
@@ -40,8 +41,14 @@ function toggle() {
   manualOverride.value = !isExpanded.value;
 }
 
-// Reset manual override when state changes
-watch(state, () => { manualOverride.value = null; });
+// Reset manual override when state changes; stop timer when no longer running
+watch(state, (newState) => {
+  manualOverride.value = null;
+  if (newState !== 'running' && timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+});
 
 // Elapsed time tracking
 const startedAt = ref(Date.now());
@@ -82,11 +89,11 @@ function childToolSummary(part: ChatPart): string {
   const name = (part.data.toolName as string) || '';
   switch (name) {
     case 'Bash': return `$ ${(input.command as string || '').substring(0, 60)}`;
-    case 'Read': return `${input.file_path}`;
-    case 'Write': return `${input.file_path}`;
-    case 'Edit': return `${input.file_path}`;
-    case 'Glob': return `${input.pattern}`;
-    case 'Grep': return `"${input.pattern}" in ${input.path || '.'}`;
+    case 'Read': return `${input.file_path || ''}`;
+    case 'Write': return `${input.file_path || ''}`;
+    case 'Edit': return `${input.file_path || ''}`;
+    case 'Glob': return `${input.pattern || ''}`;
+    case 'Grep': return `"${input.pattern || ''}" in ${input.path || '.'}`;
     default: return name;
   }
 }
@@ -211,7 +218,7 @@ onUnmounted(() => {
 .subagent-body {
   border-top: 1px solid var(--bg-tertiary);
   padding: 10px 12px;
-  background: #191a2c;
+  background: var(--bg-primary);
 }
 
 .subagent-chat { display: flex; flex-direction: column; gap: 6px; }

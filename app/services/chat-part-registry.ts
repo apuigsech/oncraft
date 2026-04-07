@@ -11,6 +11,7 @@ const registry: Record<string, ChatPartDefinition> = {
       ...(raw.usage ? { usage: { inputTokens: (raw.usage as any).inputTokens, outputTokens: (raw.usage as any).outputTokens } } : {}),
       ...(raw.subtype === 'thinking' ? { thinking: true } : {}),
       ...(raw.streaming ? { streaming: true } : {}),
+      ...(raw.parentToolUseId != null ? { parentToolUseId: raw.parentToolUseId } : {}),
     }),
   },
 
@@ -21,6 +22,8 @@ const registry: Record<string, ChatPartDefinition> = {
     parse: (raw) => ({
       content: raw.content ?? '',
       ...(raw.images ? { images: raw.images } : {}),
+      ...(raw.isSynthetic ? { isSynthetic: true } : {}),
+      ...(raw.parentToolUseId != null ? { parentToolUseId: raw.parentToolUseId } : {}),
     }),
   },
 
@@ -33,6 +36,7 @@ const registry: Record<string, ChatPartDefinition> = {
       toolInput: raw.toolInput ?? {},
       toolUseId: raw.toolUseId ?? '',
       ...(raw.toolResult !== undefined ? { toolResult: raw.toolResult } : {}),
+      ...(raw.parentToolUseId != null ? { parentToolUseId: raw.parentToolUseId } : {}),
     }),
   },
 
@@ -57,6 +61,7 @@ const registry: Record<string, ChatPartDefinition> = {
     parse: (raw) => ({
       toolUseId: raw.toolUseId ?? '',
       content: raw.content ?? '',
+      ...(raw.parentToolUseId != null ? { parentToolUseId: raw.parentToolUseId } : {}),
     }),
   },
 
@@ -242,6 +247,7 @@ const registry: Record<string, ChatPartDefinition> = {
       toolUseId: raw.toolUseId ?? '',
       toolName: raw.toolName ?? '',
       elapsedSeconds: raw.elapsedSeconds ?? 0,
+      ...(raw.parentToolUseId != null ? { parentToolUseId: raw.parentToolUseId } : {}),
     }),
   },
 
