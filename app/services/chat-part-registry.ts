@@ -71,6 +71,43 @@ const registry: Record<string, ChatPartDefinition> = {
   },
 
   // ── Tool Overrides ─────────────────────────────────────────────────
+  // Skill tool_use is hidden — the synthetic user message becomes the SyntheticBadge
+  'tool_use:Skill': {
+    placement: 'hidden',
+    component: null,
+    verbosity: 'quiet',
+    parse: (raw) => ({
+      toolUseId: raw.toolUseId ?? '',
+      skillName: (raw.toolInput as Record<string, unknown>)?.skill ?? '',
+    }),
+  },
+
+  // Agent tool_use renders as a collapsible subagent block
+  'tool_use:Agent': {
+    placement: 'inline',
+    component: 'SubagentBlock',
+    verbosity: 'quiet',
+    parse: (raw) => ({
+      toolName: raw.toolName ?? 'Agent',
+      toolInput: raw.toolInput ?? {},
+      toolUseId: raw.toolUseId ?? '',
+      description: (raw.toolInput as Record<string, unknown>)?.description ?? '',
+      parentToolUseId: raw.parentToolUseId ?? null,
+      ...(raw.toolResult !== undefined ? { toolResult: raw.toolResult } : {}),
+    }),
+  },
+
+  // Synthetic user messages (skill prompts, system-reminders) render as SyntheticBadge
+  'user:synthetic': {
+    placement: 'inline',
+    component: 'SyntheticBadge',
+    verbosity: 'quiet',
+    parse: (raw) => ({
+      content: raw.content ?? '',
+      isSynthetic: true,
+    }),
+  },
+
   // tool_use of AskUserQuestion is hidden — the tool_confirmation is what we show
   'tool_use:AskUserQuestion': {
     placement: 'hidden',
