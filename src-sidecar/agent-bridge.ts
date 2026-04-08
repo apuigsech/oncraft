@@ -55,6 +55,7 @@ let sessionAlive: boolean = false;
 let knownSessionId: string | null = null;
 let currentCardId: string | null = null;
 let isShuttingDown = false;
+const MAX_QUEUED_MESSAGES = 50;
 
 // ---- async message queue for persistent sessions ----
 // Single-consumer queue: the SDK's streamInput loop is the only consumer.
@@ -71,6 +72,10 @@ class MessageStream {
       this.waitResolve = null;
       r({ done: false, value: msg });
     } else {
+      if (this.queue.length >= MAX_QUEUED_MESSAGES) {
+        this.queue.shift();
+        process.stderr.write(`[agent-bridge] queue overflow: dropped oldest queued user message (limit=${MAX_QUEUED_MESSAGES})\n`);
+      }
       this.queue.push(msg);
     }
   }
@@ -846,6 +851,7 @@ rl.on("line", async (line: string) => {
   if (cmd.cmd === "loadHistory") {
     try {
       const sessionId = cmd.sessionId as string;
+      const requestId = cmd.requestId as string | undefined;
       process.stderr.write(`[agent-bridge] loading history for session ${sessionId}\n`);
       let history: unknown[] = [];
       try {
@@ -865,10 +871,10 @@ rl.on("line", async (line: string) => {
           }
         }
       }
-      emit({ type: "history", messages: translated });
+      emit({ type: "history", requestId, messages: translated });
     } catch (err) {
       process.stderr.write(`[agent-bridge] history error: ${err}\n`);
-      emit({ type: "history", messages: [], error: String(err) });
+      emit({ type: "history", requestId: cmd.requestId, messages: [], error: String(err) });
     }
     return;
   }
@@ -879,6 +885,7 @@ rl.on("line", async (line: string) => {
   if (cmd.cmd === "listSessions") {
     try {
       const projectPath = cmd.projectPath as string;
+      const requestId = cmd.requestId as string | undefined;
       const allSessions = await listSessions({ cwd: projectPath });
       // Filter to sessions from this project path
       const projectSessions = allSessions
@@ -891,10 +898,10 @@ rl.on("line", async (line: string) => {
           gitBranch: (s as Record<string, unknown>).gitBranch || '',
         }))
         .sort((a, b) => b.lastModified - a.lastModified);
-      emit({ type: "sessions", sessions: projectSessions });
+      emit({ type: "sessions", requestId, sessions: projectSessions });
     } catch (err) {
       process.stderr.write(`[agent-bridge] listSessions error: ${err}\n`);
-      emit({ type: "sessions", sessions: [], error: String(err) });
+      emit({ type: "sessions", requestId: cmd.requestId, sessions: [], error: String(err) });
     }
     return;
   }

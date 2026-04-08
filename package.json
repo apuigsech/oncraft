@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt generate",
-    "build:sidecar": "cd src-sidecar && ~/.bun/bin/bun install && ~/.bun/bin/bun build --compile --target=bun agent-bridge.ts --outfile ../src-tauri/binaries/agent-bridge-$(rustc -vV | sed -n 's/host: //p')",
+    "build:sidecar": "cd src-sidecar && ~/.bun/bin/bun install && node ./scripts/ensure-sdk-tempfile.mjs && ~/.bun/bin/bun build --compile --target=bun agent-bridge.ts --outfile ../src-tauri/binaries/agent-bridge-$(rustc -vV | sed -n 's/host: //p')",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "tauri": "tauri",
