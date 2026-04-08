@@ -1,4 +1,4 @@
-import { query, getSessionMessages, listSessions, tool, createSdkMcpServer, type SDKMessage, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, startup, getSessionMessages, listSessions, tool, createSdkMcpServer, type SDKMessage, type SDKUserMessage, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import cliPath from "@anthropic-ai/claude-agent-sdk/embed";
 import { z } from "zod/v4";
 import { createInterface } from "readline";
@@ -54,6 +54,7 @@ let activeSessionConfig: { projectPath: string; sessionId?: string } | null = nu
 let sessionAlive: boolean = false;
 let knownSessionId: string | null = null;
 let currentCardId: string | null = null;
+let isShuttingDown = false;
 
 // ---- async message queue for persistent sessions ----
 // Single-consumer queue: the SDK's streamInput loop is the only consumer.
@@ -571,6 +572,48 @@ async function runSession(
   }
 }
 
+function buildAllowedTools(
+  allowedTools: string[] | undefined,
+  extraMcpServers: Record<string, unknown> | undefined,
+): string[] | undefined {
+  if (!allowedTools?.length) return allowedTools;
+  const merged = new Set(allowedTools);
+  // Keep bridge MCP tools explicitly available when a strict allowlist is provided
+  merged.add("mcp__oncraft__get_current_card");
+  merged.add("mcp__oncraft__update_current_card");
+  merged.add("mcp__oncraft__get_project");
+  // If extra MCP servers are enabled, keep explicit server prefixes opt-in ready
+  for (const key of Object.keys(extraMcpServers || {})) {
+    merged.add(`mcp__${key}__*`);
+  }
+  return Array.from(merged);
+}
+
+async function gracefulShutdown(): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  if (pendingApproval) {
+    pendingApproval({ content: "deny" });
+    pendingApproval = null;
+  }
+  pendingReply = null;
+
+  if (activeStream) activeStream.finish();
+  if (activeAbort) activeAbort.abort();
+
+  setTimeout(() => process.exit(0), 200).unref?.();
+}
+
+// Warm the embedded CLI once at startup to reduce first-query latency
+void startup({
+  pathToClaudeCodeExecutable: cliPath,
+  executable: "node",
+  env: claudeEnv,
+}).catch((err) => {
+  process.stderr.write(`[agent-bridge] startup prewarm failed: ${String(err)}\n`);
+});
+
 // ---- main loop ----
 const rl = createInterface({ input: process.stdin, terminal: false });
 
@@ -631,17 +674,8 @@ rl.on("line", async (line: string) => {
 
   // Handle stop — clean shutdown of persistent session
   if (cmd.cmd === "stop") {
-    // Unblock any pending tool approval so the SDK doesn't hang
-    if (pendingApproval) {
-      pendingApproval({ content: "deny" });
-      pendingApproval = null;
-    }
-    pendingReply = null;
-    // Signal the stream to finish — SDK will close the CLI process
-    if (activeStream) {
-      activeStream.finish();
-    }
-    process.exit(0);
+    await gracefulShutdown();
+    return;
   }
 
   // Handle start — create or reuse persistent session
@@ -694,6 +728,8 @@ rl.on("line", async (line: string) => {
     const agents             = cmd.agents          as Record<string, unknown> | undefined;
     const extraMcpServers    = cmd.mcpServers      as Record<string, unknown> | undefined;
 
+    const policyAllowedTools = buildAllowedTools(allowedTools, extraMcpServers);
+
     // Build query options (same as before, but bound once per session)
     const queryOptions = {
       pathToClaudeCodeExecutable: cliPath,
@@ -722,9 +758,18 @@ rl.on("line", async (line: string) => {
           append: systemPromptAppend,
         },
       } : {}),
-      ...(allowedTools?.length    ? { allowedTools }    : {}),
+      ...(policyAllowedTools?.length ? { allowedTools: policyAllowedTools } : {}),
       ...(disallowedTools?.length ? { disallowedTools } : {}),
       ...(agents && Object.keys(agents).length ? { agents } : {}),
+      hooks: {
+        session_end: async (event: Record<string, unknown>) => {
+          emit({
+            type: "system",
+            subtype: "session_end",
+            terminal_reason: event?.terminal_reason || null,
+          });
+        },
+      },
       ...(cmd.worktreeName ? {
         extraArgs: { worktree: cmd.worktreeName as string },
       } : {}),
@@ -802,7 +847,13 @@ rl.on("line", async (line: string) => {
     try {
       const sessionId = cmd.sessionId as string;
       process.stderr.write(`[agent-bridge] loading history for session ${sessionId}\n`);
-      const history = await getSessionMessages(sessionId);
+      let history: unknown[] = [];
+      try {
+        history = await getSessionMessages(sessionId, { includeSystemMessages: true } as Record<string, unknown>);
+      } catch {
+        // Backward compatibility with SDK versions that don't support options
+        history = await getSessionMessages(sessionId);
+      }
       const translated: Record<string, unknown>[] = [];
       for (const msg of history) {
         const t = translateMessage(msg as SDKMessage);
@@ -855,6 +906,5 @@ rl.on("line", async (line: string) => {
 
 // Handle stdin close (Tauri killed us) — clean up persistent session
 rl.on("close", () => {
-  if (activeAbort) activeAbort.abort();
-  process.exit(0);
+  void gracefulShutdown();
 });

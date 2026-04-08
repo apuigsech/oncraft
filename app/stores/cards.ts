@@ -44,13 +44,32 @@ export const useCardsStore = defineStore('cards', () => {
     }
   }
 
-  function cardsByColumn(columnName: string): Card[] {
-    return cards.value
-      .filter(c => c.columnName === columnName && !c.archived)
-      .sort((a, b) => {
+  async function flushAllPendingWrites(): Promise<void> {
+    const ids = Array.from(_pendingWrites.keys());
+    for (const id of ids) {
+      await _flushDbWrite(id);
+    }
+  }
+
+  const _cardsByColumnMap = computed(() => {
+    const map = new Map<string, Card[]>();
+    for (const c of cards.value) {
+      if (c.archived) continue;
+      const list = map.get(c.columnName);
+      if (list) list.push(c);
+      else map.set(c.columnName, [c]);
+    }
+    for (const [, list] of map) {
+      list.sort((a, b) => {
         if (a.columnOrder !== b.columnOrder) return a.columnOrder - b.columnOrder;
         return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
       });
+    }
+    return map;
+  });
+
+  function cardsByColumn(columnName: string): Card[] {
+    return _cardsByColumnMap.value.get(columnName) || [];
   }
 
   async function loadForProject(projectId: string): Promise<void> {
@@ -214,6 +233,9 @@ export const useCardsStore = defineStore('cards', () => {
   async function archiveCard(cardId: string): Promise<void> {
     const card = cards.value.find(c => c.id === cardId);
     if (!card) return;
+    const sessionsStore = useSessionsStore();
+    try { await sessionsStore.stopSession(cardId); } catch { /* ignore best-effort shutdown */ }
+    sessionsStore.purgeCard(cardId);
     card.archived = true;
     await db.updateCard(card);
   }
@@ -226,6 +248,9 @@ export const useCardsStore = defineStore('cards', () => {
   }
 
   async function removeCard(cardId: string): Promise<void> {
+    const sessionsStore = useSessionsStore();
+    try { await sessionsStore.stopSession(cardId); } catch { /* ignore best-effort shutdown */ }
+    sessionsStore.purgeCard(cardId);
     // N-2: Cancel any pending debounced write — card is being deleted
     const pendingTimer = _pendingWrites.get(cardId);
     if (pendingTimer) {
@@ -242,5 +267,6 @@ export const useCardsStore = defineStore('cards', () => {
     updateCardMetrics, updateCardInfo,
     setCardLinkedFiles, mergeCardLinkedFiles, updateCardLinkedIssues,
     reorderColumn, applyColumnOrder, archiveCard, unarchiveCard, removeCard,
+    flushAllPendingWrites,
   };
 });

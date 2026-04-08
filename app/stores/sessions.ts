@@ -2,12 +2,14 @@ import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import {
   spawnSession, sendStart, sendReply, interrupt, killProcess,
   isProcessActive, isQueryActive, markQueryComplete,
+  listActiveProcessCardIds, killAllProcesses, shutdownUtilSidecar,
   onMessage, offMessage, onMeta, offMeta,
   listCommandsNative, loadHistoryViaSidecar,
 } from '~/services/claude-process';
 import { resolveTemplate } from '~/services/template-engine';
 import { ensureMarkdownReady } from '~/services/markdown';
 import { trackSessionStart, trackSessionEnd } from '~/services/telemetry';
+import { perfEnd, perfStart } from '~/services/perf';
 
 export const useSessionsStore = defineStore('sessions', () => {
   const messages: Record<string, ChatPart[]> = reactive({});
@@ -31,11 +33,16 @@ export const useSessionsStore = defineStore('sessions', () => {
   // NAV: Track cardId → projectId for cross-project activity indicators
   const cardProjectMap = reactive(new Map<string, string>());
 
-  function hasActiveCards(projectId: string): boolean {
+  const _activeProjects = computed(() => {
+    const active = new Set<string>();
     for (const [cardId, pid] of cardProjectMap) {
-      if (pid === projectId && isQueryActive(cardId)) return true;
+      if (isQueryActive(cardId)) active.add(pid);
     }
-    return false;
+    return active;
+  });
+
+  function hasActiveCards(projectId: string): boolean {
+    return _activeProjects.value.has(projectId);
   }
 
   // Track active sub-agents per card (task_started adds, result/notification removes)
@@ -61,8 +68,12 @@ export const useSessionsStore = defineStore('sessions', () => {
   // instead of mutating reactive state on every single token arrival
   const _streamingBuffers = new Map<string, string>();
   const _streamingRafPending = new Set<string>();
+  const _streamingTokenCount = new Map<string, number>();
+  const _thinkingBuffers = new Map<string, string>();
+  const _thinkingRafPending = new Set<string>();
 
   function _flushStreamingBuffer(cardId: string): void {
+    const flushStart = perfStart('stream.flushText');
     const buffered = _streamingBuffers.get(cardId);
     if (!buffered) return;
     _streamingBuffers.delete(cardId);
@@ -74,15 +85,45 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (last?.kind === 'assistant' && last.data.streaming) {
       last.data.content = (last.data.content as string) + buffered;
     }
+    perfEnd('stream.flushText', flushStart, {
+      cardId,
+      chars: buffered.length,
+      tokensSeen: _streamingTokenCount.get(cardId) || 0,
+    });
+    _streamingTokenCount.delete(cardId);
   }
 
   function _bufferStreamingToken(cardId: string, token: string): void {
     const existing = _streamingBuffers.get(cardId) || '';
     _streamingBuffers.set(cardId, existing + token);
+    _streamingTokenCount.set(cardId, (_streamingTokenCount.get(cardId) || 0) + 1);
 
     if (!_streamingRafPending.has(cardId)) {
       _streamingRafPending.add(cardId);
       requestAnimationFrame(() => _flushStreamingBuffer(cardId));
+    }
+  }
+
+  function _flushThinkingBuffer(cardId: string): void {
+    const buffered = _thinkingBuffers.get(cardId);
+    if (!buffered) return;
+    _thinkingBuffers.delete(cardId);
+    _thinkingRafPending.delete(cardId);
+
+    const msgs = messages[cardId];
+    if (!msgs?.length) return;
+    const last = msgs[msgs.length - 1];
+    if (last?.kind === 'assistant' && last.data.thinkingStreaming) {
+      last.data.content = (last.data.content as string) + buffered;
+    }
+  }
+
+  function _bufferThinkingToken(cardId: string, token: string): void {
+    const existing = _thinkingBuffers.get(cardId) || '';
+    _thinkingBuffers.set(cardId, existing + token);
+    if (!_thinkingRafPending.has(cardId)) {
+      _thinkingRafPending.add(cardId);
+      requestAnimationFrame(() => _flushThinkingBuffer(cardId));
     }
   }
 
@@ -154,6 +195,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // When a complete assistant message arrives after streaming, flush buffer and replace
     if (part.kind === 'assistant' && !part.data.streaming) {
       _flushStreamingBuffer(cardId);
+      _flushThinkingBuffer(cardId);
       const msgs = messages[cardId];
       const lastIdx = msgs.length - 1;
       if (lastIdx >= 0 && msgs[lastIdx]!.kind === 'assistant' && msgs[lastIdx]!.data.streaming) {
@@ -296,10 +338,9 @@ export const useSessionsStore = defineStore('sessions', () => {
           data: { content: '', thinking: true, thinkingStreaming: true, parentToolUseId: msg.parentToolUseId ?? null },
         });
       }
-      // Buffer into thinking part directly (reuse same rAF approach)
-      const thinkingMsgs = messages[cardId];
-      const thinkingLast = thinkingMsgs[thinkingMsgs.length - 1]!;
-      thinkingLast.data.content = (thinkingLast.data.content as string) + ((msg.content as string) || '');
+      // Buffer thinking tokens and flush with requestAnimationFrame
+      const token = (msg.content as string) || '';
+      _bufferThinkingToken(cardId, token);
       return;
     }
 
@@ -621,6 +662,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     historyLoaded.delete(cardId);
     _streamingBuffers.delete(cardId);
     _streamingRafPending.delete(cardId);
+    _streamingTokenCount.delete(cardId);
+    _thinkingBuffers.delete(cardId);
+    _thinkingRafPending.delete(cardId);
     activeToolByCard.delete(cardId);
     cardAttentionState.delete(cardId);
     // NAV: Clean up per-project active chat if this card was open
@@ -631,12 +675,32 @@ export const useSessionsStore = defineStore('sessions', () => {
     cardProjectMap.delete(cardId);
   }
 
+  async function shutdownAllSessions(): Promise<void> {
+    const cardIds = new Set<string>([
+      ...Object.keys(messages),
+      ...Object.keys(sessionConfigs),
+      ...Object.keys(sessionMetrics),
+      ...Object.keys(activeSubAgents),
+      ...Object.keys(queryTracking),
+      ...listActiveProcessCardIds(),
+    ]);
+
+    for (const cardId of cardIds) {
+      try { await stopSession(cardId); } catch { /* continue cleanup */ }
+      purgeCard(cardId);
+    }
+
+    try { await killAllProcesses(); } catch { /* no-op */ }
+    shutdownUtilSidecar();
+  }
+
   return {
     messages, activeChatCardId, sessionConfigs, sessionMetrics, availableCommands, activeSubAgents, activeToolByCard, cardAttentionState,
     getMessages, getSessionConfig, updateSessionConfig, getSessionMetrics, getActiveSubAgentCount, getQueryTracking,
     appendPart, resolveActionPart, handleMeta, fireTriggerPrompt,
     send, approveToolUse, rejectToolUse,
     loadAvailableCommands, interruptSession, stopSession, openChat, closeChat, isActive, isLoadingHistory, purgeCard,
+    shutdownAllSessions,
     hasActiveCards,
   };
 });

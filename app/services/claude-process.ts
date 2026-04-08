@@ -1,12 +1,13 @@
 import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
-import { writeFile, mkdir } from '@tauri-apps/plugin-fs';
+import { writeFile, mkdir, remove } from '@tauri-apps/plugin-fs';
 import { tempDir, join as pathJoin } from '@tauri-apps/api/path';
 import { reactive } from 'vue';
 import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
 import { process as registryProcess } from './chat-part-registry';
 import * as db from '~/services/database';
+import { perfEnd, perfStart } from '~/services/perf';
 
 interface SidecarProcess {
   write: (data: string) => Promise<void>;
@@ -69,7 +70,25 @@ function buildStartCmd(
 // ─── Image temp file helpers ───
 // Write image attachments to temp files and return paths.
 // This avoids sending large base64 payloads over Tauri stdin IPC.
+const _tempImageFiles = new Map<string, number>();
+const TEMP_IMAGE_TTL_MS = 30 * 60 * 1000;
+
+async function cleanupTempImages(force = false): Promise<void> {
+  const now = Date.now();
+  for (const [filePath, createdAt] of _tempImageFiles) {
+    if (!force && now - createdAt < TEMP_IMAGE_TTL_MS) continue;
+    try {
+      await remove(filePath);
+    } catch {
+      // ignore best-effort cleanup
+    } finally {
+      _tempImageFiles.delete(filePath);
+    }
+  }
+}
+
 async function writeImagesToTempFiles(images: ImageAttachment[]): Promise<{ path: string; mediaType: string }[]> {
+  await cleanupTempImages();
   const tmp = await tempDir();
   const imgDir = await pathJoin(tmp, 'oncraft-images');
   try { await mkdir(imgDir, { recursive: true }); } catch { /* exists */ }
@@ -85,6 +104,7 @@ async function writeImagesToTempFiles(images: ImageAttachment[]): Promise<{ path
       bytes[i] = binaryStr.charCodeAt(i);
     }
     await writeFile(filePath, bytes);
+    _tempImageFiles.set(filePath, Date.now());
     results.push({ path: filePath, mediaType: img.mediaType });
   }
   return results;
@@ -139,6 +159,7 @@ export async function spawnSession(
   flowPayload?: FlowPayload,
   forkSession?: boolean,
 ): Promise<void> {
+  const spawnStart = perfStart('sidecar.spawnSession.total');
   // Kill existing process for this card if any
   if (processes.has(cardId)) {
     await killProcess(cardId);
@@ -304,6 +325,7 @@ export async function spawnSession(
     console.log(`[OnCraft] sending start cmd, length=${startCmd.length}, hasImages=${!!imagePaths?.length}, hasFlowPrompt=${!!flowPayload?.systemPromptAppend}`);
   }
   await proc.write(startCmd);
+  perfEnd('sidecar.spawnSession.total', spawnStart, { cardId, hasImages: !!images?.length });
 }
 
 export async function sendStart(
@@ -316,6 +338,7 @@ export async function sendStart(
   flowPayload?: FlowPayload,
   forkSession?: boolean,
 ): Promise<void> {
+  const start = perfStart('sidecar.sendStart.total');
   const proc = processes.get(cardId);
   if (!proc) throw new Error('No sidecar process for this card');
   activeQueries.add(cardId);
@@ -328,12 +351,15 @@ export async function sendStart(
 
   const startCmd = buildStartCmd(cardId, prompt, projectPath, sessionId, config, imagePaths, flowPayload, forkSession);
   await proc.write(startCmd);
+  perfEnd('sidecar.sendStart.total', start, { cardId, hasImages: !!images?.length });
 }
 
 export async function sendReply(cardId: string, content: 'allow' | 'deny', updatedInput?: Record<string, unknown>): Promise<void> {
+  const start = perfStart('sidecar.sendReply');
   const proc = processes.get(cardId);
   if (!proc) return;
   await proc.write(JSON.stringify({ cmd: 'reply', content, ...(updatedInput ? { updatedInput } : {}) }));
+  perfEnd('sidecar.sendReply', start, { cardId, content });
 }
 
 export async function interrupt(cardId: string): Promise<void> {
@@ -355,6 +381,21 @@ export async function killProcess(cardId: string): Promise<void> {
   messageCallbacks.delete(cardId);
   metaCallbacks.delete(cardId);
   activeQueries.delete(cardId);
+}
+
+export function listActiveProcessCardIds(): string[] {
+  return Array.from(processes.keys());
+}
+
+export async function killAllProcesses(): Promise<void> {
+  const ids = Array.from(processes.keys());
+  for (const id of ids) {
+    try {
+      await killProcess(id);
+    } catch {
+      // continue best-effort cleanup
+    }
+  }
 }
 
 export function isProcessActive(cardId: string): boolean {
@@ -529,6 +570,7 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
 interface PendingRequest {
   resolve: (data: Record<string, unknown>) => void;
   timer: ReturnType<typeof setTimeout>;
+  startedAt: number;
 }
 
 let _utilSidecar: {
@@ -549,6 +591,7 @@ function _handleUtilLine(line: string): void {
     if (pending) {
       clearTimeout(pending.timer);
       _utilPending.delete(type);
+      perfEnd(`sidecar.util.${type}`, pending.startedAt);
       pending.resolve(parsed);
     }
   } catch { /* ignore unparseable lines */ }
@@ -607,15 +650,18 @@ function _utilRequest(
   timeoutMs = 10000,
 ): Promise<Record<string, unknown>> {
   return new Promise(async (resolve) => {
+    const reqStart = perfStart(`sidecar.util.${responseType}`);
     try {
       const sidecar = await _ensureUtilSidecar();
       const timer = setTimeout(() => {
         _utilPending.delete(responseType);
+        perfEnd(`sidecar.util.${responseType}`, reqStart, { timeout: true });
         resolve({ type: responseType, error: 'timeout' });
       }, timeoutMs);
-      _utilPending.set(responseType, { resolve, timer });
+      _utilPending.set(responseType, { resolve, timer, startedAt: reqStart });
       await sidecar.write(JSON.stringify(cmd));
     } catch {
+      perfEnd(`sidecar.util.${responseType}`, reqStart, { spawnFailed: true });
       resolve({ type: responseType, error: 'spawn failed' });
     }
   });
@@ -625,6 +671,23 @@ function _utilRequest(
 // operations (listSessions, loadHistory) don't suffer cold-start latency.
 export function preloadUtilSidecar(): void {
   _ensureUtilSidecar();
+}
+
+export function shutdownUtilSidecar(): void {
+  try {
+    _utilSidecar?.kill();
+  } catch {
+    // best effort
+  } finally {
+    _utilSidecar = null;
+    _utilLineBuffer = '';
+    for (const [key, pending] of _utilPending) {
+      clearTimeout(pending.timer);
+      pending.resolve({ type: key, error: 'shutdown' });
+    }
+    _utilPending.clear();
+    void cleanupTempImages(true);
+  }
 }
 
 // DA-1: listCommands — native Rust command, no sidecar needed
