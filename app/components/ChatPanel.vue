@@ -25,6 +25,13 @@ const { headerParts, inlineParts, actionBarParts, progressParts, chatStatus, isA
   computed(() => sessionsStore.activeChatCardId)
 );
 const uiMessages = useUIMessages(computed(() => inlineParts.value));
+const CHAT_VIRTUAL_WINDOW = 220;
+const showFullHistory = ref(false);
+const hiddenMessagesCount = computed(() => Math.max(0, uiMessages.value.length - CHAT_VIRTUAL_WINDOW));
+const visibleUiMessages = computed(() => {
+  if (showFullHistory.value || uiMessages.value.length <= CHAT_VIRTUAL_WINDOW) return uiMessages.value;
+  return uiMessages.value.slice(-CHAT_VIRTUAL_WINDOW);
+});
 
 const metrics = computed(() => {
   if (!sessionsStore.activeChatCardId) return { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 };
@@ -170,19 +177,26 @@ function scrollToBottom() {
 // MutationObserver on the wrapper: fires on ANY DOM change in the subtree
 // (new message nodes, streaming text tokens, tool block expansion, etc.)
 let mutationObserver: MutationObserver | null = null;
+let mutationRafPending = false;
 
 function setupMutationObserver() {
   mutationObserver?.disconnect();
   const wrapper = messagesWrapper.value;
   if (!wrapper) return;
   mutationObserver = new MutationObserver(() => {
-    if (isAtBottom.value) scrollToBottom();
+    if (mutationRafPending || !isAtBottom.value) return;
+    mutationRafPending = true;
+    requestAnimationFrame(() => {
+      mutationRafPending = false;
+      if (isAtBottom.value) scrollToBottom();
+    });
   });
-  mutationObserver.observe(wrapper, { childList: true, subtree: true, characterData: true });
+  mutationObserver.observe(wrapper, { childList: true, subtree: true });
 }
 
 // Card switch → always go to bottom
 watch(() => sessionsStore.activeChatCardId, () => {
+  showFullHistory.value = false;
   isAtBottom.value = true;
   nextTick(() => { scrollToBottom(); setupMutationObserver(); });
 });
@@ -198,6 +212,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   mutationObserver?.disconnect();
+  mutationRafPending = false;
   if (flashTimeout) clearTimeout(flashTimeout);
 });
 </script>
@@ -243,8 +258,14 @@ onUnmounted(() => {
 
     <!-- Messages area — sticky-scroll managed by MutationObserver above -->
     <div ref="messagesWrapper" class="chat-messages-wrapper" @scroll.passive="checkIfAtBottom">
+      <div v-if="hiddenMessagesCount > 0 && !showFullHistory" class="virtualization-banner">
+        <span>{{ hiddenMessagesCount }} older messages hidden</span>
+        <UButton size="xs" variant="ghost" color="neutral" @click="showFullHistory = true">
+          Load full history
+        </UButton>
+      </div>
       <UChatMessages
-        :messages="uiMessages"
+        :messages="visibleUiMessages"
         :status="chatStatus"
         :should-auto-scroll="false"
         :should-scroll-to-bottom="false"
@@ -438,7 +459,26 @@ onUnmounted(() => {
 .chat-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .task-list-sticky { flex-shrink: 0; border-bottom: 1px solid var(--border); }
-.chat-messages-wrapper { flex: 1; overflow-y: auto; }
+.chat-messages-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  contain: layout paint;
+  content-visibility: auto;
+}
+
+.virtualization-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+}
 /* Neutralize UChatMessages' --last-message-height spacer (we own scroll) */
 .chat-messages-inner { padding: 12px; --last-message-height: 0px !important; }
 /* Pin the scroll-to-bottom button to the visible bottom of the chat area */

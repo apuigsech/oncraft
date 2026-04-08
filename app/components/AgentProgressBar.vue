@@ -50,8 +50,7 @@ const statusText = computed(() => {
 });
 
 // ── Elapsed time ───────────────────────────────────────────────────
-const now = ref(Date.now());
-let timerInterval: ReturnType<typeof setInterval> | null = null;
+const now = useSharedNow();
 
 const elapsedSeconds = computed(() => {
   if (doneState.value) return doneState.value.totalTime;
@@ -101,24 +100,12 @@ const visible = computed(() => props.isActive || doneState.value !== null);
 const isDone = computed(() => !props.isActive && doneState.value !== null);
 
 // ── Lifecycle ──────────────────────────────────────────────────────
-function startTimer() {
-  stopTimer();
-  now.value = Date.now();
-  timerInterval = setInterval(() => { now.value = Date.now(); }, 1000);
-}
-
-function stopTimer() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-}
-
 watch(() => props.isActive, (active, wasActive) => {
   if (active) {
     doneState.value = null;
     if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
-    startTimer();
   } else if (wasActive) {
     // Transition to done state
-    stopTimer();
     doneState.value = {
       totalTime: elapsedSeconds.value,
       tokens: props.queryTracking?.outputTokens ?? 0,
@@ -129,7 +116,6 @@ watch(() => props.isActive, (active, wasActive) => {
 }, { immediate: true });
 
 onUnmounted(() => {
-  stopTimer();
   if (doneTimeout) { clearTimeout(doneTimeout); doneTimeout = null; }
 });
 </script>

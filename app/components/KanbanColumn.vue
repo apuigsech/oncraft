@@ -36,7 +36,7 @@ const dragCards = ref<Card[]>([...storeCards.value]);
 watch(storeCards, (newCards) => {
   if (cardsStore.isDragging) return;
   dragCards.value = [...newCards];
-}, { deep: true });
+});
 
 // Capture the card being dragged at start (before onRemove mutates dragCards)
 let draggedCard: Card | null = null;
@@ -274,6 +274,8 @@ async function createForkedSession(name: string, description: string, useWorktre
   border-radius: 8px;
   border: 1px solid var(--bg-tertiary);
   height: 100%;
+  contain: layout paint;
+  content-visibility: auto;
 }
 .column-header {
   display: flex;

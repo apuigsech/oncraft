@@ -23,7 +23,7 @@ let syncing = false;
 watch(storeOrphaned, (newCards) => {
   if (syncing) return;
   orphanedCards.value = [...newCards];
-}, { immediate: true, deep: true });
+}, { immediate: true });
 
 async function onOrphanDragEnd(evt: { from: HTMLElement; to: HTMLElement; oldIndex?: number; newIndex?: number; data: Card }) {
   const toSlug = evt.to.dataset.columnName;

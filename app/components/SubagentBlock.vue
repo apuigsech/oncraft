@@ -44,16 +44,12 @@ function toggle() {
 // Reset manual override when state changes; stop timer when no longer running
 watch(state, (newState) => {
   manualOverride.value = null;
-  if (newState !== 'running' && timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
+  if (newState !== 'running') return;
 });
 
 // Elapsed time tracking
 const startedAt = ref(Date.now());
-const now = ref(Date.now());
-let timerInterval: ReturnType<typeof setInterval> | null = null;
+const now = useSharedNow();
 
 const elapsedSeconds = computed(() => Math.floor((now.value - startedAt.value) / 1000));
 
@@ -88,13 +84,6 @@ function isChildToolUse(part: ChatPart): boolean {
   return part.kind === 'tool_use' || part.kind.startsWith('tool_use:');
 }
 
-onMounted(() => {
-  timerInterval = setInterval(() => { now.value = Date.now(); }, 1000);
-});
-
-onUnmounted(() => {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-});
 </script>
 
 <template>

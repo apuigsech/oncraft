@@ -105,7 +105,7 @@ watch(() => props.card.state, (newState) => {
 });
 
 // Refresh file statuses when linked files change
-watch(() => props.card.linkedFiles, () => { refreshFileStatuses(); }, { deep: true });
+watch(() => JSON.stringify(props.card.linkedFiles || {}), () => { refreshFileStatuses(); });
 
 const showEdit = ref(false);
 const showDeleteConfirm = ref(false);
@@ -320,6 +320,8 @@ const showMetaZone = computed(() => {
   cursor: pointer;
   transition: background 0.15s;
   overflow: hidden;
+  contain: layout paint;
+  content-visibility: auto;
 }
 .kanban-card:hover { background: var(--bg-tertiary); }
 .kanban-card--error { border-color: rgba(247, 118, 142, 0.3); }
