@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CommandPaletteGroup } from '@nuxt/ui'
 
 interface SlashCommand {
   name: string;
@@ -37,20 +38,27 @@ const filtered = computed(() => {
   const f = props.filter.toLowerCase();
   return allCommands.value.filter(c => c.name.toLowerCase().includes(f));
 });
+
+const groups = computed<CommandPaletteGroup[]>(() => [{
+  id: 'slash-commands',
+  label: 'Commands',
+  items: filtered.value.map(cmd => ({
+    label: cmd.name,
+    suffix: cmd.source,
+    icon: 'i-lucide-slash',
+    onSelect: () => emit('select', cmd.name),
+  })),
+}]);
 </script>
 
 <template>
-  <div v-if="visible && filtered.length > 0" class="slash-palette">
-    <div
-      v-for="cmd in filtered" :key="cmd.name"
-      class="slash-item"
-      @mousedown.prevent="emit('select', cmd.name)"
-    >
-      <span class="slash-name">{{ cmd.name }}</span>
-      <span class="slash-desc">{{ cmd.desc }}</span>
-      <span v-if="cmd.source" class="slash-source">{{ cmd.source }}</span>
-    </div>
-  </div>
+  <UCommandPalette
+    v-if="visible && filtered.length > 0"
+    class="slash-palette"
+    placeholder="Filter commands..."
+    :groups="groups"
+    icon="i-lucide-terminal"
+  />
 </template>
 
 <style scoped>
@@ -58,19 +66,8 @@ const filtered = computed(() => {
   position: absolute; bottom: 100%; left: 0; right: 0;
   background: var(--bg-secondary); border: 1px solid var(--border);
   border-radius: 6px; margin-bottom: 4px; overflow: hidden;
-  max-height: 300px; overflow-y: auto;
+  max-height: 320px; overflow-y: auto;
   box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
   z-index: 50;
 }
-.slash-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; cursor: pointer; transition: background 0.1s;
-}
-.slash-item:hover { background: var(--bg-tertiary); }
-.slash-name {
-  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
-  color: var(--accent); font-weight: 600; min-width: 120px; flex-shrink: 0;
-}
-.slash-desc { font-size: 11px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slash-source { font-size: 9px; color: var(--text-muted); background: var(--bg-tertiary); padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 </style>

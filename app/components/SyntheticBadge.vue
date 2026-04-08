@@ -4,7 +4,6 @@ import type { ChatPart } from '~/types';
 const props = defineProps<{ part: ChatPart; cardId: string }>();
 
 const isExpanded = ref(false);
-function toggle() { isExpanded.value = !isExpanded.value; }
 
 const content = computed(() => (props.part.data.content as string) || '');
 
@@ -31,21 +30,26 @@ const badge = computed(() => {
 </script>
 
 <template>
-  <div class="synthetic-badge" @click="toggle">
-    <div class="badge-header">
+  <UCollapsible v-model:open="isExpanded" class="synthetic-badge" :unmount-on-hide="false">
+    <UButton
+      variant="ghost"
+      color="neutral"
+      block
+      class="badge-header"
+      trailing-icon="i-lucide-chevron-down"
+      :ui="{ trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200' }"
+    >
       <UIcon :name="badge.icon" class="badge-icon" />
       <span class="badge-type">{{ badge.type }}</span>
       <span class="badge-name">{{ badge.name }}</span>
-      <UIcon
-        name="i-lucide-chevron-down"
-        class="badge-chevron"
-        :class="{ open: isExpanded }"
-      />
-    </div>
-    <div v-if="isExpanded" class="badge-content">
-      {{ content }}
-    </div>
-  </div>
+    </UButton>
+
+    <template #content>
+      <div class="badge-content">
+        {{ content }}
+      </div>
+    </template>
+  </UCollapsible>
 </template>
 
 <style scoped>
@@ -63,21 +67,12 @@ const badge = computed(() => {
 .synthetic-badge:hover { border-color: var(--border); }
 
 .badge-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  justify-content: flex-start !important;
+  padding-inline: 0 !important;
 }
 .badge-icon { font-size: 14px; color: var(--text-muted); flex-shrink: 0; }
 .badge-type { color: var(--accent); font-weight: 500; font-size: 11px; }
 .badge-name { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge-chevron {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--bg-tertiary);
-  transition: transform 200ms;
-  flex-shrink: 0;
-}
-.badge-chevron.open { transform: rotate(180deg); }
 
 .badge-content {
   margin-top: 8px;

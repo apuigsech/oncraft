@@ -323,9 +323,14 @@ onMounted(() => {
                 <span class="project-path" :title="project.path">{{ project.path }}</span>
               </div>
               <div class="project-stats">
-                <span v-if="!project.closed && getSummary(project.id).activeCount > 0" class="pstat pstat--active">
+                <UBadge
+                  v-if="!project.closed && getSummary(project.id).activeCount > 0"
+                  color="success"
+                  variant="subtle"
+                  size="xs"
+                >
                   {{ getSummary(project.id).activeCount }} active
-                </span>
+                </UBadge>
                 <span class="pstat">{{ getSummary(project.id).totalCount }} cards</span>
                 <span class="pstat">{{ formatRelativeTime(getSummary(project.id).lastActivityAt || project.lastOpenedAt) }}</span>
               </div>
@@ -369,15 +374,19 @@ onMounted(() => {
             >
               <div class="activity-top">
                 <span class="activity-name">{{ card.name }}</span>
-                <span v-if="card.priority === 'unseen'" class="activity-new-badge">new</span>
+                <UBadge v-if="card.priority === 'unseen'" color="primary" variant="subtle" size="xs">new</UBadge>
                 <span class="activity-meta">{{ card.projectName }} · {{ card.columnName }}</span>
                 <span class="activity-time">{{ formatDuration(card.lastActivityAt) }}</span>
               </div>
               <div v-if="card.toolName" class="activity-tool">
-                <span
+                <UBadge
                   class="tool-badge"
+                  variant="soft"
+                  size="xs"
                   :style="{ color: toolBadgeStyle(card.toolName).color, background: toolBadgeStyle(card.toolName).bg }"
-                >{{ card.toolName }}</span>
+                >
+                  {{ card.toolName }}
+                </UBadge>
                 <span v-if="card.toolContext" class="tool-context">{{ card.toolContext }}</span>
               </div>
               <div v-else-if="card.priority === 'inactive'" class="activity-tool">

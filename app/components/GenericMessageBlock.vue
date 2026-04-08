@@ -51,13 +51,13 @@ function visibleEntries(data: Record<string, unknown>): [string, unknown][] {
       <template v-for="[key, value] in visibleEntries(part.data)" :key="key">
         <span class="kv-item">
           <span class="kv-key">{{ key }}:</span>
-          <span v-if="isLongValue(value) && !expanded[key]" class="kv-value truncated" @click="toggleExpand(key)">
+          <span v-if="isLongValue(value) && !expanded[key]" class="kv-value truncated">
             {{ truncateValue(value) }}
-            <span class="expand-toggle">[show more]</span>
+            <UButton variant="link" color="primary" size="xs" class="expand-toggle" @click="toggleExpand(key)">[show more]</UButton>
           </span>
-          <span v-else-if="isLongValue(value) && expanded[key]" class="kv-value" @click="toggleExpand(key)">
+          <span v-else-if="isLongValue(value) && expanded[key]" class="kv-value">
             {{ formatValue(value) }}
-            <span class="expand-toggle">[show less]</span>
+            <UButton variant="link" color="primary" size="xs" class="expand-toggle" @click="toggleExpand(key)">[show less]</UButton>
           </span>
           <span v-else class="kv-value">{{ formatValue(value) }}</span>
         </span>
@@ -107,15 +107,16 @@ function visibleEntries(data: Record<string, unknown>): [string, unknown][] {
 }
 
 .kv-value.truncated {
-  cursor: pointer;
+  cursor: default;
 }
 
 .expand-toggle {
-  color: var(--accent);
-  cursor: pointer;
   font-size: 10px;
-  margin-left: 4px;
+  margin-left: 2px;
   user-select: none;
+  padding: 0 !important;
+  min-height: auto !important;
+  height: auto !important;
 }
 
 .expand-toggle:hover {

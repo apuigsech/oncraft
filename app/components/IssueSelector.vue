@@ -66,23 +66,12 @@ function removeIssue(number: number) {
   model.value = model.value.filter(i => i.number !== number);
 }
 
-function toggleDropdown() {
-  open.value = !open.value;
+function handleOpenChange(nextOpen: boolean) {
+  open.value = nextOpen;
   if (open.value && issues.value.length === 0) {
     fetchIssues();
   }
 }
-
-// Close on click outside
-function onClickOutside(e: MouseEvent) {
-  const target = e.target as HTMLElement;
-  if (!target.closest('.issue-selector')) {
-    open.value = false;
-  }
-}
-
-onMounted(() => document.addEventListener('pointerdown', onClickOutside));
-onUnmounted(() => document.removeEventListener('pointerdown', onClickOutside));
 
 const filteredIssues = computed(() => {
   if (!search.value) return issues.value;
@@ -104,53 +93,60 @@ const filteredIssues = computed(() => {
       </div>
     </div>
 
-    <!-- Dropdown trigger -->
-    <button type="button" class="selector-trigger" @click="toggleDropdown">
-      <span class="trigger-text">{{ single ? 'Select an issue...' : 'Add issue...' }}</span>
-      <UIcon :name="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="trigger-icon" />
-    </button>
+    <UPopover v-model:open="open" :content="{ align: 'start', side: 'bottom' }" @update:open="handleOpenChange">
+      <UButton
+        variant="ghost"
+        color="neutral"
+        block
+        class="selector-trigger"
+        :trailing-icon="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+      >
+        {{ single ? 'Select an issue...' : 'Add issue...' }}
+      </UButton>
 
-    <!-- Inline dropdown (positioned relative to .issue-selector) -->
-    <div v-if="open" class="selector-dropdown">
-      <UInput
-        v-model="search"
-        placeholder="Search issues..."
-        size="sm"
-        autofocus
-        class="selector-search"
-        @input="onSearchInput"
-        @keydown.escape="open = false"
-      />
-
-      <div class="selector-list">
-        <div v-if="loading" class="selector-status">Loading...</div>
-        <div v-else-if="error" class="selector-error">
-          {{ error }}
-          <UButton variant="link" color="primary" size="xs" @click="fetchIssues()">Retry</UButton>
-        </div>
-        <div v-else-if="filteredIssues.length === 0" class="selector-status">No issues found</div>
-        <template v-else>
-          <UButton
-            v-for="issue in filteredIssues"
-            :key="issue.number"
-            variant="ghost"
-            color="neutral"
-            block
+      <template #content>
+        <div class="selector-dropdown">
+          <UInput
+            v-model="search"
+            placeholder="Search issues..."
             size="sm"
-            class="selector-item"
-            :class="{ 'is-linked': isLinked(issue) }"
-            @click="selectIssue(issue)"
-          >
-            <span class="item-number">#{{ issue.number }}</span>
-            <span class="item-title">{{ issue.title }}</span>
-            <div v-if="issue.labels.length > 0" class="item-labels">
-              <span v-for="label in issue.labels.slice(0, 3)" :key="label" class="item-label">{{ label }}</span>
+            autofocus
+            class="selector-search"
+            @input="onSearchInput"
+            @keydown.escape="open = false"
+          />
+
+          <div class="selector-list">
+            <div v-if="loading" class="selector-status">Loading...</div>
+            <div v-else-if="error" class="selector-error">
+              {{ error }}
+              <UButton variant="link" color="primary" size="xs" @click="fetchIssues()">Retry</UButton>
             </div>
-            <span v-if="!single && isLinked(issue)" class="item-check">&check;</span>
-          </UButton>
-        </template>
-      </div>
-    </div>
+            <div v-else-if="filteredIssues.length === 0" class="selector-status">No issues found</div>
+            <template v-else>
+              <UButton
+                v-for="issue in filteredIssues"
+                :key="issue.number"
+                variant="ghost"
+                color="neutral"
+                block
+                size="sm"
+                class="selector-item"
+                :class="{ 'is-linked': isLinked(issue) }"
+                @click="selectIssue(issue)"
+              >
+                <span class="item-number">#{{ issue.number }}</span>
+                <span class="item-title">{{ issue.title }}</span>
+                <div v-if="issue.labels.length > 0" class="item-labels">
+                  <UBadge v-for="label in issue.labels.slice(0, 3)" :key="label" color="neutral" variant="subtle" size="xs">{{ label }}</UBadge>
+                </div>
+                <span v-if="!single && isLinked(issue)" class="item-check">&check;</span>
+              </UButton>
+            </template>
+          </div>
+        </div>
+      </template>
+    </UPopover>
   </div>
 </template>
 
@@ -164,30 +160,12 @@ const filteredIssues = computed(() => {
 .issue-chip-remove { padding: 0 !important; min-height: auto !important; height: auto !important; }
 
 .selector-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 6px 10px;
+  justify-content: space-between !important;
   font-size: 12px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: border-color 0.15s;
 }
-.selector-trigger:hover { border-color: var(--accent); }
-.trigger-text { font-size: 12px; color: var(--text-muted); }
-.trigger-icon { font-size: 14px; color: var(--text-muted); flex-shrink: 0; }
 
 .selector-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
-  z-index: 50;
+  width: min(520px, 70vw);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 6px;

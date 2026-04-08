@@ -19,13 +19,6 @@ const inputValue = computed({
 
 // File list cache for autocomplete (top 2 levels)
 const fileList = ref<string[]>([]);
-const showSuggestions = ref(false);
-
-const filteredFiles = computed(() => {
-  const q = inputValue.value.toLowerCase();
-  if (!q) return fileList.value.slice(0, 20);
-  return fileList.value.filter(f => f.toLowerCase().includes(q)).slice(0, 20);
-});
 
 async function loadFileList() {
   if (!props.projectPath) return;
@@ -54,20 +47,6 @@ async function loadFileList() {
 
 onMounted(loadFileList);
 
-function selectSuggestion(path: string) {
-  inputValue.value = path;
-  showSuggestions.value = false;
-}
-
-function onFocus() {
-  showSuggestions.value = true;
-}
-
-function onBlur() {
-  // Delay to allow click on suggestion
-  setTimeout(() => { showSuggestions.value = false; }, 150);
-}
-
 async function browseFile() {
   const selected = await open({
     defaultPath: props.projectPath,
@@ -86,24 +65,16 @@ async function browseFile() {
 <template>
   <div class="file-picker-input">
     <div class="file-picker-row">
-      <div class="input-wrapper">
-        <UInput
-          v-model="inputValue"
-          size="xs"
-          class="file-input"
-          :placeholder="placeholder"
-          @focus="onFocus"
-          @blur="onBlur"
-        />
-        <div v-if="showSuggestions && filteredFiles.length > 0" class="suggestions">
-          <div
-            v-for="file in filteredFiles"
-            :key="file"
-            class="suggestion-item"
-            @mousedown.prevent="selectSuggestion(file)"
-          >{{ file }}</div>
-        </div>
-      </div>
+      <UInputMenu
+        v-model="inputValue"
+        :items="fileList"
+        autocomplete
+        size="xs"
+        class="file-input"
+        :placeholder="placeholder"
+        :content="{ hideWhenEmpty: true }"
+        :trailing-icon="false"
+      />
       <UButton
         variant="ghost"
         color="neutral"
@@ -119,34 +90,5 @@ async function browseFile() {
 <style scoped>
 .file-picker-input { position: relative; }
 .file-picker-row { display: flex; gap: 4px; align-items: center; }
-.input-wrapper { position: relative; flex: 1; }
-.file-input { font-family: 'SF Mono', 'Fira Code', monospace; }
-
-.suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  max-height: 160px;
-  overflow-y: auto;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  z-index: 10;
-  margin-top: 2px;
-}
-.suggestion-item {
-  padding: 4px 8px;
-  font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.suggestion-item:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
+.file-input { flex: 1; font-family: 'SF Mono', 'Fira Code', monospace; }
 </style>

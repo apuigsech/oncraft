@@ -37,9 +37,10 @@ const isExpanded = computed(() => {
   return state.value === 'running';
 });
 
-function toggle() {
-  manualOverride.value = !isExpanded.value;
-}
+const collapsibleOpen = computed({
+  get: () => isExpanded.value,
+  set: (next: boolean) => { manualOverride.value = next; },
+});
 
 // Reset manual override when state changes; stop timer when no longer running
 watch(state, (newState) => {
@@ -87,8 +88,15 @@ function isChildToolUse(part: ChatPart): boolean {
 </script>
 
 <template>
-  <div class="subagent-block" :class="state">
-    <div class="subagent-header" @click="toggle">
+  <UCollapsible v-model:open="collapsibleOpen" class="subagent-block" :class="state" :unmount-on-hide="false">
+    <UButton
+      variant="ghost"
+      color="neutral"
+      block
+      class="subagent-header"
+      trailing-icon="i-lucide-chevron-down"
+      :ui="{ trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200' }"
+    >
       <span class="subagent-led" />
       <span class="subagent-label">Agent</span>
       <span class="subagent-desc">{{ description }}</span>
@@ -99,36 +107,33 @@ function isChildToolUse(part: ChatPart): boolean {
           <span>{{ tokenText }}</span>
         </template>
       </span>
-      <UIcon
-        name="i-lucide-chevron-down"
-        class="subagent-chevron"
-        :class="{ open: isExpanded }"
-      />
-    </div>
+    </UButton>
 
-    <div v-if="isExpanded" class="subagent-body">
-      <div class="subagent-chat">
-        <template v-for="child in childParts" :key="child.id">
-          <div v-if="isChildSynthetic(child)" class="sub-synthetic">
-            &#8627; Subagent prompt
+    <template #content>
+      <div class="subagent-body">
+        <div class="subagent-chat">
+          <template v-for="child in childParts" :key="child.id">
+            <div v-if="isChildSynthetic(child)" class="sub-synthetic">
+              &#8627; Subagent prompt
+            </div>
+
+            <div v-else-if="isChildToolUse(child)" class="sub-tool-wrapper">
+              <ToolCallBlock :part="child" :card-id="cardId" />
+            </div>
+
+            <div v-else-if="child.kind === 'assistant' && !child.data.thinking" class="sub-assistant">
+              {{ ((child.data.content as string) || '').substring(0, 300) }}
+              <span v-if="((child.data.content as string) || '').length > 300" class="sub-truncated">...</span>
+            </div>
+          </template>
+
+          <div v-if="toolResult" class="sub-result">
+            <strong>Result:</strong> {{ typeof toolResult === 'string' ? toolResult.substring(0, 500) : '' }}
           </div>
-
-          <div v-else-if="isChildToolUse(child)" class="sub-tool-wrapper">
-            <ToolCallBlock :part="child" :card-id="cardId" />
-          </div>
-
-          <div v-else-if="child.kind === 'assistant' && !child.data.thinking" class="sub-assistant">
-            {{ ((child.data.content as string) || '').substring(0, 300) }}
-            <span v-if="((child.data.content as string) || '').length > 300" class="sub-truncated">...</span>
-          </div>
-        </template>
-
-        <div v-if="toolResult" class="sub-result">
-          <strong>Result:</strong> {{ typeof toolResult === 'string' ? toolResult.substring(0, 500) : '' }}
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </UCollapsible>
 </template>
 
 <style scoped>
@@ -145,12 +150,8 @@ function isChildToolUse(part: ChatPart): boolean {
 .subagent-block.error    { border-left-color: var(--error); }
 
 .subagent-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  user-select: none;
+  justify-content: flex-start !important;
+  padding: 8px 12px !important;
   font-size: 12px;
   font-family: 'SF Mono', 'Fira Code', monospace;
   transition: background 150ms;
@@ -182,14 +183,6 @@ function isChildToolUse(part: ChatPart): boolean {
   font-size: 11px;
   flex-shrink: 0;
 }
-.subagent-chevron {
-  font-size: 12px;
-  color: var(--bg-tertiary);
-  transition: transform 200ms;
-  flex-shrink: 0;
-}
-.subagent-chevron.open { transform: rotate(180deg); }
-
 .subagent-body {
   border-top: 1px solid var(--bg-tertiary);
   padding: 10px 12px;

@@ -5,27 +5,26 @@ const props = defineProps<{ part: ChatPart; cardId: string }>();
 
 const expanded = ref(false);
 
-const hookId = computed(() => (props.part.data.hookId as string) || '');
 const hookName = computed(() => (props.part.data.hookName as string) || '');
 const hookEvent = computed(() => (props.part.data.hookEvent as string) || '');
 const outcome = computed(() => (props.part.data.outcome as string) || '');
 const output = computed(() => (props.part.data.output as string) || '');
-const exitCode = computed(() => props.part.data.exitCode as number | undefined);
 const stdout = computed(() => (props.part.data.stdout as string) || '');
 const stderr = computed(() => (props.part.data.stderr as string) || '');
 
 const hasDetails = computed(() => !!output.value || !!stdout.value || !!stderr.value);
-
-function toggleExpand() {
-  if (hasDetails.value) {
-    expanded.value = !expanded.value;
-  }
-}
 </script>
 
 <template>
-  <div class="hook-activity-block" :class="{ clickable: hasDetails }" @click="toggleExpand">
-    <div class="hook-header">
+  <UCollapsible v-model:open="expanded" class="hook-activity-block" :disabled="!hasDetails" :unmount-on-hide="false">
+    <UButton
+      variant="ghost"
+      color="neutral"
+      block
+      class="hook-header"
+      :trailing-icon="hasDetails ? 'i-lucide-chevron-down' : undefined"
+      :ui="{ trailingIcon: 'group-data-[state=open]:rotate-180 transition-transform duration-200' }"
+    >
       <UIcon name="i-lucide-settings" class="hook-icon" />
       <span class="hook-name">{{ hookName }}</span>
       <span class="hook-event">{{ hookEvent }}</span>
@@ -62,22 +61,25 @@ function toggleExpand() {
       >
         running
       </UBadge>
-    </div>
-    <div v-if="expanded && hasDetails" class="hook-details">
-      <div v-if="output" class="hook-detail-section">
-        <span class="hook-detail-label">output:</span>
-        <pre class="hook-detail-content">{{ output }}</pre>
+    </UButton>
+
+    <template #content>
+      <div v-if="hasDetails" class="hook-details">
+        <div v-if="output" class="hook-detail-section">
+          <span class="hook-detail-label">output:</span>
+          <pre class="hook-detail-content">{{ output }}</pre>
+        </div>
+        <div v-if="stdout" class="hook-detail-section">
+          <span class="hook-detail-label">stdout:</span>
+          <pre class="hook-detail-content">{{ stdout }}</pre>
+        </div>
+        <div v-if="stderr" class="hook-detail-section">
+          <span class="hook-detail-label">stderr:</span>
+          <pre class="hook-detail-content">{{ stderr }}</pre>
+        </div>
       </div>
-      <div v-if="stdout" class="hook-detail-section">
-        <span class="hook-detail-label">stdout:</span>
-        <pre class="hook-detail-content">{{ stdout }}</pre>
-      </div>
-      <div v-if="stderr" class="hook-detail-section">
-        <span class="hook-detail-label">stderr:</span>
-        <pre class="hook-detail-content">{{ stderr }}</pre>
-      </div>
-    </div>
-  </div>
+    </template>
+  </UCollapsible>
 </template>
 
 <style scoped>
@@ -89,15 +91,9 @@ function toggleExpand() {
   font-size: 11px;
 }
 
-.hook-activity-block.clickable {
-  cursor: pointer;
-}
-
 .hook-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
+  justify-content: flex-start !important;
+  padding-inline: 0 !important;
 }
 
 .hook-icon {

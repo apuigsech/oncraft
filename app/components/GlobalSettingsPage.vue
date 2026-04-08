@@ -126,22 +126,26 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
               <span class="row-label">Theme</span>
               <span class="row-desc">App color scheme</span>
             </div>
-            <div class="theme-pills">
-              <button
+            <UFieldGroup class="theme-pills">
+              <UButton
+                :variant="selectedTheme === 'dark' ? 'solid' : 'ghost'"
+                :color="selectedTheme === 'dark' ? 'primary' : 'neutral'"
+                size="xs"
                 class="pill"
-                :class="{ active: selectedTheme === 'dark' }"
                 @click="selectedTheme = 'dark'"
               >
                 Dark
-              </button>
-              <button
+              </UButton>
+              <UButton
+                :variant="selectedTheme === 'light' ? 'solid' : 'ghost'"
+                :color="selectedTheme === 'light' ? 'primary' : 'neutral'"
+                size="xs"
                 class="pill"
-                :class="{ active: selectedTheme === 'light' }"
                 @click="selectedTheme = 'light'"
               >
                 Light
-              </button>
-            </div>
+              </UButton>
+            </UFieldGroup>
           </div>
         </div>
       </section>
@@ -156,12 +160,13 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
           <!-- Chat Mode -->
           <div class="card-row card-row--chat-mode">
             <span class="row-label">Chat Mode</span>
-            <div class="chat-mode-options">
-              <button
+            <UFieldGroup class="chat-mode-options">
+              <UButton
                 v-for="opt in CHAT_MODE_OPTIONS"
                 :key="opt.value"
                 class="chat-mode-card"
-                :class="{ active: selectedChatMode === opt.value }"
+                :variant="selectedChatMode === opt.value ? 'soft' : 'ghost'"
+                :color="selectedChatMode === opt.value ? 'primary' : 'neutral'"
                 @click="selectedChatMode = opt.value"
               >
                 <UIcon :name="opt.icon" class="chat-mode-icon" />
@@ -169,8 +174,8 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
                   <span class="chat-mode-label">{{ opt.label }}</span>
                   <span class="chat-mode-desc">{{ opt.description }}</span>
                 </div>
-              </button>
-            </div>
+              </UButton>
+            </UFieldGroup>
           </div>
 
           <!-- Model -->
@@ -244,51 +249,56 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
             <USwitch v-model="telemetryEnabled" />
           </div>
 
-          <!-- What do we collect -->
-          <div class="card-row card-row--expandable" @click="showTelemetryDetails = !showTelemetryDetails">
-            <div class="row-info">
-              <span class="row-label row-label--link">
-                <UIcon
-                  :name="showTelemetryDetails ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-                  class="expand-icon"
-                />
-                What do we collect?
-              </span>
-            </div>
-          </div>
-          <div v-if="showTelemetryDetails" class="card-row-details">
-            <p>When enabled, we collect only:</p>
-            <ul>
-              <li><strong>Adoption:</strong> Anonymous install ID, app version, OS, launch frequency.</li>
-              <li><strong>Feature usage:</strong> Chat mode, worktree usage, flow presets used, model/effort selections.</li>
-              <li><strong>Errors:</strong> Error type and sanitized message (no paths, no user data).</li>
-            </ul>
-            <p class="details-footer">We <strong>never</strong> collect project names, file contents, chat content, API keys, or any personally identifiable information.</p>
-
-            <template v-if="telemetryEnabled">
-              <div class="install-id-section">
-                <span class="row-desc">Install ID:</span>
-                <code class="install-id-value">{{ maskedInstallId }}</code>
-                <UButton
-                  v-if="telemetryInstallId"
-                  variant="ghost"
-                  color="neutral"
-                  size="xs"
-                  :icon="showInstallId ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-                  @click.stop="showInstallId = !showInstallId"
-                />
+          <UCollapsible v-model:open="showTelemetryDetails" :unmount-on-hide="false">
+            <UButton
+              variant="ghost"
+              color="primary"
+              block
+              class="card-row card-row--expandable"
+              trailing-icon="i-lucide-chevron-down"
+              :ui="{ trailingIcon: 'group-data-[state=closed]:-rotate-90 transition-transform duration-200' }"
+            >
+              <div class="row-info">
+                <span class="row-label row-label--link">What do we collect?</span>
               </div>
-              <UButton
-                variant="outline"
-                color="neutral"
-                size="xs"
-                icon="i-lucide-eye"
-                @click.stop="showTelemetryData = true"
-              >
-                View Telemetry Data
-              </UButton>
+            </UButton>
+
+            <template #content>
+              <div class="card-row-details">
+                <p>When enabled, we collect only:</p>
+                <ul>
+                  <li><strong>Adoption:</strong> Anonymous install ID, app version, OS, launch frequency.</li>
+                  <li><strong>Feature usage:</strong> Chat mode, worktree usage, flow presets used, model/effort selections.</li>
+                  <li><strong>Errors:</strong> Error type and sanitized message (no paths, no user data).</li>
+                </ul>
+                <p class="details-footer">We <strong>never</strong> collect project names, file contents, chat content, API keys, or any personally identifiable information.</p>
+
+                <template v-if="telemetryEnabled">
+                  <div class="install-id-section">
+                    <span class="row-desc">Install ID:</span>
+                    <code class="install-id-value">{{ maskedInstallId }}</code>
+                    <UButton
+                      v-if="telemetryInstallId"
+                      variant="ghost"
+                      color="neutral"
+                      size="xs"
+                      :icon="showInstallId ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                      @click.stop="showInstallId = !showInstallId"
+                    />
+                  </div>
+                  <UButton
+                    variant="outline"
+                    color="neutral"
+                    size="xs"
+                    icon="i-lucide-eye"
+                    @click.stop="showTelemetryData = true"
+                  >
+                    View Telemetry Data
+                  </UButton>
+                </template>
+              </div>
             </template>
-          </div>
+          </UCollapsible>
         </div>
 
         <UModal v-model:open="showTelemetryData">
@@ -434,11 +444,8 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
 }
 
 .card-row--expandable {
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.card-row--expandable:hover {
-  background: color-mix(in srgb, var(--bg-tertiary) 50%, transparent);
+  justify-content: space-between !important;
+  text-align: left !important;
 }
 
 .card-row--chat-mode {
@@ -486,25 +493,12 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
 /* Theme pills */
 .theme-pills {
   display: flex;
-  background: var(--bg-tertiary);
   border-radius: 6px;
-  padding: 2px;
   flex-shrink: 0;
 }
 .pill {
-  padding: 4px 12px;
-  border-radius: 5px;
   font-size: 11px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.pill.active {
-  background: var(--accent);
-  color: var(--bg-primary);
-  font-weight: 500;
+  min-width: 64px;
 }
 
 /* Chat mode cards */
@@ -521,16 +515,8 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 8px;
-  cursor: pointer;
   transition: all 0.15s;
   text-align: left;
-}
-.chat-mode-card:hover {
-  border-color: var(--text-muted);
-}
-.chat-mode-card.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-tertiary));
 }
 .chat-mode-icon {
   width: 16px;
@@ -538,9 +524,6 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
   color: var(--text-muted);
   flex-shrink: 0;
   margin-top: 1px;
-}
-.chat-mode-card.active .chat-mode-icon {
-  color: var(--accent);
 }
 .chat-mode-text {
   display: flex;
@@ -556,13 +539,6 @@ const appVersion = import.meta.env.PACKAGE_VERSION ?? 'dev';
   font-size: 10px;
   color: var(--text-muted);
   line-height: 1.4;
-}
-
-/* Expand icon */
-.expand-icon {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
 }
 
 /* Telemetry details (inside card) */

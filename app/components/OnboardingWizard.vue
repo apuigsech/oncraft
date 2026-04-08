@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { runHealthChecks, type HealthCheckResult } from '~/services/health-check'
 import { setEnabled as telemetrySetEnabled } from '~/services/telemetry'
+import type { StepperItem } from '@nuxt/ui'
 
 const emit = defineEmits<{
   complete: []
@@ -13,6 +14,11 @@ const currentStep = ref(0)
 const telemetryChecked = ref(false)
 const healthResult = ref<HealthCheckResult | null>(null)
 const healthLoading = ref(false)
+const stepperItems: StepperItem[] = [
+  { title: 'Welcome', icon: 'i-lucide-layers' },
+  { title: 'Checks', icon: 'i-lucide-shield-check' },
+  { title: 'Project', icon: 'i-lucide-folder-open' },
+]
 
 async function runChecks() {
   healthLoading.value = true
@@ -66,14 +72,13 @@ async function openProjectAndFinish() {
   <div class="onboarding-overlay">
     <div class="onboarding-card">
       <!-- Step indicators -->
-      <div class="step-indicators">
-        <div
-          v-for="i in 3"
-          :key="i"
-          class="step-dot"
-          :class="{ 'step-dot--active': currentStep === i - 1, 'step-dot--done': currentStep > i - 1 }"
-        />
-      </div>
+      <UStepper
+        :model-value="currentStep"
+        :items="stepperItems"
+        size="xs"
+        color="primary"
+        disabled
+      />
 
       <!-- Step 1: Welcome -->
       <div v-if="currentStep === 0" class="step-content">
@@ -85,7 +90,7 @@ async function openProjectAndFinish() {
         </p>
 
         <label class="telemetry-label">
-          <input v-model="telemetryChecked" type="checkbox" class="telemetry-checkbox" />
+          <UCheckbox v-model="telemetryChecked" />
           <span class="telemetry-text">
             Help improve OnCraft by sharing anonymous usage data
           </span>
@@ -222,22 +227,6 @@ async function openProjectAndFinish() {
   gap: 20px;
 }
 
-/* Step indicators */
-.step-indicators {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-}
-.step-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--bg-tertiary);
-  transition: background 0.2s;
-}
-.step-dot--active { background: var(--accent); }
-.step-dot--done { background: var(--success); }
-
 /* Step content */
 .step-content {
   display: flex;
@@ -284,11 +273,6 @@ async function openProjectAndFinish() {
   gap: 8px;
   margin-top: 8px;
   cursor: pointer;
-}
-.telemetry-checkbox {
-  accent-color: var(--accent);
-  width: 16px;
-  height: 16px;
 }
 .telemetry-text {
   font-size: 13px;
