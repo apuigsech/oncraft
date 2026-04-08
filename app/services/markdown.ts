@@ -2,13 +2,13 @@
 // These are large dependencies (~400KB hljs, ~80KB marked) that are not needed
 // until the user actually opens a chat panel with assistant messages.
 
-import DOMPurify from 'dompurify';
-
 type MarkedModule = typeof import('marked');
 type HljsModule = typeof import('highlight.js/lib/core');
+type DomPurifyModule = typeof import('dompurify');
 
 let _marked: MarkedModule['marked'] | null = null;
 let _hljs: HljsModule['default'] | null = null;
+let _domPurify: DomPurifyModule['default'] | null = null;
 let _initPromise: Promise<void> | null = null;
 
 async function _initMarkdownEngine(): Promise<void> {
@@ -16,13 +16,15 @@ async function _initMarkdownEngine(): Promise<void> {
   if (_initPromise) { await _initPromise; return; }
 
   _initPromise = (async () => {
-    const [markedMod, hljsMod] = await Promise.all([
+    const [markedMod, hljsMod, domPurifyMod] = await Promise.all([
       import('marked'),
       import('highlight.js/lib/core'),
+      import('dompurify'),
     ]);
 
     _marked = markedMod.marked;
     _hljs = hljsMod.default;
+    _domPurify = domPurifyMod.default;
 
     // Register languages in parallel
     const langs = await Promise.all([
@@ -85,12 +87,12 @@ async function _initMarkdownEngine(): Promise<void> {
 // Synchronous render — uses pre-initialized engine.
 // Falls back to plain-text HTML-escaped output if called before init completes.
 export function renderMarkdown(text: string): string {
-  if (!_marked) {
+  if (!_marked || !_domPurify) {
     // Trigger lazy init for next call; return escaped text for this call
     _initMarkdownEngine();
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-  return DOMPurify.sanitize(_marked.parse(text, { async: false }) as string);
+  return _domPurify.sanitize(_marked.parse(text, { async: false }) as string);
 }
 
 // Eagerly trigger initialization (call this when chat opens, not at app startup)

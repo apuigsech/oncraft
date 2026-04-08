@@ -115,13 +115,24 @@ export const useFlowStore = defineStore('flow', () => {
       }
     }
 
+    const mcpToolPrefixes = Object.keys(config.mcpServers || {}).map(name => `mcp__${name}__*`);
+    const allowedTools = [
+      ...new Set([
+        ...(config.allowedTools || []),
+        ...mcpToolPrefixes,
+        'mcp__oncraft__get_current_card',
+        'mcp__oncraft__update_current_card',
+        'mcp__oncraft__get_project',
+      ]),
+    ];
+
     return {
       agent:         config.agent,
       agents:        Object.values(resolved),
       agentsMissing: missing,
       skills:        config.skills,
       mcpServers:    config.mcpServers,
-      allowedTools:  config.allowedTools,
+      allowedTools,
       disallowedTools: config.disallowedTools,
       systemPromptAppend: config.systemPromptAppend,
     };

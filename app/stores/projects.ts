@@ -79,6 +79,13 @@ export const useProjectsStore = defineStore('projects', () => {
 
   // Soft close — hides from TabBar but keeps in Recent Projects
   async function closeProject(id: string): Promise<void> {
+    const cardsStore = useCardsStore();
+    const sessionsStore = useSessionsStore();
+    const projectCards = cardsStore.cards.filter(c => c.projectId === id);
+    for (const c of projectCards) {
+      try { await sessionsStore.stopSession(c.id); } catch { /* best effort */ }
+      sessionsStore.purgeCard(c.id);
+    }
     await db.setProjectClosed(id, true);
     const project = projects.value.find(p => p.id === id);
     if (project) project.closed = true;

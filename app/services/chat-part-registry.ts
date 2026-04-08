@@ -428,7 +428,7 @@ function process(msg: SidecarMessage): ChatPart | null {
     placement: definition.placement,
     timestamp: Date.now(),
     data,
-    raw: msg as Record<string, unknown>,
+    ...(import.meta.dev ? { raw: msg as Record<string, unknown> } : {}),
   };
 }
 

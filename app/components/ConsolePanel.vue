@@ -19,6 +19,7 @@ let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let currentPtyId: string | null = null;
+let injectedStyle: HTMLStyleElement | null = null;
 // Cache the dynamically-imported invoke so it's available to all helpers
 let invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
 // Buffer to capture early PTY output and extract session ID
@@ -91,10 +92,46 @@ async function spawnPty() {
     currentPtyId = ptyId;
     connected.value = true;
     error.value = null;
+    await attachPtyListeners(ptyId);
   } catch (err) {
     error.value = `Failed to spawn Claude CLI: ${err}`;
     connected.value = false;
   }
+}
+
+async function attachPtyListeners(ptyId: string) {
+  if (!ptyId) return;
+  const { listen } = await import('@tauri-apps/api/event');
+  unlistenOutput?.();
+  unlistenExit?.();
+
+  unlistenOutput = await listen<{ id: string; data: string }>(`pty-output-${ptyId}`, (event) => {
+    if (event.payload.id === currentPtyId && terminal) {
+      terminal.write(event.payload.data);
+      if (!sessionIdCaptured && sessionsStore.activeChatCardId) {
+        outputBuffer += event.payload.data;
+        const clean = outputBuffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+        const uuidMatch = clean.match(/session:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        if (uuidMatch) {
+          sessionIdCaptured = true;
+          const capturedId = uuidMatch[1]!;
+          cardsStore.updateCardConsoleSessionId(sessionsStore.activeChatCardId!, capturedId);
+        }
+        if (outputBuffer.length > 4096) {
+          sessionIdCaptured = true;
+        }
+      }
+    }
+  });
+
+  unlistenExit = await listen<{ id: string; code: number | null }>(`pty-exit-${ptyId}`, (event) => {
+    if (event.payload.id === currentPtyId) {
+      connected.value = false;
+      if (terminal) {
+        terminal.write('\r\n\x1b[90m--- Session ended ---\x1b[0m\r\n');
+      }
+    }
+  });
 }
 
 async function killPty() {
@@ -126,13 +163,11 @@ onMounted(async () => {
     { FitAddon },
     { WebLinksAddon },
     { invoke: tauriInvoke },
-    { listen },
   ] = await Promise.all([
     import('@xterm/xterm'),
     import('@xterm/addon-fit'),
     import('@xterm/addon-web-links'),
     import('@tauri-apps/api/core'),
-    import('@tauri-apps/api/event'),
   ]);
 
   // Inject xterm CSS dynamically
@@ -142,9 +177,9 @@ onMounted(async () => {
   // Fallback: if the URL resolution fails (bundler), try inserting the CSS inline
   try {
     const cssModule = await import('@xterm/xterm/css/xterm.css?inline');
-    const style = document.createElement('style');
-    style.textContent = cssModule.default;
-    document.head.appendChild(style);
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = cssModule.default;
+    document.head.appendChild(injectedStyle);
   } catch {
     // CSS may already be bundled, that's OK
   }
@@ -221,43 +256,6 @@ onMounted(async () => {
   });
   resizeObserver.observe(terminalRef.value);
 
-  // Listen for PTY output
-  unlistenOutput = await listen<{ id: string; data: string }>('pty-output', (event) => {
-    if (event.payload.id === currentPtyId && terminal) {
-      terminal.write(event.payload.data);
-
-      // Try to capture the session ID from early Claude CLI output.
-      // The CLI prints the session ID in its initial output, often as a UUID.
-      // We strip ANSI escapes and look for a UUID pattern in the first ~4KB of output.
-      if (!sessionIdCaptured && sessionsStore.activeChatCardId) {
-        outputBuffer += event.payload.data;
-        // Strip ANSI escape sequences for pattern matching
-        const clean = outputBuffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-        // Claude CLI outputs session ID as a UUID — look for it
-        const uuidMatch = clean.match(/session:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-        if (uuidMatch) {
-          sessionIdCaptured = true;
-          const capturedId = uuidMatch[1]!;
-          cardsStore.updateCardConsoleSessionId(sessionsStore.activeChatCardId!, capturedId);
-        }
-        // Stop buffering after a reasonable amount
-        if (outputBuffer.length > 4096) {
-          sessionIdCaptured = true;
-        }
-      }
-    }
-  });
-
-  // Listen for PTY exit
-  unlistenExit = await listen<{ id: string; code: number | null }>('pty-exit', (event) => {
-    if (event.payload.id === currentPtyId) {
-      connected.value = false;
-      if (terminal) {
-        terminal.write('\r\n\x1b[90m--- Session ended ---\x1b[0m\r\n');
-      }
-    }
-  });
-
   // Spawn the PTY
   await spawnPty();
 });
@@ -268,6 +266,10 @@ onBeforeUnmount(async () => {
   unlistenExit?.();
   resizeObserver?.disconnect();
   terminal?.dispose();
+  if (injectedStyle?.parentNode) {
+    injectedStyle.parentNode.removeChild(injectedStyle);
+  }
+  injectedStyle = null;
 });
 
 // Watch for card changes — respawn if the active card changes
