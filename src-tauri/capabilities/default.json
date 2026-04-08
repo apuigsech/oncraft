@@ -40,7 +40,6 @@
     "sql:allow-execute",
     "sql:allow-select",
     "dialog:allow-open",
-    "fs:default",
     {
       "identifier": "fs:allow-exists",
       "allow": [
@@ -95,8 +94,7 @@
         { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "$TEMP/**" },
-        { "path": "/var/folders/**" }
+        { "path": "$TEMP/**" }
       ]
     },
     {
@@ -116,8 +114,7 @@
         { "path": "$HOME/.claude/**" },
         { "path": "$APPCONFIG/**" },
         { "path": "$APPDATA/**" },
-        { "path": "$TEMP/**" },
-        { "path": "/var/folders/**" }
+        { "path": "$TEMP/**" }
       ]
     }
   ]

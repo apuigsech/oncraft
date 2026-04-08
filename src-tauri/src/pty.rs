@@ -121,6 +121,7 @@ pub fn pty_spawn(
         let mut last_flush = std::time::Instant::now();
         let flush_interval = std::time::Duration::from_millis(16);
         let flush_size = 8192;
+        let output_event_name = format!("pty-output-{}", read_id);
 
         loop {
             match reader.read(&mut buf) {
@@ -130,7 +131,7 @@ pub fn pty_spawn(
                     let elapsed = last_flush.elapsed();
                     if elapsed >= flush_interval || accum.len() >= flush_size {
                         let _ = app_clone.emit(
-                            "pty-output",
+                            &output_event_name,
                             PtyOutput {
                                 id: read_id.clone(),
                                 data: std::mem::take(&mut accum),
@@ -145,7 +146,7 @@ pub fn pty_spawn(
         // Flush remaining accumulated output on EOF/error
         if !accum.is_empty() {
             let _ = app_clone.emit(
-                "pty-output",
+                &output_event_name,
                 PtyOutput {
                     id: read_id.clone(),
                     data: accum,
@@ -163,8 +164,9 @@ pub fn pty_spawn(
         let code = status.ok().map(|s| {
             s.exit_code()
         });
+        let exit_event_name = format!("pty-exit-{}", exit_id);
         let _ = app_clone2.emit(
-            "pty-exit",
+            &exit_event_name,
             PtyExit {
                 id: exit_id.clone(),
                 code,
