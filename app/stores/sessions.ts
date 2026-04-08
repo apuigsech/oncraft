@@ -6,6 +6,7 @@ import {
   onMessage, offMessage, onMeta, offMeta,
   listCommandsNative, loadHistoryViaSidecar,
 } from '~/services/claude-process';
+import type { FlowPayload } from '~/services/claude-process';
 import { resolveTemplate } from '~/services/template-engine';
 import { ensureMarkdownReady } from '~/services/markdown';
 import { trackSessionStart, trackSessionEnd } from '~/services/telemetry';
@@ -29,6 +30,9 @@ export const useSessionsStore = defineStore('sessions', () => {
   const sessionConfigs: Record<string, SessionConfig> = reactive({});
   const availableCommands = ref<{ name: string; desc: string; source?: string }[]>([]);
   const sessionMetrics: Record<string, { inputTokens: number; outputTokens: number; costUsd: number; durationMs: number }> = reactive({});
+  // Sidecar options are fixed for the process lifetime; track a signature per card
+  // and respawn when flow/session config changes to keep tool availability in sync.
+  const sidecarConfigSignature = reactive(new Map<string, string>());
 
   // NAV: Track cardId → projectId for cross-project activity indicators
   const cardProjectMap = reactive(new Map<string, string>());
@@ -145,6 +149,25 @@ export const useSessionsStore = defineStore('sessions', () => {
       };
     }
     return sessionConfigs[cardId];
+  }
+
+  function computeSidecarConfigSignature(config: SessionConfig, flowPayload?: FlowPayload): string {
+    const mcpServerNames = Object.keys(flowPayload?.mcpServers || {}).sort();
+    const agentNames = Object.keys(flowPayload?.agents || {}).sort();
+    const allowedTools = [...(flowPayload?.allowedTools || [])].sort();
+    const disallowedTools = [...(flowPayload?.disallowedTools || [])].sort();
+
+    return JSON.stringify({
+      model: config.model || null,
+      effort: config.effort || null,
+      permissionMode: config.permissionMode || null,
+      worktreeName: config.worktreeName || null,
+      systemPromptAppend: flowPayload?.systemPromptAppend || null,
+      allowedTools,
+      disallowedTools,
+      mcpServerNames,
+      agentNames,
+    });
   }
 
   function updateSessionConfig(cardId: string, partial: Partial<SessionConfig>): void {
@@ -468,7 +491,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
     // Resolve Flow config for this card's current state (Flow + FlowState layers)
     const flowStore = useFlowStore();
-    let flowPayload: import('~/services/claude-process').FlowPayload | undefined;
+    let flowPayload: FlowPayload | undefined;
 
     if (card && flowStore.flow) {
       const flowConfig = await flowStore.getResolvedConfig(card.columnName, project.path);
@@ -498,26 +521,19 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
     }
 
-    // If sidecar is already alive (previous query completed), reuse it
-    if (isProcessActive(cardId)) {
-      try {
-        await sendStart(cardId, project.path, message, sessionId, config, images, flowPayload, forkSession);
-      } catch (err) {
-        appendPart(cardId, {
-          id: `error-${Date.now()}`,
-          kind: 'error',
-          placement: 'inline',
-          timestamp: Date.now(),
-          data: { message: `Error: ${err}` },
-        });
-        markQueryComplete(cardId);
-        await cardsStore.updateCardState(cardId, 'idle');
+    const nextSignature = computeSidecarConfigSignature(config, flowPayload);
+    const currentSignature = sidecarConfigSignature.get(cardId);
+    const shouldRespawn = !isProcessActive(cardId) || currentSignature !== nextSignature;
+
+    // If sidecar options changed (or process missing), respawn to apply new config.
+    if (shouldRespawn) {
+      if (isProcessActive(cardId)) {
+        await killProcess(cardId);
       }
-    } else {
-      // No sidecar running — spawn a new one
       setupMessageListener(cardId);
       try {
         await spawnSession(cardId, project.path, message, sessionId, config, images, flowPayload, forkSession);
+        sidecarConfigSignature.set(cardId, nextSignature);
       } catch (err) {
         appendPart(cardId, {
           id: `error-${Date.now()}`,
@@ -530,6 +546,21 @@ export const useSessionsStore = defineStore('sessions', () => {
         await cardsStore.updateCardState(cardId, 'idle');
         offMessage(cardId);
         offMeta(cardId);
+      }
+    } else {
+      try {
+        await sendStart(cardId, project.path, message, sessionId, config, images, flowPayload, forkSession);
+        sidecarConfigSignature.set(cardId, nextSignature);
+      } catch (err) {
+        appendPart(cardId, {
+          id: `error-${Date.now()}`,
+          kind: 'error',
+          placement: 'inline',
+          timestamp: Date.now(),
+          data: { message: `Error: ${err}` },
+        });
+        markQueryComplete(cardId);
+        await cardsStore.updateCardState(cardId, 'idle');
       }
     }
   }
@@ -552,6 +583,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     offMessage(cardId);
     offMeta(cardId);
     await killProcess(cardId);
+    sidecarConfigSignature.delete(cardId);
     const cardsStore = useCardsStore();
     await cardsStore.updateCardState(cardId, 'idle');
   }
@@ -667,6 +699,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     _thinkingRafPending.delete(cardId);
     activeToolByCard.delete(cardId);
     cardAttentionState.delete(cardId);
+    sidecarConfigSignature.delete(cardId);
     // NAV: Clean up per-project active chat if this card was open
     const pid = cardProjectMap.get(cardId);
     if (pid && activeChatCardByProject.get(pid) === cardId) {
