@@ -2,12 +2,14 @@ import { readTextFile, writeTextFile, exists, mkdir, readDir } from '@tauri-apps
 import { homeDir, resourceDir, join as pathJoin } from '@tauri-apps/api/path';
 import * as yaml from 'js-yaml';
 import type { Flow, FlowState, AgentConfig, McpServerConfig, FlowWarning, GitHubConfig } from '~/types';
+import { perfEnd, perfStart } from '~/services/perf';
 
 // ─── Path constants (all resolved relative to projectPath — repo root) ────────
 
 const ONCRAFT_DIR   = '.oncraft';
 const STATES_DIR    = `${ONCRAFT_DIR}/states`;   // .oncraft/states
 const FLOW_FILE     = `${ONCRAFT_DIR}/flow.yaml`;
+const FLOW_CACHE_TTL_MS = 15_000;
 
 // Bundled presets installed to ~/.oncraft/presets/ on first launch
 const BUNDLED_PRESETS = ['swe-basic'];
@@ -127,12 +129,10 @@ async function readFlowFromDir(projectPath: string): Promise<FlowWithMd | null> 
     const raw = (yaml.load(content) as Record<string, unknown>) || {};
 
     const stateOrder: string[] = Array.isArray(raw.stateOrder) ? raw.stateOrder as string[] : [];
-    const states: FlowState[] = [];
-    for (const slug of stateOrder) {
-      states.push(await readFlowState(projectPath, slug));
-    }
-
-    const flowMd = await readMd(`${projectPath}/${ONCRAFT_DIR}/flow.md`);
+    const [states, flowMd] = await Promise.all([
+      Promise.all(stateOrder.map(slug => readFlowState(projectPath, slug))),
+      readMd(`${projectPath}/${ONCRAFT_DIR}/flow.md`),
+    ]);
 
     return {
       name:       (raw.name as string | undefined) || 'Flow',
@@ -162,9 +162,7 @@ async function readFlowFromPresetDir(presetDir: string): Promise<FlowWithMd | nu
     const raw = (yaml.load(content) as Record<string, unknown>) || {};
 
     const stateOrder: string[] = Array.isArray(raw.stateOrder) ? raw.stateOrder as string[] : [];
-    const states: FlowState[] = [];
-
-    for (const slug of stateOrder) {
+    const states = await Promise.all(stateOrder.map(async (slug) => {
       const stateYaml = `${presetDir}/states/${slug}/state.yaml`;
       let sRaw: Record<string, unknown> = {};
       try {
@@ -172,7 +170,7 @@ async function readFlowFromPresetDir(presetDir: string): Promise<FlowWithMd | nu
         if (se) sRaw = (yaml.load(await readTextFile(stateYaml)) as Record<string, unknown>) || {};
       } catch { /* treat as empty */ }
 
-      states.push({
+      return {
         slug,
         name:          (sRaw.name  as string) || slug,
         color:         (sRaw.color as string) || '#6b7280',
@@ -185,8 +183,10 @@ async function readFlowFromPresetDir(presetDir: string): Promise<FlowWithMd | nu
         requiredFiles: Array.isArray(sRaw.requiredFiles) ? sRaw.requiredFiles as string[] : undefined,
         prompt:        (await readMd(`${presetDir}/states/${slug}/prompt.md`))  || undefined,
         triggerPrompt: (await readMd(`${presetDir}/states/${slug}/trigger.md`)) || undefined,
-      });
-    }
+      };
+    }));
+
+    const flowMd = await readMd(`${presetDir}/flow.md`);
 
     return {
       name:       (raw.name as string) || 'Preset',
@@ -197,7 +197,7 @@ async function readFlowFromPresetDir(presetDir: string): Promise<FlowWithMd | nu
       tools:      parseTools(raw.tools),
       stateOrder,
       states,
-      _flowMd: (await readMd(`${presetDir}/flow.md`)) || undefined,
+      _flowMd: flowMd || undefined,
     };
   } catch {
     return null;
@@ -305,11 +305,18 @@ export interface LoadFlowResult {
   warnings: FlowWarning[];
 }
 
+const _flowCache = new Map<string, { value: LoadFlowResult; ts: number }>();
+
 export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
+  const cached = _flowCache.get(projectPath);
+  if (cached && Date.now() - cached.ts < FLOW_CACHE_TTL_MS) return cached.value;
+  const totalStart = perfStart('flow.load.total');
   const warnings: FlowWarning[] = [];
 
   // Read project flow
+  const readProjectStart = perfStart('flow.load.readProjectFlow');
   let project = await readFlowFromDir(projectPath);
+  perfEnd('flow.load.readProjectFlow', readProjectStart, { found: !!project });
 
   if (!project) {
     // No .oncraft/flow.yaml — bootstrap with swe-basic preset
@@ -324,7 +331,9 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
     } catch (err) {
       if (import.meta.dev) console.warn('[OnCraft] could not write default flow.yaml:', err);
     }
+    const rereadStart = perfStart('flow.load.rereadAfterBootstrap');
     project = await readFlowFromDir(projectPath);
+    perfEnd('flow.load.rereadAfterBootstrap', rereadStart, { found: !!project });
   }
 
   if (!project) {
@@ -336,11 +345,13 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
   // Resolve preset if referenced
   let merged: FlowWithMd = project;
   if (project.preset) {
+    const presetStart = perfStart('flow.load.resolvePreset');
     const presetExists = await resolvePreset(project.preset);
     if (!presetExists) {
       warnings.push({ scope: 'flow', message: `Preset "${project.preset}" not found at ~/.oncraft/presets/${project.preset}` });
     }
     merged = await mergeWithPreset(project, project.preset);
+    perfEnd('flow.load.resolvePreset', presetStart, { preset: project.preset, exists: !!presetExists });
   }
 
   // Validate states
@@ -353,7 +364,14 @@ export async function loadFlow(projectPath: string): Promise<LoadFlowResult> {
   const { _flowMd: extractedFlowMd, ...cleanFlow } = merged;
   const flowMd = extractedFlowMd || '';
 
-  return { flow: cleanFlow as Flow, flowMd, warnings };
+  const result = { flow: cleanFlow as Flow, flowMd, warnings };
+  perfEnd('flow.load.total', totalStart, {
+    states: cleanFlow.stateOrder.length,
+    warnings: warnings.length,
+    hasFlowMd: !!flowMd,
+  });
+  _flowCache.set(projectPath, { value: result, ts: Date.now() });
+  return result;
 }
 
 // ─── Config resolution (merge Flow + FlowState for a given slug) ──────────────
@@ -511,6 +529,7 @@ export async function changeProjectPreset(projectPath: string, presetName: strin
     await mkdir(dirPath, { recursive: true });
   } catch { /* already exists */ }
   await writeTextFile(flowFile, content);
+  _flowCache.delete(projectPath);
 }
 
 export async function hasLocalOverrides(projectPath: string): Promise<boolean> {

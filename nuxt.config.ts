@@ -88,6 +88,7 @@ export default defineNuxtConfig({
     },
     clearScreen: false,
     build: {
+      target: 'es2022',
       rollupOptions: {
         output: {
           manualChunks(id: string) {
@@ -101,6 +102,8 @@ export default defineNuxtConfig({
             if (id.includes('@tauri-apps')) return 'tauri';
             // Separate Nuxt UI components into their own chunk
             if (id.includes('@nuxt/ui')) return 'nuxt-ui';
+            // Split drag-and-drop libs from main app chunk
+            if (id.includes('sortablejs') || id.includes('vue-draggable-plus')) return 'dnd';
           },
         },
       },

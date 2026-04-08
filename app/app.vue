@@ -3,6 +3,7 @@ import { preloadUtilSidecar } from '~/services/claude-process'
 import { installBundledPresets } from '~/services/flow-loader'
 import { initTelemetry, shutdownTelemetry } from '~/services/telemetry'
 import { checkForUpdate, type UpdateInfo } from '~/services/version-check'
+import { perfEnd, perfStart } from '~/services/perf'
 
 // ME-5: Lazy-load heavy components that are not needed at startup.
 // ChatPanel pulls in marked + hljs (~480KB), ConsolePanel pulls in xterm (~300KB).
@@ -32,6 +33,10 @@ const showChat = computed(() => isProjectTab.value && sessionsStore.activeChatCa
 const isConsoleMode = computed(() => settingsStore.settings.chatMode === 'console')
 const chatWidth = ref(400)
 const consoleWidth = ref(520)
+const handleBeforeUnload = () => {
+  void sessionsStore.shutdownAllSessions()
+  void cardsStore.flushAllPendingWrites()
+}
 
 function startResize(e: MouseEvent) {
   const startX = e.clientX
@@ -56,14 +61,19 @@ function startResize(e: MouseEvent) {
 }
 
 onMounted(async () => {
+  const appBootStart = perfStart('app.boot.total')
   // Install bundled presets to ~/.oncraft/presets/ on first launch (idempotent)
+  const presetInstallStart = perfStart('app.boot.installBundledPresets')
   installBundledPresets()
+  perfEnd('app.boot.installBundledPresets', presetInstallStart)
 
   // QW-1: Parallel store loads — settings and projects are independent
+  const settingsProjectsStart = perfStart('app.boot.settings+projects')
   const [settingsResult, projectsResult] = await Promise.allSettled([
     settingsStore.load(),
     projectsStore.load(),
   ])
+  perfEnd('app.boot.settings+projects', settingsProjectsStart)
 
   if (settingsResult.status === 'rejected') {
     if (import.meta.dev) console.warn('[OnCraft] settings load failed, using defaults:', settingsResult.reason)
@@ -78,10 +88,12 @@ onMounted(async () => {
   if (projectsStore.activeProject) {
     projectsStore.activeTab = projectsStore.activeProject.id
     // QW-1: Cards and pipelines are independent — load in parallel
+    const cardsFlowStart = perfStart('app.boot.cards+flow')
     await Promise.allSettled([
       cardsStore.loadForProject(projectsStore.activeProject.id),
       flowStore.loadForProject(projectsStore.activeProject.path),
     ])
+    perfEnd('app.boot.cards+flow', cardsFlowStart)
     // QW-2: loadAvailableCommands deferred — will load on first chat open
     // Preload utility sidecar in background so history loads are fast
     // when the user opens a chat (sidecar is only needed for SDK operations)
@@ -101,9 +113,15 @@ onMounted(async () => {
 
   // Check for updates in background (non-blocking)
   checkForUpdate().then(info => { updateInfo.value = info })
+  perfEnd('app.boot.total', appBootStart, { appReady: true, hasActiveProject: !!projectsStore.activeProject })
+
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  void sessionsStore.shutdownAllSessions()
+  void cardsStore.flushAllPendingWrites()
   shutdownTelemetry()
 })
 </script>
@@ -154,12 +172,14 @@ onUnmounted(() => {
         </div>
         <div v-if="showChat" class="chat-side">
           <div class="divider" @mousedown="startResize" />
-          <ErrorBoundary v-if="isConsoleMode">
-            <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
-          </ErrorBoundary>
-          <ErrorBoundary v-else>
-            <ChatPanel :style="{ width: chatWidth + 'px' }" />
-          </ErrorBoundary>
+          <KeepAlive :max="6">
+            <ErrorBoundary v-if="isConsoleMode" key="console-panel">
+              <ConsolePanel :style="{ width: consoleWidth + 'px' }" />
+            </ErrorBoundary>
+            <ErrorBoundary v-else key="chat-panel">
+              <ChatPanel :style="{ width: chatWidth + 'px' }" />
+            </ErrorBoundary>
+          </KeepAlive>
         </div>
       </div>
       <ProjectSettings v-if="showSettings" v-model:open="showSettings" @close="showSettings = false" />

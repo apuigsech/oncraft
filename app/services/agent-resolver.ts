@@ -13,6 +13,9 @@ export interface ResolvedAgent {
   maxTurns?: number;
 }
 
+const CACHE_TTL_MS = 60_000;
+const _agentCache = new Map<string, { value: ResolvedAgent | null; ts: number }>();
+
 async function tryReadAgentMd(path: string): Promise<ResolvedAgent | null> {
   try {
     const e = await exists(path);
@@ -45,6 +48,11 @@ export async function resolveAgent(
   agentName: string,
   projectPath: string,
 ): Promise<ResolvedAgent | null> {
+  const cacheKey = `${projectPath}::${agentName}`;
+  const cached = _agentCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    return cached.value;
+  }
   const home = await homeDir();
 
   // Resolution order:
@@ -57,9 +65,12 @@ export async function resolveAgent(
 
   for (const path of candidates) {
     const agent = await tryReadAgentMd(path);
-    if (agent) return agent;
+    if (agent) {
+      _agentCache.set(cacheKey, { value: agent, ts: Date.now() });
+      return agent;
+    }
   }
-
+  _agentCache.set(cacheKey, { value: null, ts: Date.now() });
   return null;
 }
 
@@ -69,14 +80,13 @@ export async function resolveAgents(
 ): Promise<{ resolved: Record<string, ResolvedAgent>; missing: string[] }> {
   const resolved: Record<string, ResolvedAgent> = {};
   const missing: string[] = [];
-
-  for (const name of agentNames) {
-    const agent = await resolveAgent(name, projectPath);
-    if (agent) {
-      resolved[name] = agent;
-    } else {
-      missing.push(name);
-    }
+  const pairs = await Promise.all(agentNames.map(async (name) => ({
+    name,
+    agent: await resolveAgent(name, projectPath),
+  })));
+  for (const pair of pairs) {
+    if (pair.agent) resolved[pair.name] = pair.agent;
+    else missing.push(pair.name);
   }
 
   return { resolved, missing };

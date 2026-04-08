@@ -1,5 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { Project, Card, DailyCost } from '~/types';
+import { perfEnd, perfStart } from '~/services/perf';
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -11,9 +12,13 @@ let db: Database | null = null;
 
 export async function getDb(): Promise<Database> {
   if (db) return db;
+  const start = perfStart('db.getDb.total');
   db = await Database.load('sqlite:oncraft.db');
   await db.execute('PRAGMA foreign_keys = ON');
+  const migrateStart = perfStart('db.runMigrations');
   await runMigrations(db);
+  perfEnd('db.runMigrations', migrateStart);
+  perfEnd('db.getDb.total', start);
   return db;
 }
 
@@ -80,6 +85,11 @@ async function runMigrations(db: Database): Promise<void> {
   await migrateAddColumn('ALTER TABLE projects ADD COLUMN closed INTEGER DEFAULT 0');
   // Migration: add last_viewed_at for "unseen changes" tracking
   await migrateAddColumn('ALTER TABLE cards ADD COLUMN last_viewed_at TEXT');
+
+  // Performance indexes
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_session_id ON cards(session_id)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_last_activity_at ON cards(last_activity_at)');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_cards_project_column_order ON cards(project_id, column_name, column_order)');
 }
 
 export async function insertProject(project: Project): Promise<void> {
@@ -180,9 +190,11 @@ export async function getCardById(id: string): Promise<Card | null> {
 
 export async function getCardsByProject(projectId: string): Promise<Card[]> {
   const d = await getDb();
+  const start = perfStart('db.getCardsByProject');
   const rows = await d.select<CardRow[]>(
     'SELECT * FROM cards WHERE project_id = $1 ORDER BY column_order ASC', [projectId],
   );
+  perfEnd('db.getCardsByProject', start, { projectId, rows: rows.length });
   return rows.map(mapRowToCard);
 }
 
@@ -228,18 +240,26 @@ export async function deleteCard(id: string): Promise<void> {
 export async function batchUpdateCardPositions(
   updates: { id: string; columnName: string; columnOrder: number }[]
 ): Promise<void> {
+  if (updates.length === 0) return;
   const d = await getDb();
-  await d.execute('BEGIN');
+  const start = perfStart('db.batchUpdateCardPositions');
+  // Single statement update using CASE to avoid N+1 round-trips
+  const ids = updates.map(u => u.id);
+  const columnCase = updates.map((u, i) => `WHEN $${i + 1} THEN '${u.columnName.replace(/'/g, "''")}'`).join(' ');
+  const orderCase = updates.map((u, i) => `WHEN $${i + 1} THEN ${u.columnOrder}`).join(' ');
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
   try {
-    for (const u of updates) {
-      await d.execute(
-        'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
-        [u.columnName, u.columnOrder, u.id]
-      );
-    }
-    await d.execute('COMMIT');
+    await d.execute(
+      `UPDATE cards
+       SET column_name = CASE id ${columnCase} END,
+           column_order = CASE id ${orderCase} END,
+           last_activity_at = CURRENT_TIMESTAMP
+       WHERE id IN (${placeholders})`,
+      ids,
+    );
+    perfEnd('db.batchUpdateCardPositions', start, { updates: updates.length });
   } catch (e) {
-    await d.execute('ROLLBACK');
+    perfEnd('db.batchUpdateCardPositions', start, { updates: updates.length, failed: true });
     throw e;
   }
 }
@@ -247,18 +267,23 @@ export async function batchUpdateCardPositions(
 export async function updateCardsColumn(
   cardIds: string[], columnName: string
 ): Promise<void> {
+  if (cardIds.length === 0) return;
   const d = await getDb();
-  await d.execute('BEGIN');
+  const start = perfStart('db.updateCardsColumn');
+  const orderCase = cardIds.map((_, i) => `WHEN $${i + 1} THEN ${i}`).join(' ');
+  const placeholders = cardIds.map((_, i) => `$${i + 1}`).join(', ');
   try {
-    for (let i = 0; i < cardIds.length; i++) {
-      await d.execute(
-        'UPDATE cards SET column_name = $1, column_order = $2, last_activity_at = CURRENT_TIMESTAMP WHERE id = $3',
-        [columnName, i, cardIds[i]]
-      );
-    }
-    await d.execute('COMMIT');
+    await d.execute(
+      `UPDATE cards
+       SET column_name = '${columnName.replace(/'/g, "''")}',
+           column_order = CASE id ${orderCase} END,
+           last_activity_at = CURRENT_TIMESTAMP
+       WHERE id IN (${placeholders})`,
+      cardIds,
+    );
+    perfEnd('db.updateCardsColumn', start, { cardCount: cardIds.length, columnName });
   } catch (e) {
-    await d.execute('ROLLBACK');
+    perfEnd('db.updateCardsColumn', start, { cardCount: cardIds.length, columnName, failed: true });
     throw e;
   }
 }
@@ -349,6 +374,7 @@ export interface UsageMetrics {
 
 export async function getUsageMetrics(): Promise<UsageMetrics> {
   const d = await getDb();
+  const start = perfStart('db.getUsageMetrics');
   const rows = await d.select<Array<{
     cost_today: number; cost_week: number; cost_month: number;
     input_tokens: number; output_tokens: number; session_count: number;
@@ -364,6 +390,7 @@ export async function getUsageMetrics(): Promise<UsageMetrics> {
     WHERE session_id != '' AND session_id IS NOT NULL
   `);
   const r = rows[0] || { cost_today: 0, cost_week: 0, cost_month: 0, input_tokens: 0, output_tokens: 0, session_count: 0 };
+  perfEnd('db.getUsageMetrics', start);
   return {
     costToday: r.cost_today,
     costWeek: r.cost_week,
