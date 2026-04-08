@@ -114,6 +114,25 @@ export async function getAllProjects(): Promise<Project[]> {
   }));
 }
 
+export async function getProjectById(id: string): Promise<Project | null> {
+  const d = await getDb();
+  const rows = await d.select<Array<{
+    id: string; name: string; path: string;
+    created_at: string; last_opened_at: string;
+    closed: number;
+  }>>('SELECT * FROM projects WHERE id = $1 LIMIT 1', [id]);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    createdAt: row.created_at,
+    lastOpenedAt: row.last_opened_at,
+    closed: row.closed === 1,
+  };
+}
+
 export async function updateProjectTabOrder(orderedIds: string[]): Promise<void> {
   if (orderedIds.length === 0) return;
   const d = await getDb();

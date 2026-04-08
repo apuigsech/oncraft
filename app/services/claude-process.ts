@@ -6,6 +6,8 @@ import { reactive } from 'vue';
 import type { ChatPart, SidecarMessage, SessionConfig } from '~/types';
 import type { ImageAttachment } from '~/types';
 import { process as registryProcess } from './chat-part-registry';
+import { createUtilRequestTracker } from './util-sidecar-protocol';
+import { loadFlow } from '~/services/flow-loader';
 import * as db from '~/services/database';
 import { perfEnd, perfStart } from '~/services/perf';
 
@@ -454,8 +456,6 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
   const proc = processes.get(cardId);
   if (!proc) return;
 
-  const projectsStore = useProjectsStore();
-
   let responseData: Record<string, unknown> = {};
 
   try {
@@ -530,18 +530,36 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
       }
 
     } else if (req.action === 'get_project') {
-      const project = projectsStore.activeProject;
-      const flowStore = useFlowStore();
-      // Build columns from FlowStore (slug + display name + color)
-      const columns = flowStore.stateOrder.map(slug => {
-        const s = flowStore.getFlowState(slug);
-        return s ? {
-          name:      s.name,
-          slug:      s.slug,
-          color:     s.color,
-          hasPrompt: !!s.prompt,
-        } : null;
-      }).filter(Boolean);
+      const card = await db.getCardById(cardId);
+      const project = card ? await db.getProjectById(card.projectId) : null;
+      let columns: Array<{ name: string; slug: string; color: string; hasPrompt: boolean }> = [];
+
+      if (project) {
+        try {
+          const flowResult = await loadFlow(project.path);
+          columns = flowResult.flow.stateOrder
+            .map(slug => flowResult.flow.states.find(s => s.slug === slug))
+            .filter((s): s is NonNullable<typeof s> => !!s)
+            .map(s => ({
+              name: s.name,
+              slug: s.slug,
+              color: s.color,
+              hasPrompt: !!s.prompt,
+            }));
+        } catch {
+          // Fallback to currently loaded flow for resiliency.
+          const flowStore = useFlowStore();
+          columns = flowStore.stateOrder.map(slug => {
+            const s = flowStore.getFlowState(slug);
+            return s ? {
+              name: s.name,
+              slug: s.slug,
+              color: s.color,
+              hasPrompt: !!s.prompt,
+            } : null;
+          }).filter((c): c is { name: string; slug: string; color: string; hasPrompt: boolean } => !!c);
+        }
+      }
       responseData = {
         project: project ? { id: project.id, name: project.name, path: project.path } : null,
         columns,
@@ -568,9 +586,9 @@ async function handleSessionRequest(cardId: string, req: SessionRequest): Promis
 // ---------------------------------------------------------------------------
 
 interface PendingRequest {
-  resolve: (data: Record<string, unknown>) => void;
   timer: ReturnType<typeof setTimeout>;
   startedAt: number;
+  responseType: string;
 }
 
 let _utilSidecar: {
@@ -579,22 +597,24 @@ let _utilSidecar: {
 } | null = null;
 let _utilSpawning: Promise<void> | null = null;
 let _utilLineBuffer = '';
-// Pending one-shot requests keyed by response type (e.g. 'sessions', 'commands')
-const _utilPending = new Map<string, PendingRequest>();
+const _utilTracker = createUtilRequestTracker();
+const _utilPendingMeta = new Map<string, PendingRequest>();
 
 function _handleUtilLine(line: string): void {
-  if (!line.trim()) return;
-  try {
-    const parsed = JSON.parse(line) as Record<string, unknown>;
-    const type = parsed.type as string;
-    const pending = _utilPending.get(type);
-    if (pending) {
-      clearTimeout(pending.timer);
-      _utilPending.delete(type);
-      perfEnd(`sidecar.util.${type}`, pending.startedAt);
-      pending.resolve(parsed);
+  if (_utilTracker.resolveFromLine(line)) {
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      const requestId = parsed.requestId as string | undefined;
+      if (!requestId) return;
+      const meta = _utilPendingMeta.get(requestId);
+      if (!meta) return;
+      clearTimeout(meta.timer);
+      _utilPendingMeta.delete(requestId);
+      perfEnd(`sidecar.util.${meta.responseType}`, meta.startedAt);
+    } catch {
+      // ignore parse errors on already-resolved lines
     }
-  } catch { /* ignore unparseable lines */ }
+  }
 }
 
 async function _ensureUtilSidecar(): Promise<{ write: (data: string) => Promise<void> }> {
@@ -620,11 +640,12 @@ async function _ensureUtilSidecar(): Promise<{ write: (data: string) => Promise<
     command.on('close', () => {
       _utilSidecar = null;
       // Reject any pending requests
-      for (const [key, pending] of _utilPending) {
+      for (const [requestId, pending] of _utilPendingMeta) {
         clearTimeout(pending.timer);
-        pending.resolve({ type: key, error: 'sidecar closed' });
+        perfEnd(`sidecar.util.${pending.responseType}`, pending.startedAt, { closed: true });
+        _utilPendingMeta.delete(requestId);
       }
-      _utilPending.clear();
+      _utilTracker.rejectAll('sidecar closed');
       _utilLineBuffer = '';
     });
 
@@ -649,20 +670,22 @@ function _utilRequest(
   responseType: string,
   timeoutMs = 10000,
 ): Promise<Record<string, unknown>> {
+  const requestId = crypto.randomUUID();
   return new Promise(async (resolve) => {
     const reqStart = perfStart(`sidecar.util.${responseType}`);
     try {
       const sidecar = await _ensureUtilSidecar();
       const timer = setTimeout(() => {
-        _utilPending.delete(responseType);
+        _utilPendingMeta.delete(requestId);
         perfEnd(`sidecar.util.${responseType}`, reqStart, { timeout: true });
-        resolve({ type: responseType, error: 'timeout' });
+        resolve({ type: responseType, requestId, error: 'timeout' });
       }, timeoutMs);
-      _utilPending.set(responseType, { resolve, timer, startedAt: reqStart });
-      await sidecar.write(JSON.stringify(cmd));
+      _utilPendingMeta.set(requestId, { timer, startedAt: reqStart, responseType });
+      _utilTracker.register(requestId, responseType, resolve);
+      await sidecar.write(JSON.stringify({ ...cmd, requestId }));
     } catch {
       perfEnd(`sidecar.util.${responseType}`, reqStart, { spawnFailed: true });
-      resolve({ type: responseType, error: 'spawn failed' });
+      resolve({ type: responseType, requestId, error: 'spawn failed' });
     }
   });
 }
@@ -681,11 +704,12 @@ export function shutdownUtilSidecar(): void {
   } finally {
     _utilSidecar = null;
     _utilLineBuffer = '';
-    for (const [key, pending] of _utilPending) {
+    for (const [requestId, pending] of _utilPendingMeta) {
       clearTimeout(pending.timer);
-      pending.resolve({ type: key, error: 'shutdown' });
+      perfEnd(`sidecar.util.${pending.responseType}`, pending.startedAt, { shutdown: true });
+      _utilPendingMeta.delete(requestId);
     }
-    _utilPending.clear();
+    _utilTracker.rejectAll('shutdown');
     void cleanupTempImages(true);
   }
 }
